@@ -1,14 +1,14 @@
 # AI-Huma
 
-一个乱序 RISC-V CPU 的项目：用 AI 和人协作，把一个 RTL 风格的周期精确 C++ 模型，蒸馏成紧凑、快速、周期完全一致的
-trace 模型，再生成并验证与之逐拍一致的 RTL。
+一个乱序 RISC-V CPU 的项目：用 AI 和人协作，把一个 RTL 风格的周期精确 C++ 模型，蒸馏成紧凑、快速、周期完全一致的  
+trace 模型，再生成并验证与之逐拍一致的 RTL。之后通过三个model协同交互迭代，目标是成为 Agentic CPU 训练大师。
 
 ## 名字的由来
 
 AI-Huma 有两层意思：
 
 1. **AI + Human**：项目由人定方向、定验收标准，AI 做大部分重写、验证和翻译工作。
-2. **Huma**：致敬作者最喜欢的动漫角色雷姆（Re:Zero）的魔法。
+2. **Al-Huma(**アル・ヒューマ**)**：致敬作者最喜欢的动漫角色雷姆（Re:Zero）的魔法。
 
 ## 三个部分
 
@@ -51,15 +51,18 @@ git submodule update --init          # 取出 function-model、trace-model、rtl
 ## 当前状态（2026-11-04）
 
 **trace-model**
+
 - 代码量从约 84k 行降到约 43k 行。后端各模块、BPU、LLC、AXI 互联、前端 `front_comb_calc`、`rv_simu_mmu_v2.cpp` 都已重写或整理。
 - 速度（2026-11-03 的单次测量，机器有负载，仅供参考）：dhrystone 约 237 k cycles/s（原模型约 186 k），coremark10 约 140 k cycles/s。
 - 验证：gate 62/62（11-04 加入 `load-store-aligned`，原 `load-store` 在参考核里遇到未对齐 load 直接退出，没有基线）。
 - 未覆盖：MemSubSystem 外设（无测试覆盖）、两条没有测试能走到的 Ren 路径。checkpoint 恢复在 `exp/frontdoor-ckpt` 分支上实验中，未合入 `main`。
 
 **function-model**
+
 - 保持上游行为，我们加了一个"无副作用的虚实地址翻译"接口，供 trace-model 的桥使用；实验分支上加了 front-door checkpoint 恢复，以及指令上限和 BBV 间隔的环境变量（`REF_MAX_INSTS`、`REF_INTERVAL`）。
 
 **rtl**
+
 - 前端、后端、访存子系统和整核都已翻成 SystemVerilog：lint 干净；整核闭环（RTL 核 + RTL 访存子系统 + 参考的 DDR/外设模型）跑 66 个程序，周期数与参考一致；与 trace-model 的 63 个 smoke 程序周期数、指令数全部一致。
 - 边界对照是在**整程序周期数和指令数**层面，**模块边界与 trace-model 的逐拍对照还没做**（各模块是对着原参考模型的录制做的逐拍对照）。
 - **没有做过综合**；变异存活没有清零；`memory-stress`、`float_test` 没在闭环里跑过。这些和其他已知风险都登记在风险登记簿里。

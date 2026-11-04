@@ -10,6 +10,8 @@
 
 | 日期 | 仓库 / 分支 | commit | 做了什么 | 验证 | 结论 |
 |---|---|---|---|---|---|
+| 2026-11-04 | trace-model / `exp/frontdoor-ckpt`（未合入） | `65affb3` | 清理上游遗留：`.github`、`ci`、`.codex`、`.claude`、`doc/`（原执行驱动模块设计文档）、`script/`（原 SPEC 评分/画图/回归脚本）、`baremetal/riscv-tests`、预编译基准、`.o`、`tmp.md`、`compile_commands.json`、`tree.dts`、`tools/`、vendored axi kit 的 demos 与 `*_test.cpp`；`README.md` 换成指向 `docs/PROJECT.md` 的简短版。共删 486 个文件，历史里仍可找回 | 删除的文件均无构建、脚本、测试、文档引用；`gmake -n -B` 所需的 46 个源文件/库全部存在；`run_gate.sh` 62/62 | 未合入 `main` |
+| 2026-11-04 | rtl / `main` | `fb96e66` | 删除依赖已清理的 per-module 工作树的复核脚本 `extra_check.sh`、`review_front.sh`、`review_exu_int.sh`，并更新 `scripts/README.md` | 无其他文件引用它们 | — |
 | 2026-11-04 | AI-Huma（总仓库）/ `main` | 文档更新 | `README.md`：补充总仓库/子模块结构与克隆方法、文档索引（含 rtl 风险登记簿）、gate 62 个与大程序固定标准、更新 rtl 当前状态和下一步、复现步骤加入 rtl；`WORKFLOW.md`：变异检查改为可选、存活变异改为登记而不要求清零 | 文档改动；README 里的数字（62 个 gate、66 个闭环程序、63 个与 trace-model 一致、rtl 约 300 个文件/3 万行）已逐项核对 | 仅文档 |
 | 2026-11-04 | trace-model / `exp/frontdoor-ckpt`（未合入） | `97a8589` | gate 加入 `load-store-aligned`（原 `load-store` 在参考核里遇到未对齐 load 直接退出，基线无周期数；新程序用对齐的逐字节读取拼出同样的字）；`run_gate.sh` 的排除规则收窄为只排除 `load-store/` 目录；`PROJECT.md`：gate 62 个、大程序固定为 dhrystone 64 次 / coremark 2 次、rtl 的位置 | `run_gate.sh` 62/62 通过；基线 536 周期 / 144 条指令，trace-model 与 RTL 闭环一致 | 未合入 `main`（该分支为 front-door checkpoint 实验） |
 | 2026-11-04 | function-model / `exp/frontdoor-ckpt`（未合入） | `2ed1eb6` | `ref.h`：指令上限与 BBV/检查点间隔改为环境变量（`REF_MAX_INSTS`、`REF_INTERVAL`），默认不设上限、间隔仍为 1e8 | `refcpu_api.cpp`、`exec.cpp` 语法检查无错误；未跑功能回归 | 未合入 `main`；该改动是工作区里已有的未提交内容，本次只做提交 |
