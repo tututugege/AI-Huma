@@ -10,6 +10,7 @@
 
 | 日期 | 仓库 / 分支 | commit | 做了什么 | 验证 | 结论 |
 |---|---|---|---|---|---|
+| 2026-11-04 | function-model / trace-model / rtl `main` | — | **中断 CSR 按规范**：`mie`/`mip` 去掉用户级位（0xAAA），`mideleg` 只留 SSI/STI/SEI，`sie`/`sip` 按 `mideleg` 屏蔽，`sip` 只写 SSIP；三处同步（function-model `exec.cpp`、trace-model `Csr.cpp`、RTL `csr_*.sv`）。Spike 对比 66 个程序 64 个一致（`csr-alias-boundary` 现在一致）。`csr-alias-boundary` 周期 736 → 709（gate 基线和 `ref_cycles.txt` 已更新） | gate 62/62；RTL 64 个程序逐条对比一致；Linux 从头启动在 trace-model 上验证中 |
 | 2026-11-04 | function-model `main` | — | **Spike 逐条对比接通**：适配当前 riscv-isa-sim，`scripts/build_spike.sh`（仓库外构建）；Linux 启动 1.35 亿条指令到登录无不一致；66 个 gate/vm 程序 63 个一致，3 个已知差异（`sie` 按 0x333 而非 `mideleg` 屏蔽，`mip` 的 MTIP/MSIP 来自平台）见 `docs/SPIKE_DIFFTEST.md` | 未改 ISA 行为 |
 | 2026-11-04 | rtl `main`; trace-model `b028a20` | — | **Linux 从头启动打通 + 断开旧参考的最后联系**：核对不认识的 CSR 触发非法指令（trace-model `Idu.cpp` 与 RTL `idu_ctrl_decode.sv` 同步），OpenSBI 不再误测出 sstc，trace-model 从头启动到 `rv32 login:`（130M 提交、115M 周期），gate 62/62，RTL 64 个 gate/vm 程序逐条一致；RTL 新增检查点启动（`SOC_TB_STUB`、`tools/ckpt2image.py`）；`gen_cfg.sh` 改读 `trace-model/include/config.h`，去掉 `BASELINE_SRC` 及 `baseline/` 程序前缀，`ref_cycles.txt` 改记为 trace-model gate 基线 | RTL 从 5800 万处检查点到登录的长跑进行中 |
 | 2026-11-04 | rtl `main` | — | **退役逐模块锁步体系**：删除 117 个文件（锁步/录制/回放/变异脚本、各模块 rand_trace/mutants、replay harness、selftest、refhook），只保留 lint、整核闭环、逐条提交对比、`tests/fpu`、`tests/common`、`tests/dcache`；文档改为"function-model 逐条提交一致是门禁，周期数是性能指标"（`06-equivalence-policy.md` 重写，旧文档加退役提示；风险 V-12 登记新门禁覆盖缺口） | 未重跑整核构建（只改脚本/文档/测试文件）；旧内容在标签 `legacy-reference` |
