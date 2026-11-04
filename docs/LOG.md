@@ -10,6 +10,7 @@
 
 | 日期 | 仓库 / 分支 | commit | 做了什么 | 验证 | 结论 |
 |---|---|---|---|---|---|
+| 2026-11-04 | rtl `main` | — | **退役逐模块锁步体系**：删除 117 个文件（锁步/录制/回放/变异脚本、各模块 rand_trace/mutants、replay harness、selftest、refhook），只保留 lint、整核闭环、逐条提交对比、`tests/fpu`、`tests/common`、`tests/dcache`；文档改为"function-model 逐条提交一致是门禁，周期数是性能指标"（`06-equivalence-policy.md` 重写，旧文档加退役提示；风险 V-12 登记新门禁覆盖缺口） | 未重跑整核构建（只改脚本/文档/测试文件）；旧内容在标签 `legacy-reference` |
 | 2026-11-04 | rtl `94608cc` / tag `legacy-reference`; trace-model `main` | — | **参考改为 function-model**：整核测试平台新增逐条提交对比（`SOC_FM=1` 构建、`SOC_TB_FM=1` 运行：提交 PC + 目的寄存器值，设备读值取 RTL，中断强制注入），gate+vm 64 个程序全部一致；trace-model 的 `mtime` 现在跟周期走（gate 62/62）。本地清掉旧参考副本 `refsim*`、`traces/` 和多余的构建目录（约 5.5 GB，可由 `scripts/refsim_setup.sh` 和旧参考源码重新生成）；依赖旧参考的逐模块锁步/录制脚本仍在仓库里，打了标签 `legacy-reference` | Linux 启动到登录提示符的确认仍在后台进行 |
 | 2026-11-04 | function-model / trace-model / rtl `main` | — | 去掉 GenSimpoint 这个名字：trace-model 里的符号链接改为 `function-model`，各脚本和文档的路径同步改，function-model 的 upstream 远程删除（来源只在文档里留作溯源） | `make -n` 路径通；未重编（Linux 长跑进行中） |
 | 2026-11-04 | rtl `a3f212d` / `main` | — | **参考模型退役**（用户决定）：闭环测试平台不再依赖参考模拟器源码——`tb/soc/platform/` 收进 19 个冻结的平台模型文件（SimDDR、PhysMemory、PeripheralModel 及头文件，约 300 KB），`gen_cfg.sh` 改取其中的配置，4 个额外程序移到 `programs/extra/`。记录后果：周期对 trace-model、架构值对 function-model；模块级锁步（`refsim*` 与 `traces/`）降为冻结的回归工具、不再扩展，新增行为（如 S-27）无法用它验证（风险 V-11） | `gen_cfg.sh` 重新生成配置包与原来完全一致；用收进来的文件重新构建测试平台；短程序闭环 51/51 | 重建 `refsim*` 仍需要原参考源码（AI-Huma 之外、未被任何仓库跟踪）；本地 `refsim*`、`traces/` 被 git 忽略，丢了无法重建 |
