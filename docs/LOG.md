@@ -10,6 +10,8 @@
 
 | 日期 | 仓库 / 分支 | commit | 做了什么 | 验证 | 结论 |
 |---|---|---|---|---|---|
+| 2026-11-04 | trace-model `exp/area-explore`（未提交、未合入） | — | **EXP-003 ROB/PRF 扩大**：新增 `CFG_ROB_NUM`、`CFG_PRF_NUM` 开关；测 ROB/PRF 192、256 及与 lean2 的组合；详见 [EXPLORATION.md](EXPLORATION.md#exp-003-rob-与-prf-扩大到-256) | 5 个小负载，difftest 全部跑完 | ROB+PRF 都翻倍只快约 0.8%（coremark 3%），ROB 128 合理 |
+| 2026-11-04 | trace-model `exp/area-explore`（未提交、未合入） | — | `CFG_BACKEND_FETCH_WIDTH` 开关；确认 `BACKEND_FETCH_WIDTH=16` 是遗留参数（前端都按 8） | 设为 8：gate 62/62、5 个负载周期全部不变 | 可直接改成 8，见 EXP-001 结果 1 |
 | 2026-11-04 | trace-model `exp/area-explore`（未提交、未合入） | — | **EXP-002 全核面积浪费排查**：新增 INT/BR IQ 容量、ibuf、MAX_BR_NUM、纯 ALU/BRU 端口数开关和在飞分支、ROB 占用统计；详见 [EXPLORATION.md](EXPLORATION.md#exp-002-全核面积浪费排查) | 默认配置 gate 62/62 周期不变；5 个小负载扫描 19 个单项变体和 2 个组合 | 组合配置 lean2（IQ 384→176 项、BRU 4→2、STA/STD 4→3、ibuf 64、front2back 8）无性能损失；ROB 是瓶颈；BPU 存储约 1.1 Mb 待大负载评估 |
 | 2026-11-04 | 总仓库 `docs/` | — | **记录规则**：WORKFLOW 新增第 5 节，每次探索写 [EXPLORATION.md](EXPLORATION.md)，每次合入 `main` 写 [MAIN_RECORDS.md](MAIN_RECORDS.md)（性能 + 综合，未做综合写"未做"）；MAIN_RECORDS 以当前 `main` 作起始行 | 只改文档 | — |
 | 2026-11-04 | trace-model `exp/area-explore`（未提交、未合入） | — | **EXP-001 面积探索**：统计插桩（`ARCH_STATS`）、统一 FTQ 容量上限（`UFTQ_CAP`）、访存端口数/IQ 容量/LD+STA IQ 合并编译开关；详见 [EXPLORATION.md](EXPLORATION.md#exp-001-面积优化三个方向) | 默认配置及 `ARCH_STATS=1` 下 gate 62/62 周期不变；5 个小负载扫描 | 统一 FTQ 64 项、端口 4/3/3、LD+STA 合并 64 项均几乎无性能损失 |
