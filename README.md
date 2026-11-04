@@ -37,6 +37,8 @@ git submodule update --init          # 取出 function-model、trace-model、rtl
 
 - [docs/WORKFLOW.md](docs/WORKFLOW.md)：分支与提交规则、harness 要求、实验流程。
 - [docs/LOG.md](docs/LOG.md)：每次 commit 做了什么。
+- [docs/EXPLORATION.md](docs/EXPLORATION.md)：每次架构/性能探索的实验记录（问题、方法、结果、结论）。
+- [docs/MAIN_RECORDS.md](docs/MAIN_RECORDS.md)：每次合入 `main` 的性能和综合结果。
 - [trace-model/docs/PROJECT.md](trace-model/docs/PROJECT.md)：trace-model 的架构、gate 和验证手段。
 - [rtl/docs/README.md](rtl/docs/README.md)：rtl 的文档索引（编码规范、开发流程、模块进度表、路线图）。
 - [rtl/docs/08-risk-register.md](rtl/docs/08-risk-register.md)：**rtl 的风险登记簿**：变异存活与未运行、覆盖缺口、未验证项、最近改动的验证范围。
