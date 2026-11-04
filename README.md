@@ -30,7 +30,7 @@ cd AI-Huma
 git submodule update --init          # 取出 function-model、trace-model、rtl
 ```
 
-- 子模块指针记录的是各子仓库已提交的 commit。function-model 和 trace-model 目前指向实验分支 `exp/frontdoor-ckpt`（front-door checkpoint 恢复），rtl 指向它自己的 `main`。分支规则见 [docs/WORKFLOW.md](docs/WORKFLOW.md)。
+- 子模块指针记录的是各子仓库已提交的 commit，三个仓库现在都指向各自的 `main`（11-04 把 `exp/frontdoor-ckpt` 快进合入了 `main`，分支保留）。分支规则见 [docs/WORKFLOW.md](docs/WORKFLOW.md)。
 - 构建产物、trace、参考模拟器副本等本地生成物（合计几个 GB）都被忽略，不进任何仓库；源码本身三个仓库加起来约 12 MB。
 
 ## 文档
@@ -55,11 +55,11 @@ git submodule update --init          # 取出 function-model、trace-model、rtl
 - 代码量从约 84k 行降到约 43k 行。后端各模块、BPU、LLC、AXI 互联、前端 `front_comb_calc`、`rv_simu_mmu_v2.cpp` 都已重写或整理。
 - 速度（2026-11-03 的单次测量，机器有负载，仅供参考）：dhrystone 约 237 k cycles/s（原模型约 186 k），coremark10 约 140 k cycles/s。
 - 验证：gate 62/62（11-04 加入 `load-store-aligned`，原 `load-store` 在参考核里遇到未对齐 load 直接退出，没有基线）。
-- 未覆盖：MemSubSystem 外设（无测试覆盖）、两条没有测试能走到的 Ren 路径。checkpoint 恢复在 `exp/frontdoor-ckpt` 分支上实验中，未合入 `main`。
+- 未覆盖：MemSubSystem 外设（无测试覆盖）、两条没有测试能走到的 Ren 路径。front-door checkpoint 恢复已合入 `main`（默认关闭；用 `--restore-stub`）。
 
 **function-model**
 
-- 保持上游行为，我们加了一个"无副作用的虚实地址翻译"接口，供 trace-model 的桥使用；实验分支上加了 front-door checkpoint 恢复，以及指令上限和 BBV 间隔的环境变量（`REF_MAX_INSTS`、`REF_INTERVAL`）。
+- 保持上游行为，我们加了一个"无副作用的虚实地址翻译"接口，供 trace-model 的桥使用；另有速度优化、front-door checkpoint 恢复，以及指令上限和 BBV 间隔的环境变量（`REF_MAX_INSTS`、`REF_INTERVAL`），均已在 `main`。
 
 **rtl**
 
