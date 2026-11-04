@@ -10,6 +10,7 @@
 
 | 日期 | 仓库 / 分支 | commit | 做了什么 | 验证 | 结论 |
 |---|---|---|---|---|---|
+| 2026-11-04 | rtl `main`; trace-model `b028a20` | — | **Linux 从头启动打通 + 断开旧参考的最后联系**：核对不认识的 CSR 触发非法指令（trace-model `Idu.cpp` 与 RTL `idu_ctrl_decode.sv` 同步），OpenSBI 不再误测出 sstc，trace-model 从头启动到 `rv32 login:`（130M 提交、115M 周期），gate 62/62，RTL 64 个 gate/vm 程序逐条一致；RTL 新增检查点启动（`SOC_TB_STUB`、`tools/ckpt2image.py`）；`gen_cfg.sh` 改读 `trace-model/include/config.h`，去掉 `BASELINE_SRC` 及 `baseline/` 程序前缀，`ref_cycles.txt` 改记为 trace-model gate 基线 | RTL 从 5800 万处检查点到登录的长跑进行中 |
 | 2026-11-04 | rtl `main` | — | **退役逐模块锁步体系**：删除 117 个文件（锁步/录制/回放/变异脚本、各模块 rand_trace/mutants、replay harness、selftest、refhook），只保留 lint、整核闭环、逐条提交对比、`tests/fpu`、`tests/common`、`tests/dcache`；文档改为"function-model 逐条提交一致是门禁，周期数是性能指标"（`06-equivalence-policy.md` 重写，旧文档加退役提示；风险 V-12 登记新门禁覆盖缺口） | 未重跑整核构建（只改脚本/文档/测试文件）；旧内容在标签 `legacy-reference` |
 | 2026-11-04 | rtl `94608cc` / tag `legacy-reference`; trace-model `main` | — | **参考改为 function-model**：整核测试平台新增逐条提交对比（`SOC_FM=1` 构建、`SOC_TB_FM=1` 运行：提交 PC + 目的寄存器值，设备读值取 RTL，中断强制注入），gate+vm 64 个程序全部一致；trace-model 的 `mtime` 现在跟周期走（gate 62/62）。本地清掉旧参考副本 `refsim*`、`traces/` 和多余的构建目录（约 5.5 GB，可由 `scripts/refsim_setup.sh` 和旧参考源码重新生成）；依赖旧参考的逐模块锁步/录制脚本仍在仓库里，打了标签 `legacy-reference` | Linux 启动到登录提示符的确认仍在后台进行 |
 | 2026-11-04 | function-model / trace-model / rtl `main` | — | 去掉 GenSimpoint 这个名字：trace-model 里的符号链接改为 `function-model`，各脚本和文档的路径同步改，function-model 的 upstream 远程删除（来源只在文档里留作溯源） | `make -n` 路径通；未重编（Linux 长跑进行中） |
