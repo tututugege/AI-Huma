@@ -1,0 +1,38 @@
+# AI-Huma top level: keep only source, scripts, specs and docs.  Each sub-project keeps its own .gitignore too.
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+.clangd/
+.cache/
+*.swp
+*~
+
+# build products and simulator outputs
+build/
+obj_dir/
+*.o
+*.d
+*.out
+a.out
+a.out.*
+compile_commands.json
+*.vcd
+*.fst
+*.log
+__pycache__/
+
+# generated data that is rebuilt or recorded locally (several GB)
+traces/
+checkpoint/
+results/gate*/
+results/axi*/
+refsim/
+refsim_tap/
+refsim_axi/
+tmp/
+
+# local copies and backups
+*.bak
+*.orig

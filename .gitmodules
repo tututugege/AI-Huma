@@ -1,0 +1,9 @@
+[submodule "function-model"]
+	path = function-model
+	url = ./function-model
+[submodule "trace-model"]
+	path = trace-model
+	url = ./trace-model
+[submodule "rtl"]
+	path = rtl
+	url = ./rtl
