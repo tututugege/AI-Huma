@@ -81,10 +81,9 @@ git submodule update --init          # 取出 function-model、trace-model、rtl
 细节见 `trace-model/docs/PROJECT.md` 和 `rtl/docs/README.md`。要点：
 
 ```bash
-# trace-model
+# trace-model 依赖同级的 function-model（trace-model/GenSimpoint 是指向 ../function-model 的符号链接）
+gmake -C function-model librefcpu.a LDFLAGS="-lz"
 cd trace-model
-git submodule update --init
-gmake -C GenSimpoint librefcpu.a LDFLAGS="-lz"
 gmake LDFLAGS="-lz" -j8
 bash scripts/run_gate.sh build/simulator results/gate
 
