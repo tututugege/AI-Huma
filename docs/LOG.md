@@ -10,6 +10,7 @@
 
 | 日期 | 仓库 / 分支 | commit | 做了什么 | 验证 | 结论 |
 |---|---|---|---|---|---|
+| 2026-11-04 | AI-Huma（总仓库）/ `main` | 文档更新 | `README.md`：补充总仓库/子模块结构与克隆方法、文档索引（含 rtl 风险登记簿）、gate 62 个与大程序固定标准、更新 rtl 当前状态和下一步、复现步骤加入 rtl；`WORKFLOW.md`：变异检查改为可选、存活变异改为登记而不要求清零 | 文档改动；README 里的数字（62 个 gate、66 个闭环程序、63 个与 trace-model 一致、rtl 约 300 个文件/3 万行）已逐项核对 | 仅文档 |
 | 2026-11-04 | trace-model / `exp/frontdoor-ckpt`（未合入） | `97a8589` | gate 加入 `load-store-aligned`（原 `load-store` 在参考核里遇到未对齐 load 直接退出，基线无周期数；新程序用对齐的逐字节读取拼出同样的字）；`run_gate.sh` 的排除规则收窄为只排除 `load-store/` 目录；`PROJECT.md`：gate 62 个、大程序固定为 dhrystone 64 次 / coremark 2 次、rtl 的位置 | `run_gate.sh` 62/62 通过；基线 536 周期 / 144 条指令，trace-model 与 RTL 闭环一致 | 未合入 `main`（该分支为 front-door checkpoint 实验） |
 | 2026-11-04 | function-model / `exp/frontdoor-ckpt`（未合入） | `2ed1eb6` | `ref.h`：指令上限与 BBV/检查点间隔改为环境变量（`REF_MAX_INSTS`、`REF_INTERVAL`），默认不设上限、间隔仍为 1e8 | `refcpu_api.cpp`、`exec.cpp` 语法检查无错误；未跑功能回归 | 未合入 `main`；该改动是工作区里已有的未提交内容，本次只做提交 |
 | 2026-11-04 | AI-Huma（总仓库）/ `main` | 初始提交 | 新建总仓库：根目录 `.gitignore`、`README.md`、`docs/`，三个子项目 function-model / trace-model / rtl 作为 git 子模块引用（URL 暂为本地路径，发布时再改）。子模块只记录各自已提交的 commit：function-model `215140b`、trace-model `4f601ca`（均在 `exp/frontdoor-ckpt`，工作区各有未提交改动，不在本次提交里）、rtl `01e31e4`（`main`） | 无代码改动；`git submodule status` 三个子模块均解析到上述 commit | 仅建立仓库结构，不涉及 `main` 合入条件 |
