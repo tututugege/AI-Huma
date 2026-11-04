@@ -1,9 +1,9 @@
 [submodule "function-model"]
 	path = function-model
-	url = https://github.com/tututugege/AI-Huma-func.git
+	url = git@github.com:tututugege/AI-Huma-func.git
 [submodule "trace-model"]
 	path = trace-model
-	url = https://github.com/tututugege/AI-Huma-trace.git
+	url = git@github.com:tututugege/AI-Huma-trace.git
 [submodule "rtl"]
 	path = rtl
-	url = https://github.com/tututugege/AI-Huma-rtl.git
+	url = git@github.com:tututugege/AI-Huma-rtl.git
