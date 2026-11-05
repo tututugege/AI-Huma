@@ -188,6 +188,40 @@ Linux 启动（RTL，不分频 + DRAMsim3 + 1 GHz，`SOC_TB_FM=1 SOC_TB_SEMIHOST
 - 在不分频 trace-model（DRAMsim3、1 GHz）上加临时占用探针跑 Linux 启动到 `rv32 login:`：master 0 排队峰值 1、master 1（DCache MSHR）排队峰值 4，加输出寄存器后的总占用分别为 2 和 5；dhrystone、coremark、memory-stress、memory-stress-small 的队列都没被用到。RTL 的断言是 `总占用 ≤ RQD`，原 `RQD=4` 正好在总占用到 5 时溢出，与实测吻合。**决定 `RQD = 8`**（最小可用 5，留 3 的余量，比 32 省约四分之三的队列存储）。RTL 一侧的同样探针测量被我中途结束，没有出结果。
 - 遗留：`RQD=8` 只按 Linux 启动一个大负载定；SPEC 等其他大负载未测。其他按 16 tick 下的小程序测出来的小深度队列可能同样不够，尚未逐个检查。
 
+SPEC CPU2006 整数 checkpoint 回放（trace-model，新基线：不分频、DRAMsim3 DDR4-3200、1 GHz；`scripts/spec/replay.sh full`，12 个程序、580 个 SimPoint、每点预热后测 1000 万条指令，8 路并行，用时约 1 小时 45 分，结果在 `AI-Huma-data/spec-rv32imab/tm/res_dram`）：
+
+| 程序 | 点数 | 加权 IPC |
+|---|---|---|
+| 400.perlbench | 44 | 2.131 |
+| 401.bzip2 | 76 | 1.645 |
+| 403.gcc | 55 | 1.590 |
+| 429.mcf | 79 | 0.463 |
+| 445.gobmk | 50 | 1.783 |
+| 456.hmmer | 34 | 3.718 |
+| 458.sjeng | 28 | 1.858 |
+| 462.libquantum | 51 | 0.857 |
+| 464.h264ref | 37 | 1.489 |
+| 471.omnetpp | 40 | 1.508 |
+| 473.astar | 35 | 0.975 |
+| 483.xalancbmk | 51 | 1.959 |
+| **几何平均** | 580 | **1.487** |
+
+580 个点全部完成，没有失败，没有 difftest 不一致（mismatch-points 全为 0）。
+
+与旧基线（`tm/b3`，第 3 批配置、16 倍分频、固定 60 tick 延迟；只有 quick 的 6 个程序、覆盖 90% 权重的点，所以用同一批点比较；该目录的配置我没有逐项核对，按目录名和日期判断）：
+
+| 程序 | 旧 IPC | 新 IPC | 变化 |
+|---|---|---|---|
+| 400.perlbench | 2.468 | 2.135 | −13.5% |
+| 403.gcc | 2.566 | 1.631 | −36.4% |
+| 429.mcf | 1.327 | 0.480 | −63.8% |
+| 456.hmmer | 4.007 | 3.767 | −6.0% |
+| 458.sjeng | 2.027 | 1.853 | −8.6% |
+| 464.h264ref | 1.677 | 1.511 | −9.9% |
+| **几何平均** | 2.204 | 1.613 | **−26.8%** |
+
+结论：去掉 16 倍分频、换成 DRAMsim3 之后，访存密集的程序掉得最多（mcf −64%、gcc −36%），计算密集的掉得少（hmmer −6%），符合"分频让 DRAM 相对核心快了约 13 倍"的判断。旧数字是偏乐观的，新数字才反映 1 GHz 核心配 DDR4 的情况。附加延迟 32 ns 仍未校准，绝对值会随它变。
+
 ### 后续
 
 - **已决定（2026-11-05）：不分频 + DRAMsim3 + 默认 1 GHz 作为新基线**（trace-model 侧已完成：`config.h` 默认 `FREQ_DIV=1`、`CPU_FREQ_MHZ=1000`，Makefile 默认 `DS3=1`，`baseline.csv` 已重生成，gate 62/62，大程序标准周期见 trace-model `docs/PROJECT.md`）。新旧基线周期对比：gate 平均 +146%、中位 +135%，dhrystone 150,427 → 158,756，coremark 233,515 → 250,658，memory-stress 1,541,195 → 2,425,029，memory-stress-small 189,128 → 343,975。RTL 侧已同步（见下一节），66 个程序周期与 trace-model 全部相等。
