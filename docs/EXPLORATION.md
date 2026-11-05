@@ -222,6 +222,8 @@ SPEC CPU2006 整数 checkpoint 回放（trace-model，新基线：不分频、DR
 
 结论：去掉 16 倍分频、换成 DRAMsim3 之后，访存密集的程序掉得最多（mcf −64%、gcc −36%），计算密集的掉得少（hmmer −6%），符合"分频让 DRAM 相对核心快了约 13 倍"的判断。旧数字是偏乐观的，新数字才反映 1 GHz 核心配 DDR4 的情况。附加延迟 32 ns 仍未校准，绝对值会随它变。
 
+DRAMsim3 依赖（同日）：改为 trace-model 仓库的固定版本子模块 `third_party/DRAMsim3`（`2981759`）；Makefile 把它的 12 个源文件直接编成 `build_dramsim3/libdramsim3.a`（`gmake dramsim3`，不用 cmake、不用动态库、不设 rpath、不往子模块里写文件），RTL 的 `tb/soc/build.sh` 链接同一个静态库（`TM_DIR` 指定 trace-model 目录）。克隆后要 `git submodule update --init third_party/DRAMsim3`。验证：全新 `BUILD_DIR` 构建后 gate 62/62、dhrystone 158,756、coremark 250,658（与动态库版相同）；`DS3=0` 仍可不带 DRAMsim3 构建；RTL `fm_gate.sh` 66/66、66 个周期与 trace-model 全部相等。
+
 ### 后续
 
 - **已决定（2026-11-05）：不分频 + DRAMsim3 + 默认 1 GHz 作为新基线**（trace-model 侧已完成：`config.h` 默认 `FREQ_DIV=1`、`CPU_FREQ_MHZ=1000`，Makefile 默认 `DS3=1`，`baseline.csv` 已重生成，gate 62/62，大程序标准周期见 trace-model `docs/PROJECT.md`）。新旧基线周期对比：gate 平均 +146%、中位 +135%，dhrystone 150,427 → 158,756，coremark 233,515 → 250,658，memory-stress 1,541,195 → 2,425,029，memory-stress-small 189,128 → 343,975。RTL 侧已同步（见下一节），66 个程序周期与 trace-model 全部相等。
