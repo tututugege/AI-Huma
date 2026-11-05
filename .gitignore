@@ -36,3 +36,8 @@ tmp/
 # local copies and backups
 *.bak
 *.orig
+
+# experiment worktrees of the sub-repositories (git worktree add ../<repo>-<name>)
+/rtl-*/
+/trace-model-*/
+/function-model-*/

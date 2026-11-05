@@ -14,15 +14,15 @@ AI-Huma 有两层意思：
 
 | 部分 | 目录 | 作用 |
 |---|---|---|
-| **function-model** | `function-model/` | 功能模型：只管指令执行的结果（寄存器、访存、CSR、分页），不管时序。基于 tututugege/GenSimpoint，库名 `librefcpu`。 |
-| **trace-model** | `trace-model/` | 时序模型：由 tututugege/simulator 蒸馏而来，不再计算数据值，分支方向/目标、地址、store 数据、CSR 写数据都来自功能模型提供的"事实"，只保留周期精确的时序行为。 |
-| **rtl** | `rtl/` | 把各个模块翻成 SystemVerilog（约 300 个文件、3 万行），每个模块边界逐拍对照，并有整核闭环测试平台（Verilator）。 |
+| **function-model** | `function-model/` | 功能模型：只管指令执行的结果（寄存器、访存、CSR、分页），不管时序。基于 tututugege/GenSimpoint，库名 `librefcpu`。也负责 SPEC 的 BBV/SimPoint/检查点生成。 |
+| **trace-model** | `trace-model/` | 时序模型：由 tututugege/simulator 蒸馏而来，不再计算数据值，分支方向/目标、地址、store 数据、CSR 写数据都来自功能模型提供的“事实”，只保留周期精确的时序行为。核参数的唯一来源（`include/config.h`），也是架构探索用的模型。 |
+| **rtl** | `rtl/` | SystemVerilog 实现（约 270 个 RTL 文件、2.6 万行），整核测试平台（Verilator）逐条提交对比 function-model；参数包由 trace-model 的 `config.h` 生成。 |
 
-三者的关系：function-model 产生执行事实，trace-model 在事实驱动下给出每一拍的时序，rtl 在同样的输入下必须与它每一拍都一致。
+三者的关系：function-model 定义“对不对”（架构行为），trace-model 定义“快不快”（周期）并用来做架构探索；rtl 的架构行为必须与 function-model 一致，合入 main 时同一配置下的周期必须与 trace-model 逐个程序相等。
 
 ## 仓库结构
 
-`AI-Huma` 本身是**总仓库**，只放文档和忽略规则；三个子项目是各自独立的 git 仓库，作为 **git 子模块**引用（子模块 URL 现在是本地相对路径，发布时再改成真实地址）。
+`AI-Huma` 本身是**总仓库**，只放全项目文档和忽略规则；三个子项目是各自独立的 git 仓库，作为 **git 子模块**引用（子模块 URL 现在是本地相对路径，发布时再改成真实地址）。
 
 ```bash
 git clone <AI-Huma 地址>
@@ -30,53 +30,31 @@ cd AI-Huma
 git submodule update --init          # 取出 function-model、trace-model、rtl
 ```
 
-- 子模块指针记录的是各子仓库已提交的 commit，三个仓库现在都指向各自的 `main`（11-04 把 `exp/frontdoor-ckpt` 快进合入了 `main`，分支保留）。分支规则见 [docs/WORKFLOW.md](docs/WORKFLOW.md)。
-- 构建产物、trace、参考模拟器副本等本地生成物（合计几个 GB）都被忽略，不进任何仓库；源码本身三个仓库加起来约 12 MB。
+- 子模块指针记录的是各子仓库 `main` 上已提交的 commit；分支和合入规则见 [docs/WORKFLOW.md](docs/WORKFLOW.md)。
+- 生成的数据（SPEC 检查点、Linux 镜像）放在 `~/personal/AI-Huma-data/`，构建产物都在各仓库被忽略的 `build*` 目录里，都不进仓库。
 
 ## 文档
 
-- [docs/WORKFLOW.md](docs/WORKFLOW.md)：分支与提交规则、harness 要求、实验流程。
-- [docs/LOG.md](docs/LOG.md)：每次 commit 做了什么。
-- [docs/EXPLORATION.md](docs/EXPLORATION.md)：每次架构/性能探索的实验记录（问题、方法、结果、结论）。
-- [docs/MAIN_RECORDS.md](docs/MAIN_RECORDS.md)：每次合入 `main` 的性能和综合结果。
-- [trace-model/docs/PROJECT.md](trace-model/docs/PROJECT.md)：trace-model 的架构、gate 和验证手段。
-- [rtl/docs/README.md](rtl/docs/README.md)：rtl 的文档索引（编码规范、开发流程、模块进度表、路线图）。
-- [rtl/docs/08-risk-register.md](rtl/docs/08-risk-register.md)：**rtl 的风险登记簿**：变异存活与未运行、覆盖缺口、未验证项、最近改动的验证范围。
+**从 [docs/GUIDE.md](docs/GUIDE.md) 开始**：它列出全部文档、各管什么、遇到什么事该看哪份。最常用的几份：
+
+- [docs/WORKFLOW.md](docs/WORKFLOW.md)：规则和流程（分支与提交、正确性标准、harness、实验流程、合入 main 的步骤）。
+- [docs/TODO.md](docs/TODO.md)：全项目唯一的待办清单。
+- [docs/MAIN_RECORDS.md](docs/MAIN_RECORDS.md)：每次合入 main 的性能、面积和“变化”；**当前数字以这里为准**。
+- [docs/EXPLORATION.md](docs/EXPLORATION.md)：架构探索记录；[docs/LOG.md](docs/LOG.md)：每个 commit 一行。
 
 ## 核心原则
 
-- **正确性 = 架构行为与 function-model 一致**（2026-11-04 起）。RTL 的整核测试平台让 function-model 每提交一条指令就执行一条，比较提交 PC 和目的寄存器的值；Linux 启动到登录提示符是整机检查。周期数、IPC 是**性能指标**，不再要求与任何参考相等（RTL 会继续优化微架构）。
-- **trace-model 是性能与架构探索模型**，不再约束 RTL 逐拍一致；两者的周期差距用来发现性能回退。
-- **旧的逐模块锁步 / trace 回放 / 变异检查体系已退役**，代码在 rtl 仓库的标签 `legacy-reference`。
+- **正确性 = 架构行为与 function-model 一致**（2026-11-04 起）。RTL 整核测试平台每提交一条指令，function-model 执行一条，比较提交 PC 和目的寄存器的值；Linux 从复位启动到登录提示符是整机检查。
+- **周期数、IPC 是性能指标**。trace-model 是性能参考和架构探索模型；探索的结论（例如第 3 批面积配置）先在 trace-model 上验证，再同步到 RTL，合入 main 时两者周期逐个相等。
+- **旧的逐模块锁步 / trace 回放 / 变异检查体系已退役**（代码在 rtl 标签 `legacy-reference`，文档在 `rtl/docs/history/`）。
 - **目标是方法，而不只是代码**：能否把一个周期精确模型系统地变得更小、更快，并留下可复用的验证手段。
 
-## 当前状态（2026-11-04）
+## 当前状态（2026-11-05）
 
-**trace-model**
-
-- 代码量从约 84k 行降到约 43k 行。后端各模块、BPU、LLC、AXI 互联、前端 `front_comb_calc`、`rv_simu_mmu_v2.cpp` 都已重写或整理。
-- 速度（2026-11-03 的单次测量，机器有负载，仅供参考）：dhrystone 约 237 k cycles/s（原模型约 186 k），coremark10 约 140 k cycles/s。
-- 验证：gate 62/62（11-04 加入 `load-store-aligned`，原 `load-store` 在参考核里遇到未对齐 load 直接退出，没有基线）。
-- 未覆盖：MemSubSystem 外设（无测试覆盖）、两条没有测试能走到的 Ren 路径。front-door checkpoint 恢复已合入 `main`（默认关闭；用 `--restore-stub`）。
-
-**function-model**
-
-- 保持上游行为，我们加了一个"无副作用的虚实地址翻译"接口，供 trace-model 的桥使用；另有速度优化、front-door checkpoint 恢复，以及指令上限和 BBV 间隔的环境变量（`REF_MAX_INSTS`、`REF_INTERVAL`），均已在 `main`。
-
-**rtl**
-
-- 前端、后端、访存子系统和整核都已翻成 SystemVerilog：lint 干净；整核闭环（RTL 核 + RTL 访存子系统 + 参考的 DDR/外设模型）跑 66 个程序，周期数与参考一致；与 trace-model 的 63 个 smoke 程序周期数、指令数全部一致。
-- 边界对照是在**整程序周期数和指令数**层面，**模块边界与 trace-model 的逐拍对照还没做**（各模块是对着原参考模型的录制做的逐拍对照）。
-- **没有做过综合**；变异存活没有清零；`memory-stress`、`float_test` 没在闭环里跑过。这些和其他已知风险都登记在风险登记簿里。
-
-## 下一步
-
-1. 给总仓库和三个子仓库配置远程地址，把子模块 URL 改成真实地址，推送。
-2. 在小模块上做一次受限的综合检查（限制内存和时间），确认可综合。
-3. rtl 与 trace-model 的模块边界逐拍对照。
-4. 补跑 `memory-stress`、`float_test` 的闭环，以及完整的 68 个程序整程序锁步。
-5. 扩大 gate：现在的测试程序都很小。
-6. trace-model 里剩下的小优化（每项不到 3%）和状态标志的整理。
+- **配置**：第 3 批面积配置（EXP-005）正在合入 main：取指宽度 8、在飞分支 32、IQ 总项数 384→240、发射端口 22→18 等。quick SPEC 6 个程序 IPC −0.5%，受影响模块约 −161 万门（整机约 17%）。
+- **trace-model**：gate 62/62；Linux 启动到登录约 7–8 千万周期；quick/full SPEC 回放（580 个 rv32imab 检查点）。
+- **rtl**：lint 干净（按目录和整芯片）；66 个程序逐条对比全部通过、周期与 trace-model 逐个相等；有面积代理综合（`rtl/docs/09-synthesis-report.md`）；**还没有时序综合**，store 数据不在逐条对比范围内。已知风险见 [rtl/docs/08-risk-register.md](rtl/docs/08-risk-register.md)。
+- **在做的实验**：LD/STA IQ 合并、统一 FTQ 的 RTL 试做（见 [docs/TODO.md](docs/TODO.md)）。
 
 ## 复现
 
@@ -87,11 +65,11 @@ git submodule update --init          # 取出 function-model、trace-model、rtl
 gmake -C function-model librefcpu.a LDFLAGS="-lz"
 cd trace-model
 gmake LDFLAGS="-lz" -j8
-bash scripts/run_gate.sh build/simulator results/gate
+bash scripts/run_gate.sh build/simulator results/gate      # 62 个程序，周期等于 results/baseline/baseline.csv
 
-# rtl：lint、整核闭环、与 trace-model 对比（需要先构建 trace-model 和测试程序）
-cd rtl
-bash scripts/lint.sh
-bash tb/soc/build.sh && bash scripts/soc_smoke.sh 250000
-bash scripts/cmp_trace_model.sh
+# rtl：lint，带 function-model 逐条对比的整核门禁（需要先构建 trace-model 的测试程序）
+cd ../rtl
+bash scripts/lint.sh && bash scripts/lint_chip.sh
+SOC_FM=1 SOC_OUT=$PWD/build/soc_fm bash tb/soc/build.sh
+bash scripts/fm_gate.sh $PWD/build/soc_fm/obj/soc_tb $PWD/build/gate   # 66/66，并报告与 trace-model 周期不同的个数
 ```
