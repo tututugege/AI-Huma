@@ -4,9 +4,178 @@
 
 | 编号 | 日期 | 题目 | 分支 | 状态 | 一句话结论 |
 |---|---|---|---|---|---|
+| [EXP-005](#exp-005-opt1-的-spec-对比与不改结构的参数同步到-rtl) | 2026-11-05 | opt1 的 quick SPEC 对比；不改结构的参数（第 1–3 批）同步到 RTL | trace-model `exp/area-explore`、rtl `exp/batch1-params` | 未提交、未合入 | quick SPEC 6 个程序 opt1、第 3 批都慢 0.5%（gcc 1.3%）；第 1–3 批（不改结构的部分）RTL 门禁均 66/66、周期与 trace-model 一致，约省 161 万门、5 万触发器 |
+| [EXP-004](#exp-004-组合优化配置-opt1) | 2026-11-04 | 组合优化配置 opt1（MAX_BR 32、INT IQ 64 + 前面所有优化） | trace-model `exp/area-explore` | 未提交、未合入；SPEC 见 EXP-005 | 小程序几何平均持平，coremark 慢 1.8–2.7% |
 | [EXP-003](#exp-003-rob-与-prf-扩大到-256) | 2026-11-04 | ROB/PRF 扩大到 192、256 | trace-model `exp/area-explore` | 未提交、未合入 | 都翻倍到 256 只快约 0.8%（coremark 3%），ROB 128 合理 |
-| [EXP-002](#exp-002-全核面积浪费排查) | 2026-11-04 | 全核面积浪费排查：各 IQ、ibuf、front2back、分支资源、ALU/BRU 端口 | trace-model `exp/area-explore` | 未提交、未合入 | IQ 总项数 384→176、BRU 4→2 等组合后无性能损失；ROB 才是瓶颈；BPU 存储需大负载评估 |
+| [EXP-002](#exp-002-全核面积浪费排查) | 2026-11-04 | 全核面积浪费排查：各 IQ、ibuf、front2back、分支资源、ALU/BRU 端口 | trace-model `exp/area-explore` | 未提交、未合入 | IQ 总项数 384→192、BRU 4→2 等组合后无性能损失；BPU 存储需大负载评估（“ROB 是瓶颈”的说法已被 EXP-003 否定） |
 | [EXP-001](#exp-001-面积优化三个方向) | 2026-11-04 | 面积优化：FTQ 合并、LSU 端口、LD/STA IQ 合并 | trace-model `exp/area-explore` | 未提交、未合入 | 三个方向都能省面积，性能代价 0–1% |
+
+---
+
+## EXP-005 opt1 的 SPEC 对比与不改结构的参数同步到 RTL
+
+- **日期**：2026-11-05
+- **分支**：trace-model `exp/area-explore`（未提交）；rtl `exp/batch1-params`（未提交）；function-model `exp/spec-rv32imab`（SPEC 脚本，未提交）
+- **问题**：opt1 在 SPEC 上的性能代价多大？其中零风险的参数部分能否直接同步到 RTL，面积省多少？
+
+### SPEC 检查点重建（rv32imab）
+
+- 原检查点放在 `/tmp` 里，重启后丢失（见 EXP-004）。按原流程重建，改为 rv32imab（GCC 13.3，`-march=rv32ima_zicsr_zifencei_zba_zbb_zbs`），数据放在 `~/personal/AI-Huma-data/spec-rv32imab`。流程、参数、耗时见 `function-model/scripts/spec/README.md`。
+- 12 个程序的 BBV 全部跑完、输出与 SPEC 参考一致；检查点共约 60 GB。
+- 发现并修正 `pipeline.sh` 的误判：模拟器的 BBV 打印会插进 `RUN ... rc=0` 行中间，perlbench 和 sjeng 因此被判为“退出码非零”。现在先删掉这些插入的打印再校验。
+- 因为编译选项（加了 B 扩展、换了 GCC）变了，新的 IPC 不能和旧的 rv32ima 数字（quick 几何平均 2.356）直接比。
+
+### quick SPEC：基线 vs opt1（90% 权重的点，前门恢复，测 1000 万条）
+
+| 程序 | 点数 | 基线 IPC | opt1 | 变化 | opt1 + 统一 FTQ 上限 64 | 第 3 批（RTL 配置） |
+|---|---|---|---|---|---|---|
+| perlbench | 21 | 2.487 | 2.473 | −0.6% | — | 2.468（−0.8%） |
+| gcc | 31 | 2.600 | 2.568 | −1.2% | 2.567 | 2.566（−1.3%） |
+| mcf | 53 | 1.333 | 1.328 | −0.4% | 1.328 | 1.327（−0.5%） |
+| hmmer | 24 | 4.018 | 4.005 | −0.3% | 4.005 | 4.007（−0.3%） |
+| sjeng | 21 | 2.038 | 2.022 | −0.8% | — | 2.027（−0.5%） |
+| h264ref | 28 | 1.677 | 1.677 | 0.0% | 1.677 | 1.677（0.0%） |
+| 几何平均（4 个：gcc mcf hmmer h264ref） | | 2.198 | 2.187 | −0.5% | 2.187 | 2.187（−0.5%） |
+| **几何平均（6 个）** | | **2.216** | **2.204** | **−0.5%** | — | **2.204（−0.5%）** |
+
+- 所有点都跑完，无比对不一致。第 3 批（LD/STA IQ 不合并、各 64）与 opt1 几乎相同，说明 opt1 的 SPEC 损失来自第 1–3 批的参数，不来自 LD/STA 合并。统一 FTQ 的上限近似（`UFTQ_CAP=64`）和 opt1 结果相同。
+- gcc 损失最大的三个点原因各不同：在飞分支数顶到 32、STD IQ（16 项）满、STA 端口 3 个占满。只在 gcc 上逐项放宽验证：在飞分支回到 64 不起作用（2.568），STD IQ 32 只回到 2.572。差距不大，按用户决定不再追。
+
+### 第 1 批同步到 RTL：BACKEND_FETCH_WIDTH 8、MAX_BR_NUM 32、ibuf 64
+
+只改参数，RTL 结构不动。参数包由 `make cfg` 从 trace-model `config.h` 生成（这次用 `gen_cfg.sh -DCFG_BACKEND_FETCH_WIDTH=8 -DCFG_MAX_BR_NUM=32 -DCFG_IBUF_SIZE=64`），连带 `BR_MASK_WIDTH` 64→32、`BR_TAG_WIDTH` 6→5、`FTQ_OFFSET_WIDTH` 4→3。
+
+要修的地方（都是字段位宽写死成数字）：
+- 生成的 `back_top.sv`、`exu.sv` 以及手写的 `dispatch.sv`、`lsu.sv`、`rob.sv` 端口：`tools/dimmap.py` 加了字段位宽规则（`br_mask`/`clear_mask` 64 → `BR_MASK_WIDTH`，`br_id` 6 → `BR_TAG_WIDTH`，`ftq_offset` 4 → `FTQ_OFFSET_WIDTH`），`gen_backtop.py` 生成时用同一规则。改之前确认了重新生成与仓库里的文件完全一致。
+- 测试平台 `tb/soc/soc_tb.cpp` 按写死的位偏移从 LSU 的 `st_fld_q` 取 MMIO store 的地址/数据（88/91/155）。br_mask 变窄后字段前移，外设模型收到错字节：串口输出乱码，`supervisor-external-interrupt-vectored` 等不到中断。function-model 逐条对比不比较 store 数据，所以没报错。现在 `gen_soc_probe.py` 从参数包读出位宽，偏移按结构体布局计算。
+
+验证：
+- 新旧两套参数下，整芯片 Verilator `-Wall` 0 条警告，`lint.sh` 通过。
+- 整核测试平台 + function-model 逐条对比，66 个程序（gate、vm、dhrystone、coremark）两种参数都全部通过，串口输出逐字节一致。
+- 周期数：66 个里 3 个变化，与同参数的 trace-model 完全一致。
+
+| 程序 | 基线 | 第 1 批（RTL = trace-model） |
+|---|---|---|
+| coremark | 226,991 | 232,353（+2.36%，来自在飞分支 32） |
+| dhrystone | 150,838 | 150,582 |
+| prime | 11,760 | 11,591 |
+
+综合（`synth_module.sh`，`SYNTH_LIGHT=1 SYNTH_MEM=1`，与 `rtl/docs/09-synthesis-report.md` 同流程；基线数字与报告一致）：
+
+| 模块 | 基线单元数 | 第 1 批 | 变化 | 触发器 基线→第 1 批 |
+|---|---|---|---|---|
+| isu | 2,119,233 | 1,727,421 | −18% | 73,204 → 60,052 |
+| ren | 345,198 | 206,193 | −40% | 18,203 → 10,315 |
+| pre_idu_queue | 188,943 | 50,225 | −73% | 36 → 33 |
+| idu | 97,352 | 30,640 | −69% | 4,213 → 1,108 |
+| dispatch | 104,827 | 86,586 | −17% | 1,896 → 1,624 |
+| exu_ctrl | 22,016 | 14,129 | −36% | 5,486 → 4,586 |
+| prf | 376,833 | 372,609 | −1% | 2,310 → 1,606 |
+| rob | 235,182 | 234,791 | 0% | 17,802 → 17,674 |
+| 合计 | | | 约 −77 万（整机约 952 万的 8%） | 约 −2.4 万 |
+
+- 单元数不含存储阵列（保留为 `$mem`）。存储按位宽手算：FTQ 每项 1824→912 位，64 项省约 5.8 万位；ibuf 128×44 → 64×43，省约 2.8 千位。
+- `lsu_ring`、`lsu_stlf`、`idu_br_cp` 不变。
+
+### 第 2、3 批同步到 RTL：IQ 大小、front2back 深度、端口数
+
+- **第 2 批**（在第 1 批之上）：INT IQ 64、BR IQ 32、STD IQ 16、front2back FIFO 8。LD/STA IQ 仍分开各 64（合并要改结构，不在这一批）。
+- **第 3 批**（在第 2 批之上）：端口 LD/STA/STD/BRU 4/3/3/2。`ISSUE_WIDTH` 22→18、FU 总数 28→24、AGU 8→7、DCache miss 数 8→7、store 窗口 20→15 等随之变化。
+
+要改的地方：
+- trace-model `config.h` 新增标量 `IQ_INT_SIZE`、`IQ_LD_SIZE` 等（生成器只导出标量常量）；`gen_cfg_pkg.py` 同时读取 `frontend_feature_config.h` 的 FIFO 深度。`isu_pkg::iq_size()`（原来写死 128/64）和 `front_pkg` 的 FIFO 深度改为读参数包。
+- `dimmap.py` 新增规则：`ready_num` 8 位 → `IQ_READY_NUM_WIDTH`，`ftq_prf_pc_req/resp` 10 → `FTQ_PRF_PC_PORT_NUM`。
+- `lsu.sv`：20 个通道向量宽度、18 个循环上界写死为 4，改为按通道类型用 `LSU_LDU_COUNT`/`LSU_STA_COUNT`/`LSU_SDU_COUNT`/`LSU_LOAD_WB_WIDTH`。
+- **潜在 bug**：`lsu_core.sv` 的 store MMU 请求端口（`mmu_st_req_*`）按 load 端口数 `NLD` 声明，应为 `NST`。两者原来都是 4，所以一直没暴露。
+- `exu_ctrl_pkg::xc_fu_kind()` 中 LD/STA/STD 的 FU 编号区段写死，改为按端口基址推出；`isu.sv` 的配置自检从“发射宽度必须是 22”改为“ALU 组在端口 0–5”。
+
+验证（三批都做了）：
+- 基线、第 1、2、3 批四套参数：整芯片 Verilator `-Wall` 0 警告，`lint.sh` 通过。
+- 整核测试平台 + function-model 逐条对比：四套参数各 66/66 通过。改完 RTL 后用基线参数重跑，66 个程序的周期与改前逐个相同，串口输出逐字节一致。
+- 各批周期有变化的程序（第 1 批 3 个、第 2 批 9 个、第 3 批 26 个），RTL 与同参数的 trace-model 逐周期一致。`timer-mmio` 打印计时器读数，周期变了读数就变，属于正常差异。
+
+| 5 个小程序（RTL 周期） | 基线 | 第 1 批 | 第 2 批 | 第 3 批 |
+|---|---|---|---|---|
+| dhrystone | 150,838 | −0.17% | −0.42% | −0.27% |
+| coremark | 226,991 | +2.36% | +3.00% | +2.87% |
+| memory-stress-small | 189,128 | 0 | 0 | 0 |
+| matmul_fpu | 42,253 | 0 | +0.16% | +0.28% |
+| prime | 11,760 | −1.44% | −2.64% | −1.89% |
+| 几何平均 | | +0.14% | 0.00% | +0.19% |
+
+综合（同一流程，三套参数各综合一遍；`lsu`、`dcache` 等综合不出来的聚合模块没有算，所以是下限）：
+
+| 模块 | 基线 | 第 2 批 | 第 3 批 |
+|---|---|---|---|
+| isu | 2,119,233 | 1,072,997 | 1,029,239 |
+| prf | 376,833 | 372,609 | 282,121 |
+| ren | 345,198 | 206,193 | 206,193 |
+| rob | 235,182 | 234,791 | 201,297 |
+| pre_idu_queue | 188,943 | 50,225 | 49,764 |
+| exu（含 exu_ctrl 和各 FU） | 107,137 | 97,364 | 91,509 |
+| dispatch | 104,827 | 86,598 | 86,598 |
+| idu | 97,352 | 30,640 | 30,640 |
+| lsu_dc_req_st | 87,426 | 87,426 | 86,150 |
+| tlb_mmu | 60,793 | 60,793 | 53,454 |
+| 合计（上述 11 个，含 front2back） | 3,723,024 | 2,299,695 | 2,117,024 |
+| 触发器（同上范围） | 123,595 | 74,883 | 73,873 |
+
+- 第 3 批相比基线：约 −161 万门（整机约 952 万的 17%），约 −5 万触发器（整机约 18.1 万的 27%）。isu 减半，来自 IQ 总项数 384→240 和 br_mask 64→32。
+- 存储阵列另算：FTQ 约 −5.8 万位，ibuf 约 −2.8 千位，front2back 32→8 项约 −2.3 万位。
+- 端口减少还会缩小 DCache 写口、LSU 的 STA 通路，这部分在 `lsu`/`dcache` 聚合模块里，没有数字。
+
+### 后续
+
+- 第 1–3 批要合入 main，需要先把 trace-model 的 `CFG_*` 开关合入并改默认值（RTL 参数包从 main 的 `config.h` 生成），并按规则记录性能和综合结果。
+- LD/STA IQ 真合并、PTAB/front2back/FTQ 真统一：在 trace-model 里按真实硬件结构实现，再给 RTL 方案（进行中）。
+
+---
+
+## EXP-004 组合优化配置 opt1
+
+- **日期**：2026-11-04
+- **分支**：trace-model `exp/area-explore`，改动**未提交**
+- **问题**：在飞分支缩到 32、INT IQ 用 64，再叠加前面所有优化，整体性能怎样？
+- **配置 opt1**（构建命令在 `scripts/area/build_variants2.sh` 末尾）：
+
+| 项 | 原设计 | opt1 |
+|---|---|---|
+| `BACKEND_FETCH_WIDTH` | 16 | 8 |
+| MAX_BR_NUM（在飞分支） | 64 | 32 |
+| INT IQ | 128 | 64 |
+| BR IQ | 64 | 32（在飞分支只有 32 个，BR IQ 再大也用不上） |
+| LD / STA IQ | 64 / 64 | 合并为 64 |
+| STD IQ | 64 | 16 |
+| ibuf | 128 | 64 |
+| front2back FIFO | 32 | 8 |
+| 端口 LD/STA/STD/BRU | 4/4/4/4 | 4/3/3/2 |
+| 统一 FTQ（`UFTQ_CAP`，近似） | — | 分别测了不开和开 64 两种 |
+
+- IQ 总项数 384 → 176（64+64+16+32）；重命名检查点 64 份 → 32 份；br_mask 64 位 → 32 位（IQ、LDQ、STQ 每项都省 32 位）。
+
+### 结果
+
+**正确性**：gate 的 62 个程序全部跑完，逐条提交 difftest 无不一致。周期数和基线不同是预期的，因为配置变了。
+
+| 配置 | dhrystone | coremark | memory-stress-small | matmul_fpu | prime | 几何平均 |
+|---|---|---|---|---|---|---|
+| lean2（EXP-002，MAX_BR 64、INT 48、BR IQ 64） | −0.23% | −1.16% | 0 | +0.28% | −2.76% | −0.78% |
+| opt1 | −0.23% | +2.74% | 0 | +0.28% | −1.89% | +0.17% |
+| opt1 + 统一 FTQ 64 | −0.23% | +1.79% | 0 | +0.28% | −1.89% | −0.02% |
+
+- coremark 的损失来自在飞分支 32 和 BR IQ 32，和 EXP-002 的单项结果一致（单项各约 +2.4%）。其余负载不受影响。
+- 小程序几何平均基本持平。在飞分支 32 的代价集中在分支密集、长依赖的程序上，需要用 SPEC 确认。
+
+### quick SPEC 没有跑：检查点丢失
+
+- `scripts/spec/replay.sh quick` 需要 `/tmp/specref/ckpt/<bench>/*.gz` 和 `sp/<bench>.weights`，`function-model/mem/*.bin` 的 SPEC 镜像也不在了。
+- 原因：机器在 2026-11-04 15:30 重启过，macOS 重启时会清空 `/tmp`。这些检查点是生成的数据，不在任何仓库里。
+- `/tmp` 里还留着重启之后生成的东西：Linux 特殊检查点 `/tmp/ckpt`（595 MB）、`/tmp/linux_check.bin`、模块级综合结果 `/tmp/synth_results.txt`。下次重启也会丢，应该挪到持久目录。
+- **教训**：生成的检查点、镜像、综合结果不能只放在 `/tmp`，要放到持久目录，并在文档里写明位置和生成命令。
+
+### 后续
+
+- 重新生成 SPEC 检查点后，跑 quick SPEC：基线、opt1、opt1 + 统一 FTQ 64，另加 opt1 配 MAX_BR 64 作对照。
 
 ---
 
@@ -118,7 +287,7 @@
 lean 的 coremark 损失来自 BR IQ 32 和 MAX_BR 32；lean2 保留两者为 64 后，与基线持平。
 
 **lean2 节省（只算存储，手算）**：
-- IQ 384→176 项：约 39 Kb；唤醒比较器按 项数×2 源×15 个唤醒口 算，从 11,520 个降到 5,280 个。
+- IQ 384→192 项（48+64+16+64；2026-11-05 更正，原写 176 是 opt1 的数）：约 36 Kb；唤醒比较器按 项数×2 源×15 个唤醒口 算，从 11,520 个降到 5,760 个。
 - ibuf 64 项：约 2.8 Kb。
 - front2back 24 项：约 23 Kb（若同时做 EXP-001 的 FTQ 合并，按 278b/项算约 6.7 Kb）。
 - 端口：BRU 2 个，含配套的 FTQ PC 读口和 PRF 读口；STA、STD 各 1 个。
