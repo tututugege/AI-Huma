@@ -4,12 +4,38 @@
 
 | 编号 | 日期 | 题目 | 分支 | 状态 | 一句话结论 |
 |---|---|---|---|---|---|
+| [EXP-008](#exp-008-decode-宽度-8-降到-6) | 2026-11-05 | decode/rename 宽度 8→6（含 commit 宽度拆分）；前端取指仍为 8 | trace-model `exp/decode6` | 未提交、不合入；保持 8 | quick SPEC 几何平均 IPC −3.1%（hmmer −12%，其余 5 个 −1.1%）；损失来自 hmmer 的高 IPC 阶段，commit 宽度不是原因 |
 | [EXP-007](#exp-007-tage-备选提供者计数器更新) | 2026-11-05 | TAGE 训练时也更新备选提供者的计数器（`altpcpn` 的用途） | trace-model `exp/tage-alt`（工作区 `trace-model-tage`） | 未提交、不合入 | 6 个分支难预测的 SPEC 上 MPKI 变化 ±0.6%、IPC 不变；`altpcpn` 可以删除 |
 | [EXP-005](#exp-005-opt1-的-spec-对比与不改结构的参数同步到-rtl) | 2026-11-05 | opt1 的 quick SPEC 对比；不改结构的参数（第 1–3 批）同步到 RTL | trace-model `exp/batch3`、rtl `exp/batch3` | **已合入 main**（2026-11-05） | quick SPEC 6 个程序 opt1、第 3 批都慢 0.5%（gcc 1.3%）；第 1–3 批（不改结构的部分）RTL 门禁均 66/66、周期与 trace-model 一致，约省 161 万门、5 万触发器 |
 | [EXP-004](#exp-004-组合优化配置-opt1) | 2026-11-04 | 组合优化配置 opt1（MAX_BR 32、INT IQ 64 + 前面所有优化） | trace-model `exp/area-explore` | 未提交、未合入；SPEC 见 EXP-005 | 小程序几何平均持平，coremark 慢 1.8–2.7% |
 | [EXP-003](#exp-003-rob-与-prf-扩大到-256) | 2026-11-04 | ROB/PRF 扩大到 192、256 | trace-model `exp/area-explore` | 未提交、未合入 | 都翻倍到 256 只快约 0.8%（coremark 3%），ROB 128 合理 |
 | [EXP-002](#exp-002-全核面积浪费排查) | 2026-11-04 | 全核面积浪费排查：各 IQ、ibuf、front2back、分支资源、ALU/BRU 端口 | trace-model `exp/area-explore` | 未提交、未合入 | IQ 总项数 384→192、BRU 4→2 等组合后无性能损失；BPU 存储需大负载评估（“ROB 是瓶颈”的说法已被 EXP-003 否定） |
 | [EXP-001](#exp-001-面积优化三个方向) | 2026-11-04 | 面积优化：FTQ 合并、LSU 端口、LD/STA IQ 合并 | trace-model `exp/area-explore` | 未提交、未合入 | 三个方向都能省面积，性能代价 0–1% |
+
+---
+
+## EXP-008 decode 宽度 8 降到 6
+
+- **日期**：2026-11-05
+- **分支**：trace-model `exp/decode6`（改动未提交，工作区 `trace-model`）
+- **问题**：前端一次给 8 条，后端 decode/rename 改成 6 宽（issue 宽度由 FU 个数决定，本实验未动 FU），性能代价多大？
+- **方法**：`config.h` 新增 `CFG_DECODE_WIDTH`（默认 8）、`CFG_ROB_BANK_NUM`（ROB 行宽 = commit 宽度，默认等于 decode 宽度，可以更大）；放宽两处断言。**顺带修了 `make_rob_idx`**：原来用 `(line*BANK)|bank`，BANK 不是 2 的幂时索引错、ROB 死锁，改为 `+`（BANK=8 时等价，gate 62/62 不变）。ROB 每行放一个 decode 组，容量按行数算：6 宽时 ROB=126（21 行）；行宽 8 时 ROB=176（22 行），使行数相近。默认配置 gate 62/62；两种 decode=6 配置 62 个小程序 difftest 全过、无死锁。
+- **负载**：quick SPEC（6 个程序，129 个点），基线为第 3 批（EXP-005）。
+
+| 程序 | decode 8 | decode 6（commit 6，ROB 126） | 变化 |
+|---|---|---|---|
+| perlbench | 2.468 | 2.414 | −2.2% |
+| gcc | 2.566 | 2.570 | +0.2% |
+| mcf | 1.327 | 1.315 | −0.9% |
+| hmmer | 4.007 | 3.513 | −12.3% |
+| sjeng | 2.027 | 2.008 | −0.9% |
+| h264ref | 1.677 | 1.648 | −1.7% |
+| 几何平均 | 2.204 | 2.136 | −3.1% |
+
+- **拆分实验**（只跑 hmmer，24 个点）：decode 6、commit 8、ROB 176 → IPC 3.434（−14.3%），没有比 commit 6 更好。commit 宽度不是原因；那 2% 的差别原因未查（推测行宽 8 时每行有空槽）。
+- **原因**（埋点 `CFG_DW_HIST`：每拍 decode 取走几条；每拍被计两次，已按 IPC 校准，只看占比）：hmmer 有基线 IPC 5.8–6.4 的点，这些点掉 19–21%；sp5（IPC 6.42→5.07）decode 8 时 77% 的周期取满 8 条，6 宽就是硬上限；sp4（3.52→3.14）呈“取满 8 或取 0”的双峰，后端停顿后 decode 追赶变慢。两个点里队列积压超过 12 条的周期都 >90%，前端不是瓶颈。decode 取 0 条的周期占 20–40%（后端反压），具体哪项资源满了未查。
+- **结论**：decode 6 对多数程序约 −1%，对 hmmer 这类高 IPC 程序 −12% 以上，无廉价补救。**不合入，保持 8。** 未做：decode 7；FU 裁剪（瓶颈在 decode，单独裁 FU 只会更差）；其余程序的拆分实验。
+- **复现**：`gmake EXTRA_CXXFLAGS="-DCFG_DECODE_WIDTH=6 -DCFG_ROB_NUM=126" BUILD_DIR=build_area/dw6 LDFLAGS="-lz"`；拆分用 `-DCFG_DECODE_WIDTH=6 -DCFG_ROB_BANK_NUM=8 -DCFG_ROB_NUM=176`；回放结果在 `~/personal/AI-Huma-data/spec-rv32imab/tm/{dw6,dw6b8}`。
 
 ---
 
@@ -38,6 +64,138 @@
 - **复现**：`gmake EXTRA_CXXFLAGS="<第 3 批默认> -DCFG_TAGE_ALT_UPDATE=1" BUILD_DIR=build_area/alt`，`replay_one.sh` 回放，结果在 `~/personal/AI-Huma-data/spec-rv32imab/tm/{b3,tagealt}`。
 
 ---
+
+## EXP-006 用 DRAMsim3 替换固定延迟的 SimDDR，去掉 AXI 子系统分频
+
+日期 2026-11-05。分支 `trace-model` 的 `exp/dram-sim`（工作目录 `trace-model-dram`，基于 `exp/batch3` 的 `08e9cfe`，未提交、未合入）。
+
+### 动机
+
+现有 `SimDDR` 只有固定 60 个 tick 的读延迟（`CONFIG_SIM_DDR_LATENCY`），不看地址：没有 bank/row、刷新、读写争用。后续要去掉"DDR 分频"、外接开源 DRAM 模拟器，先在 trace-model 上验证接入方式和影响。
+
+### 现有的"分频"是什么
+
+`CONFIG_AXI_SUBSYSTEM_FREQ_DIV = 16`（trace-model 与 `rtl/tb/soc/platform` 的 `config.h` 里都有）：AXI 互联、LLC、DDR、MMIO 每个核心周期跑 16 个 tick（`run_extra_axi_subsystem_ticks`，全空闲时提前跳过）。所以基线的"60 周期 DDR 延迟"其实是 60 个子系统 tick = 3.75 个核心周期，远小于真实 DRAM 延迟。这个分频让存储相对核心快 16 倍。
+
+### 方法
+
+- 选 DRAMsim3（umd-memsys，C++，tick 驱动，克隆到 `AI-Huma-data/third_party/DRAMsim3`，编成 `libdramsim3.dylib`；macOS 上 cmake 需加 `-DCMAKE_POLICY_VERSION_MINIMUM=3.5`）。
+- 开关：`gmake DS3=1 BUILD_DIR=build_ds3 LDFLAGS="-lz"`（编译宏 `SIM_DDR_DS3`），默认关闭。**DS3 构建同时把 `CONFIG_AXI_SUBSYSTEM_FREQ_DIV` 定为 1（不分频）**，一次 `SimDDR::seq()` 就是一个核心周期。关闭 DS3 时代码与基线完全相同：dhrystone 150,427、coremark 233,515、memory-stress-small 189,128，gate 62/62 通过。
+- **核心频率可配置**：编译期 `gmake CPU_FREQ_MHZ=1000`（`CONFIG_CPU_FREQ_MHZ`，默认 500），运行期环境变量 `CPU_FREQ_MHZ=1000` 覆盖。它决定 DRAM 时钟与核心时钟的比例，以及附加延迟（ns）折算成多少个核心周期。
+- 实现：`sim_ddr/include/SimDDR_DS3.h`（后端）加 `SimDDR.cpp/.h`、`rv_simu_mmu_v2.cpp` 里 `#ifdef` 的几处改动。AXI 前端（AR/AW 队列、W FIFO、R burst 排放）不变。
+  - 读：每个 AR 拆成 64 B 的 DRAM 读，按序送入 DRAMsim3；所有行返回后，再加固定附加延迟才允许吐数据。
+  - 写：W FIFO 排空后拆成 64 B 写送入 DRAMsim3；被接收后返回 B（posted 写）。
+  - 时钟：按飞秒累计时间，每个 tick 补足所需的 DRAM `ClockTick`（DDR4-3200 的 tCK = 0.63 ns）。保留分频时，被跳过的空闲 tick 也会推进 DRAM 时间。
+  - 读写数据相的互斥和 turnaround 在该模式下关闭（总线由 DRAMsim3 负责）。
+- 其他环境变量：`DS3_CONFIG`（ini，默认 DDR4_8Gb_x16_3200）、`DS3_EXTRA_NS`（默认 SOC+CDC = 32 ns）、`DS3_OUT`、`DS3_STATS=1`（退出时打印读数、平均/最大读延迟、写数、反压次数）。
+
+### 模型近似（要记住）
+
+- 附加延迟是常数：SoC、CDC 以及 PHY 路径 DRAMsim3 不建模。默认 32 ns 只取 SOC+CDC，CTL 与 PHY 的 28 ns 假定已被 DRAMsim3 自身的控制器延迟和 CL/tRCD 覆盖，没有校准过。
+- 读按 AR 顺序整笔发出；SimDDR 前端仍按事务 round-robin 排放数据。
+- 数据不存在 DRAMsim3 里，功能内存仍在 trace bridge。
+
+### 勘误
+
+本记录的第一版（同日早些时候）把每个 `seq()` 当成一个完整核心周期，没有计入 16 倍分频，延迟换算偏小，结论"小负载对 DRAM 不敏感、周期变化 ±1%"是错的，已作废。下面的数字是修正后的。另有一次增量编译混用了不同分频的目标文件，已用干净构建重测。
+
+### 结果 1：分频的影响（原 SimDDR，不用 DS3）
+
+| 程序 | 分频 16（基线） | 不分频（`FREQ_DIV=1`） | 变化 |
+|---|---|---|---|
+| dhrystone | 150,427 | 159,053 | +5.7% |
+| coremark | 233,515 | 250,834 | +7.4% |
+| memory-stress-small | 189,128 | 342,754 | +81% |
+| gate 62 个 | — | 平均 +151%，中位 +146% | 最大 +441% |
+
+不分频后固定 60 周期延迟才是真正的 60 个核心周期（120 ns）。基线的数字是靠分频"偷"来的。
+
+### 结果 2：不分频，DRAMsim3 对比原 SimDDR（CPU 500 MHz，DDR4-3200，附加 32 ns）
+
+| 程序 | 原 SimDDR | DS3 | DS3 平均读延迟 |
+|---|---|---|---|
+| dhrystone | 159,053 | 155,600 | 62.0 ns |
+| coremark | 250,834 | 246,150 | 57.7 ns |
+| memory-stress-small | 342,754 | 342,452 | 89.9 ns |
+| gate 62 个（对 baseline.csv） | 平均 +151% | 平均 +80%，中位 +78% | — |
+
+DS3 的读延迟 58–90 ns 比固定的 120 ns 低，所以周期更少；memory-stress-small 的差别小，因为它的瓶颈是带宽而不是延迟。
+
+### 结果 3：核心频率（不分频，DS3，DDR4-3200）
+
+| CPU 频率 | dhrystone | coremark | memory-stress-small | memory-stress-small（64 KiB LLC） |
+|---|---|---|---|---|
+| 500 MHz | 155,600 | 246,150 | 342,452 | 571,850 |
+| 1000 MHz | 158,756 | 250,658 | 343,975 | 799,040 |
+| 2000 MHz | 164,862 | 260,914 | 366,989 | 1,335,536 |
+
+频率翻倍，DRAM 延迟折合的核心周期数翻倍：dhrystone 每翻倍约 +2–4%，访存密集的 memory-stress-small（64 KiB LLC，约 2.3 万次读、1.1 万次写）约 +40–67%。
+
+### 结果 4：gate 全集（不分频 DS3，500 MHz）
+
+62 个测试里 61 个正常退出；`dcache-conflict-writeback` 超过 gate 的 4 倍基线周期上限（3,616）而被判超时，原 SimDDR 不分频时同样超限。提交指令数 58 个与基线相同，另 4 个不同：3 个是中断类（`interrupt-vectored`、`supervisor-external-interrupt-vectored`、`timer-interrupt-mask`，中断到达点随周期变化，预期）以及上面那个超时的。默认的 `[TB_CHECK]` 没开比较（compared=0），所以正确性只靠提交数一致和正常退出，没有跑 difftest 逐条比较。
+
+### 结论
+
+- 接入可行：AXI 端口不变，只换时序；关闭 DS3 与基线逐周期相同。
+- 现有 16 倍分频掩盖了 DRAM 延迟：不分频后原模型就比基线慢 5–80%（gate 平均 +151%）。以后凡是不分频，基线周期数、gate 的 baseline.csv、docs 里的标准周期都要重新生成。
+- DRAMsim3 给出 58–90 ns 的平均读延迟，比固定 60 周期（120 ns）更合理，并且随地址和读写争用变化。
+- 核心频率会明显改变结果，需要在记录里标明频率；默认 500 MHz。
+
+### RTL 侧同步（2026-11-05，`rtl` 的 `exp/dram-sim`，工作目录 `rtl-dram`，基于 `exp/batch3` 的 `52d2b84`，未提交）
+
+RTL 里的 16 倍分频是 `mem_top` 的 4 位 `phase_q`（每 CPU 周期 16 个快 tick，`phase0` 是 tick 0、`phase_last` 是 tick 15），`axi_cpu_port_adapter`、`dcache_resp`、`mem_axi` 的累积/锁存逻辑都按 `phase0`/`phase_last` 写，所以把它参数化即可，不需要改这些模块：
+
+- `trace-model/include/config.h` 新增 `constexpr int AXI_SUBSYSTEM_FREQ_DIV`，`gen_cfg.sh` 把它带进 `ttg_cfg_pkg.sv`（用 `SIM_SRC=<trace-model-dram 的绝对路径> scripts/gen_cfg.sh` 重新生成；新包只多这一项，并更新了 `CONFIG_CPU_CYCLE_FS` / `CONFIG_SIM_DDR_LATENCY_CALC` 两个随频率变化的派生值）。
+- `mem_top.sv`：`phase_q` 在 `TICKS-1` 后回 0，`phase_last = (phase_q == TICKS-1)`；`TICKS = AXI_SUBSYSTEM_FREQ_DIV`，取 16 时与原来逐位相同，取 1 时 `phase0` 和 `phase_last` 恒为 1。
+- `tb/soc/soc_tb.cpp`：`kTicks` 取自平台 `config.h`（`CONFIG_AXI_SUBSYSTEM_FREQ_DIV`，现为 1）；空闲 tick 跳过只在 16 tick 时启用；`ddr_idle` 改用 `idle_quiescent()`；复位期间不推进 DDR 模型（否则 DRAMsim3 的时钟比 trace-model 早 3 个周期，所有程序差 1 周期）。
+- 平台模型 `tb/soc/platform`：`config.h` 改为不分频、1 GHz；`SimDDR.cpp/.h` 换成 trace-model 的版本加 DRAMsim3 后端，再加编译宏 `SIM_DDR_DATA`（读数据取自、写数据落到 `PhysMemory`，复刻原 `do_memory_read/do_memory_write`；trace-model 构建不开它）。
+- `tb/soc/build.sh`：默认带 DRAMsim3（`DS3=0` 退回固定延迟，`DS3_DIR` 指向 DRAMsim3 目录），并一律定义 `SIM_DDR_DATA`。
+- `scripts/ref_cycles.txt`：66 项参考周期用新基线的 trace-model 重新生成。
+
+结果（整核测试平台，带功能模型逐条比对）：
+
+| 检查 | 结果 |
+|---|---|
+| `fm_gate.sh`（66 个程序） | 66/66 通过，没有功能模型不一致 |
+| 周期与新 trace-model 逐个相等 | 修复 store 窗口后 66/66 相等（修复前 62/66，见下） |
+| 不相等的 4 个 | dcache-conflict-writeback 4,271（tm 4,293）、matmul_fpu 43,242（43,256）、memory-stress-small 343,543（343,975）、pascal 1,785（1,747） |
+| `DS3=0`（固定延迟）、同样不分频 | RTL 与 trace-model 在 add、dummy、fib、crc32 上逐个相等；同样那 4 个程序也不相等（pascal 1,823 对 1,748 等），所以差异**与 DRAMsim3 无关**，来自不分频本身 |
+
+RTL 仿真速度（同一台机器、单次运行、未做负载控制）：不分频后 dhrystone 36.0 s → 4.4 s、coremark 50.9 s → 6.9 s，约快 8 倍（周期数不同，折算每秒仿真周期约 4.2 千 → 36 千，也是约 8.6 倍）。原因是每个 CPU 周期只需 1 个 tick，不再是 16 个，也不再需要空闲 tick 跳过。旧数字用 `rtl/build/soc_fm_b3`（16 tick，固定延迟 SimDDR），新数字用 DRAMsim3 版本。
+
+**原因已查清并修复**：RTL 的 LSU 把所有队列扫描窗口都写成 `WIN = LSU_LOAD_WINDOW_WIDTH`（注释写"== `LSU_STORE_WINDOW_WIDTH`"），第 3 批把端口改成 LD 4 / STA 3 之后，load 窗口是 4×5 = 20，store 窗口是 3×5 = 15，两者不再相等；trace-model 的 store 提交窗口 `comb_lsu2dcache_stq` 用 `LSU_STORE_WINDOW_WIDTH`（15），RTL 的 `lsu_dc_req_st` 却看 20 个。链头的 store 因 DCache 重放卡住时，RTL 会提前发出窗口 15 之外的 store（pascal 在 cycle 1031 发出 `0x80000178`，trace-model 到 1038 才发）。16 倍分频时 store 响应在额外 tick 里很快回来，链头不会卡住，所以这个差别一直没有被周期对比抓到。定位办法：逐周期打印 LSU 到 DCache 的 load/store 端口请求与响应、`mshr_fill`，两边第一个不同的输入就是这个 store 请求，再对照 `RealLsu.cpp` 的窗口。
+
+修复：`lsu_pkg.sv` 新增 `STWIN = LSU_STORE_WINDOW_WIDTH`，`lsu_dc_req_st.sv` 的窗口成员改为 `stq_ccount > q && q < STWIN`。修复后固定延迟（`DS3=0`）下 4 个程序全部与 trace-model 相等（pascal 1,748、matmul_fpu 43,272、memory-stress-small 342,754、dcache-conflict-writeback 4,454），DRAMsim3 下 `fm_gate.sh` 66/66 通过，**66 个程序周期与新 trace-model 全部相等**；`lint.sh` 和 `lint_chip.sh` 通过。
+
+仍有隐患：RTL 的其他 store 队列窗口（`wait_mmu_stq`、`mmu_done_stq` 等，经 `lsu_pkg.sv` 里的通用 `ring_apply` 用 `WIN`）同样按 20 处理，trace-model 用 15；这 66 个程序没有触发，修它需要给 ring 操作带上窗口参数，尚未做，已记入风险。（后来在 rtl 分支 `exp/lsu-stwin`（`b94b4f5`）里修了全部 store 侧队列窗口，包含这两个 ring，尚未合入；本分支的 `0fce9a6` 只修了提交窗口，是它的子集。）
+
+RTL 仿真提速试验（同日，dhrystone 158,756 周期，墙钟秒；机器上同时跑着另一个 4 线程的 Linux 启动，数字有噪声，每项重复 2–3 次）：
+
+| 变化 | 墙钟 | 说明 |
+|---|---|---|
+| 基线（`--threads 4`，`-O2`） | 4.5–4.7 | |
+| `mem_top` 在 `TICKS==1` 时把 `phase0`/`phase_last` 做成编译期常量 | 4.4–4.5 | 约 2–3%，周期不变；`fm_gate` 66/66、周期全部相等 |
+| 再加 `-O3 -march=native`（`SOC_COPT`） | 4.2–4.3 | 再约 4–5% |
+| `--threads 1 / 2 / 4 / 6 / 8` | 10.5 / 6.4 / 4.5 / 5.0 / 7.4 | 4 线程最好，线程更多反而慢（本机 14 核，被另一个进程占去 4 个） |
+
+结论：模型很大，多线程收益显著（1 → 4 线程快 2.3 倍），但 4 线程已是拐点；剩下的收益要靠减少每周期的 `eval()` 次数、DRAMsim3 空闲快进和缩小设计状态，本次未做。`phase0` 常量化已保留在 `mem_top.sv`；`-O3` 未改默认值，用 `SOC_COPT="-O3 -march=native"` 打开。
+
+Linux 启动（RTL，不分频 + DRAMsim3 + 1 GHz，`SOC_TB_FM=1 SOC_TB_SEMIHOST=1`，镜像 `AI-Huma-data/linux/linux.bin`）：
+
+- 第一次在内核初始化末尾被 `axi_llc_rq.sv:95` 的断言（读响应队列满）中止。该队列深度 `RQD=4` 是按 16 tick 下"程序最多 1、随机测试最多 3"定的；不分频后互联每个核心周期只排空一次，Linux 的 DCache 重填并发更高，于是溢出。trace-model 的对应队列是 32 项，且没有溢出断言，所以没有报错；不分频的 trace-model 没有跑过 Linux，实际最大占用未知。
+- 先把 `RQD` 改为 32（与 trace-model 一致）后重跑：启动到 `rv32 login:`，日志（`rtl_dram_boot2.log`）没有断言、没有功能模型不一致行；到登录后手动结束进程，因此没有 `[FM] N instructions checked` 汇总行，也没有总周期数。
+- 在不分频 trace-model（DRAMsim3、1 GHz）上加临时占用探针跑 Linux 启动到 `rv32 login:`：master 0 排队峰值 1、master 1（DCache MSHR）排队峰值 4，加输出寄存器后的总占用分别为 2 和 5；dhrystone、coremark、memory-stress、memory-stress-small 的队列都没被用到。RTL 的断言是 `总占用 ≤ RQD`，原 `RQD=4` 正好在总占用到 5 时溢出，与实测吻合。**决定 `RQD = 8`**（最小可用 5，留 3 的余量，比 32 省约四分之三的队列存储）。RTL 一侧的同样探针测量被我中途结束，没有出结果。
+- 遗留：`RQD=8` 只按 Linux 启动一个大负载定；SPEC 等其他大负载未测。其他按 16 tick 下的小程序测出来的小深度队列可能同样不够，尚未逐个检查。
+
+### 后续
+
+- **已决定（2026-11-05）：不分频 + DRAMsim3 + 默认 1 GHz 作为新基线**（trace-model 侧已完成：`config.h` 默认 `FREQ_DIV=1`、`CPU_FREQ_MHZ=1000`，Makefile 默认 `DS3=1`，`baseline.csv` 已重生成，gate 62/62，大程序标准周期见 trace-model `docs/PROJECT.md`）。新旧基线周期对比：gate 平均 +146%、中位 +135%，dhrystone 150,427 → 158,756，coremark 233,515 → 250,658，memory-stress 1,541,195 → 2,425,029，memory-stress-small 189,128 → 343,975。RTL 侧已同步（见下一节），66 个程序周期与 trace-model 全部相等。
+- 开启 difftest 逐条比较重跑 gate；用 Linux 启动片段、SPEC 检查点（不要用 cjpeg/linear_alg/parser/sha）测带宽和 bank 冲突敏感的负载。
+- 校准附加延迟，或与 RTL 闭环里的 SimDDR 对齐；试 DRAMsim3 的地址映射和 open/close page。
+- RTL 其他 store 队列窗口（`wait_mmu_stq`、`mmu_done_stq`）与 trace-model 的 15 不一致，需给 `ring_apply` 带窗口参数。
+- RTL 侧合入 `main` 前还要跑 Linux 启动（`SOC_FM=1 SOC_TB_SEMIHOST=1`，数小时）和综合对比。
+- Ramulator 2.0 作为后备，未试。
 
 ## EXP-005 opt1 的 SPEC 对比与不改结构的参数同步到 RTL
 
