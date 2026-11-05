@@ -1,22 +1,32 @@
 # AI-Huma
 
-一个乱序 RISC-V CPU 的项目：用 AI 和人协作，把一个 RTL 风格的周期精确 C++ 模型，蒸馏成紧凑、快速、周期完全一致的  
-trace 模型，再生成并验证与之逐拍一致的 RTL。之后通过三个model协同交互迭代，目标是成为 Agentic CPU 训练大师。
+AI-Huma 是一个乱序 RISC-V CPU 的设计项目：人定方向和验收标准，AI 做大部分设计、验证和实现工作。
+
+我们从一个已有的开源模拟器（tututugege/simulator，RTL 风格、周期精确的 C++ 乱序核）出发，先把它变成自己的起点：蒸馏出快速、可读的时序模型 trace-model，逐模块翻译出 RTL，再配上功能模型 function-model 做正确性对照。这一步在 2026-11-04 完成，**它只是开始**。
+
+现在项目的重心是**自己的优化**：每个想法先在 trace-model 上量化（性能、面积代价），结论再同步到 RTL，用功能模型保证正确，记录下来，合入 main。第一项落地的成果是“第 3 批面积配置”（[EXP-005](docs/EXPLORATION.md)）：IPC 只降 0.5%，受影响模块少了约 17% 的门。长期目标是让三个模型协同迭代，成为 Agentic CPU 训练大师。
 
 ## 名字的由来
 
 AI-Huma 有两层意思：
 
-1. **AI + Human**：项目由人定方向、定验收标准，AI 做大部分重写、验证和翻译工作。
+1. **AI + Human**：项目由人定方向、定验收标准，AI 做大部分设计、验证和实现工作。
 2. **Al-Huma(**アル・ヒューマ**)**：致敬作者最喜欢的动漫角色雷姆（Re:Zero）的魔法。
+
+## 发展阶段
+
+| 阶段 | 时间 | 做了什么 |
+|---|---|---|
+| 建立起点 | 至 2026-11-04 | 从 tututugege/simulator 蒸馏出 trace-model（代码从约 8.4 万行降到 4.3 万行、更快，周期与原模型完全一致）；逐模块翻译出 RTL，与原模型逐拍对照；接入 function-model。逐拍对照体系完成使命后退役（rtl `docs/history/`、标签 `legacy-reference`）。 |
+| 自主优化 | 2026-11-04 起 | 正确性改为对照 function-model，周期不再要求与原模型一致；建立探索 → 验证 → 合入 main 的流程（[WORKFLOW.md](docs/WORKFLOW.md) 第 4–6 节）；重建 SPEC 检查点；第一次合入：第 3 批面积配置。正在做：LD/STA 发射队列合并、统一 FTQ（[TODO.md](docs/TODO.md)）。 |
 
 ## 三个部分
 
 | 部分 | 目录 | 作用 |
 |---|---|---|
 | **function-model** | `function-model/` | 功能模型：只管指令执行的结果（寄存器、访存、CSR、分页），不管时序。基于 tututugege/GenSimpoint，库名 `librefcpu`。也负责 SPEC 的 BBV/SimPoint/检查点生成。 |
-| **trace-model** | `trace-model/` | 时序模型：由 tututugege/simulator 蒸馏而来，不再计算数据值，分支方向/目标、地址、store 数据、CSR 写数据都来自功能模型提供的“事实”，只保留周期精确的时序行为。核参数的唯一来源（`include/config.h`），也是架构探索用的模型。 |
-| **rtl** | `rtl/` | SystemVerilog 实现（约 270 个 RTL 文件、2.6 万行），整核测试平台（Verilator）逐条提交对比 function-model；参数包由 trace-model 的 `config.h` 生成。 |
+| **trace-model** | `trace-model/` | 我们的时序模型和架构探索平台：起点由 tututugege/simulator 蒸馏而来，不计算数据值，分支方向/目标、地址、store 数据、CSR 写数据都来自功能模型提供的“事实”，只保留周期精确的时序行为。核参数的唯一来源（`include/config.h`）。 |
+| **rtl** | `rtl/` | 我们的 SystemVerilog 实现（约 270 个 RTL 文件、2.6 万行）：起点由原模型逐模块翻译，现在随优化独立迭代；整核测试平台（Verilator）逐条提交对比 function-model；参数包由 trace-model 的 `config.h` 生成。 |
 
 三者的关系：function-model 定义“对不对”（架构行为），trace-model 定义“快不快”（周期）并用来做架构探索；rtl 的架构行为必须与 function-model 一致，合入 main 时同一配置下的周期必须与 trace-model 逐个程序相等。
 
@@ -45,9 +55,9 @@ git submodule update --init          # 取出 function-model、trace-model、rtl
 ## 核心原则
 
 - **正确性 = 架构行为与 function-model 一致**（2026-11-04 起）。RTL 整核测试平台每提交一条指令，function-model 执行一条，比较提交 PC 和目的寄存器的值；Linux 从复位启动到登录提示符是整机检查。
-- **周期数、IPC 是性能指标**。trace-model 是性能参考和架构探索模型；探索的结论（例如第 3 批面积配置）先在 trace-model 上验证，再同步到 RTL，合入 main 时两者周期逐个相等。
+- **周期数、IPC 是性能指标，也是优化的对象**。原模型的周期只是起点，不再是标准；探索的结论先在 trace-model 上验证，再同步到 RTL，合入 main 时两者周期逐个相等。
 - **旧的逐模块锁步 / trace 回放 / 变异检查体系已退役**（代码在 rtl 标签 `legacy-reference`，文档在 `rtl/docs/history/`）。
-- **目标是方法，而不只是代码**：能否把一个周期精确模型系统地变得更小、更快，并留下可复用的验证手段。
+- **目标是方法，而不只是代码**：AI 和人能否系统地做 CPU 架构优化——每个想法先在模型上量化，再落到 RTL，保证正确，留下可复用的验证手段和完整记录（包括负面结果）。
 
 ## 当前状态（2026-11-05）
 

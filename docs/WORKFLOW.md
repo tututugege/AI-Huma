@@ -1,6 +1,6 @@
 # AI-Huma 工作流程与 harness 要求
 
-适用于 `function-model`、`trace-model`、`rtl` 三个仓库。
+适用于 `function-model`、`trace-model`、`rtl` 三个仓库。项目已经过了“复刻原模型”的阶段，现在的工作是在自己的 base 上做优化：本文规定一个想法怎样被量化（第 4–5 节）、怎样同步到 RTL 并合入 main（第 6 节）。
 
 ## 1. 分支与提交规则
 
