@@ -69,6 +69,8 @@
 
 日期 2026-11-05。分支 `trace-model` 的 `exp/dram-sim`（工作目录 `trace-model-dram`，基于 `exp/batch3` 的 `08e9cfe`，未提交、未合入）。
 
+> **2026-11-06 更新：附加延迟默认值由 32 ns 改为 60 ns，基线已重做**（见下面"基线重做"一节）。本节前面各表（结果 1–4、SPEC、估算分数、`RQD` 测量）都是 32 ns 版本的数字，保留作为历史；当前基线的数字以"基线重做"一节和 trace-model `docs/PROJECT.md` 为准。
+
 ### 动机
 
 现有 `SimDDR` 只有固定 60 个 tick 的读延迟（`CONFIG_SIM_DDR_LATENCY`），不看地址：没有 bank/row、刷新、读写争用。后续要去掉"DDR 分频"、外接开源 DRAM 模拟器，先在 trace-model 上验证接入方式和影响。
@@ -223,6 +225,43 @@ SPEC CPU2006 整数 checkpoint 回放（trace-model，新基线：不分频、DR
 结论：去掉 16 倍分频、换成 DRAMsim3 之后，访存密集的程序掉得最多（mcf −64%、gcc −36%），计算密集的掉得少（hmmer −6%），符合"分频让 DRAM 相对核心快了约 13 倍"的判断。旧数字是偏乐观的，新数字才反映 1 GHz 核心配 DDR4 的情况。附加延迟 32 ns 仍未校准，绝对值会随它变。
 
 DRAMsim3 依赖（同日）：改为 trace-model 仓库的固定版本子模块 `third_party/DRAMsim3`（`2981759`）；Makefile 把它的 12 个源文件直接编成 `build_dramsim3/libdramsim3.a`（`gmake dramsim3`，不用 cmake、不用动态库、不设 rpath、不往子模块里写文件），RTL 的 `tb/soc/build.sh` 链接同一个静态库（`TM_DIR` 指定 trace-model 目录）。克隆后要 `git submodule update --init third_party/DRAMsim3`。验证：全新 `BUILD_DIR` 构建后 gate 62/62、dhrystone 158,756、coremark 250,658（与动态库版相同）；`DS3=0` 仍可不带 DRAMsim3 构建；RTL `fm_gate.sh` 66/66、66 个周期与 trace-model 全部相等。
+
+### 基线重做：非核心延迟 60 ns（2026-11-06）
+
+原因：32 ns 只取了 SOC+CDC，理由是控制器和 PHY 已被 DRAMsim3 覆盖；这个假设不成立（DRAMsim3 只建模命令调度和 DRAM 时序，不含控制器流水线和 PHY）。`config.h` 里本来的非核心路径是 SOC 20 + CDC 12 + CTL 15 + PHY 13 = 60 ns，设计读延迟 `CONFIG_SIM_DDR_LATENCY_CALC` = 86 ns。改成 60 ns 后 dhrystone/coremark 的平均读延迟约 85–87 ns，与 86 ns 吻合（32 ns 时 56–58 ns，memory-stress-small 81 ns → 105 ns）。`DS3_EXTRA_NS` 仍可覆盖。
+
+DDR 配置：DRAMsim3 `DDR4_8Gb_x16_3200`（tCK 0.63 ns，CL/tRCD/tRP 22，1 通道、64 位、2 bank group × 4 bank、BL8、open page、地址映射 `rochrababgco`、rank 级交错刷新），与 `config.h` 里原来的 CL 22 / tRCD 22 / tRP 22 / 1600 MHz 一致。
+
+| 程序 | 32 ns | 60 ns |
+|---|---|---|
+| dhrystone | 158,756 | 162,033 |
+| coremark | 250,658 | 255,335 |
+| memory-stress | 2,425,029 | 2,428,470 |
+| smc-div | 11,096 | 11,348 |
+| smc-addi | 10,966 | 11,218 |
+| memory-stress-small | 343,975 | 347,305 |
+
+`baseline.csv` 63 个程序：周期平均 +23%、中位 +28%、最大 +36%；gate 62/62。RTL：`ref_cycles.txt` 重新生成，`fm_gate.sh` 66/66、66 个周期与 trace-model 全部相等；Linux 从复位启动到 `rv32 login:`（`RQD=8`，无断言、无不一致）。trace-model 上 LLC 读响应队列峰值：master 1 排队 3 + 输出寄存器（32 ns 时 4 + 1），`RQD=8` 仍够用，延迟变高反而排队更少。
+
+SPEC 全量回放（580 点，无失败，无 difftest 不一致；`tm/res_dram60`，12 路并行）：
+
+| 程序 | 加权 IPC | 估算分数@1GHz | 32 ns 的 IPC |
+|---|---|---|---|
+| 400.perlbench | 2.092 | 8.08 | 2.131 |
+| 401.bzip2 | 1.600 | 7.13 | 1.645 |
+| 403.gcc | 1.474 | 9.32 | 1.590 |
+| 429.mcf | 0.405 | 12.62 | 0.463 |
+| 445.gobmk | 1.763 | 8.85 | 1.783 |
+| 456.hmmer | 3.720 | 9.75 | 3.718 |
+| 458.sjeng | 1.834 | 8.44 | 1.858 |
+| 462.libquantum | 0.663 | 4.73 | 0.857 |
+| 464.h264ref | 1.475 | 6.08 | 1.489 |
+| 471.omnetpp | 1.333 | 6.92 | 1.508 |
+| 473.astar | 0.928 | 7.00 | 0.975 |
+| 483.xalancbmk | 1.873 | 12.04 | 1.959 |
+| **几何平均** | **1.396** | **8.12** | 1.487（分数 8.66） |
+
+quick 的 6 个程序（旧基线 `tm/b3` 同一批点）：几何平均 IPC 旧（16 倍分频）2.204 → 32 ns 1.613 → 60 ns 1.550。分数的换算方法和局限见上面"估算分数"一段（参考时间是凭记忆写的，未核对官方表）。
 
 ### 后续
 
