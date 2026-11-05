@@ -69,6 +69,8 @@
 
 日期 2026-11-05。分支 `trace-model` 的 `exp/dram-sim`（工作目录 `trace-model-dram`，基于 `exp/batch3` 的 `08e9cfe`，未提交、未合入）。
 
+**状态：已合入 `main`（2026-11-06）**：trace-model `88e5254`、rtl `b19a181`，两边都是从 `exp/dram-sim` 快进合入；记录见 [MAIN_RECORDS.md](MAIN_RECORDS.md)。
+
 > **2026-11-06 更新：附加延迟默认值由 32 ns 改为 60 ns，基线已重做**（见下面"基线重做"一节）。本节前面各表（结果 1–4、SPEC、估算分数、`RQD` 测量）都是 32 ns 版本的数字，保留作为历史；当前基线的数字以"基线重做"一节和 trace-model `docs/PROJECT.md` 为准。
 
 ### 动机
