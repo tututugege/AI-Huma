@@ -7,7 +7,6 @@
 
 | 事项 | 状态 | 做完的标准 |
 |---|---|---|
-| 第 3 批面积配置合入 main（EXP-005） | trace-model、rtl、function-model 的 `exp/*` 分支已提交并复验；等 RTL 的 Linux 从复位启动到 `rv32 login:`（全程逐条对比） | 按 [WORKFLOW.md](WORKFLOW.md) 第 6 节：MAIN_RECORDS 一行 + “变化”一节，各仓库快进合入 main，总仓库更新子模块指针 |
 | LD/STA IQ 合并、统一 FTQ 的 RTL 试做结果入档 | 两个 RTL 试做都已完成（工作区 `rtl-ldsta`/`trace-model-ldsta`、`rtl-uftq`/`trace-model-uftq`，未提交）：门禁 66/66，66 个程序周期与各自的 trace-model 全部一致 | 在 [EXPLORATION.md](EXPLORATION.md) 记为新实验（含综合数字和未覆盖项）；工作区改动提交到各自的 `exp/` 分支 |
 
 ## 待做：验证
@@ -26,6 +25,9 @@
 
 | 事项 | 为什么 | 做完的标准 |
 |---|---|---|
+| AMO 改为“特殊 store、在 DCache 里读改写”（BOOM/香山式） | 现在 AMO 和 C910 一样拆成 LOAD + STA + STD（运算在 STD 里，rd=x0 借 32 号寄存器），同时占 LDQ 和 STQ；LD/STA 队列合并后一条 AMO 要在同一拍进 MEM 队列两次，dispatch 为此专留了一条通路（暂时保留这种做法） | trace-model 和 RTL：AMO 只占 STQ（一个地址 uop + STD），在 STQ 头、ROB 已排空时发给 DCache，DCache 流水线内做读改写（AMOALU），旧值经写回口送 rd；dispatch 的 AMO 双写口通路删除；门禁和 Linux 通过。可与 LD/STA 共享 AGU 一起考虑 |
+| 统一 FTQ 的提交读口按块读 | 统一 FTQ 现在每条提交指令一个读口（PC 8 口 + 元数据 8 口，各从 64 项×8 槽里选），是 `ftq_top` 面积的大头。trace-model 统计（2026-11-05，SPEC 6 个最大权重点 + 5 个小程序）：一拍提交跨的 FTQ 块数超过 4 的周期最多 0.06%，超过 3 的在 gcc 上有 9.5% | decode 组队时限制一组最多跨 K 个块（trace-model IDU 与 RTL `pre_idu` 同步，参数 `CFG_DECODE_MAX_BLOCKS`，建议 K=4）；`ftq_top` 提交读口改为从 commit 指针读 K 个连续块整行再按块号/偏移选；quick SPEC 比较 K=3/4；RTL 门禁 66/66、周期与 trace-model 相等；提交读口选择器预计元数据 −44%、PC −50%（K=4） |
+| 删除分开式结构里的 `altpcpn` 存储 | BPU 训练从不读它（EXP-007 补上标准 TAGE 的备选更新也无收益）；现在 PTAB、front2back、后端 FTQ 每个槽都白存 3 位 | trace-model 与 RTL 删掉这份存储和连线，周期不变（门禁 66/66、gate 62/62 逐个相同）；统一 FTQ 若合入则随之消失 |
 | `front_stall` 接回 | core_top 里写死为 0；BPU 更新队列会满时必须接回 | 接回后门禁通过，有触发它的测试 |
 | LLC 旁路写、部分行写 miss | 未实现（断言保留）；随机流量会触发，真实程序不走 | 实现并通过随机流量测试 |
 | RealLsu 手写结构 | 3 个脚本生成的 SSA 展开文件（约 890 行）应改为手写结构 | 改写后门禁通过 |

@@ -4,11 +4,38 @@
 
 | 编号 | 日期 | 题目 | 分支 | 状态 | 一句话结论 |
 |---|---|---|---|---|---|
-| [EXP-005](#exp-005-opt1-的-spec-对比与不改结构的参数同步到-rtl) | 2026-11-05 | opt1 的 quick SPEC 对比；不改结构的参数（第 1–3 批）同步到 RTL | trace-model `exp/area-explore`、rtl `exp/batch1-params` | 未提交、未合入 | quick SPEC 6 个程序 opt1、第 3 批都慢 0.5%（gcc 1.3%）；第 1–3 批（不改结构的部分）RTL 门禁均 66/66、周期与 trace-model 一致，约省 161 万门、5 万触发器 |
+| [EXP-007](#exp-007-tage-备选提供者计数器更新) | 2026-11-05 | TAGE 训练时也更新备选提供者的计数器（`altpcpn` 的用途） | trace-model `exp/tage-alt`（工作区 `trace-model-tage`） | 未提交、不合入 | 6 个分支难预测的 SPEC 上 MPKI 变化 ±0.6%、IPC 不变；`altpcpn` 可以删除 |
+| [EXP-005](#exp-005-opt1-的-spec-对比与不改结构的参数同步到-rtl) | 2026-11-05 | opt1 的 quick SPEC 对比；不改结构的参数（第 1–3 批）同步到 RTL | trace-model `exp/batch3`、rtl `exp/batch3` | **已合入 main**（2026-11-05） | quick SPEC 6 个程序 opt1、第 3 批都慢 0.5%（gcc 1.3%）；第 1–3 批（不改结构的部分）RTL 门禁均 66/66、周期与 trace-model 一致，约省 161 万门、5 万触发器 |
 | [EXP-004](#exp-004-组合优化配置-opt1) | 2026-11-04 | 组合优化配置 opt1（MAX_BR 32、INT IQ 64 + 前面所有优化） | trace-model `exp/area-explore` | 未提交、未合入；SPEC 见 EXP-005 | 小程序几何平均持平，coremark 慢 1.8–2.7% |
 | [EXP-003](#exp-003-rob-与-prf-扩大到-256) | 2026-11-04 | ROB/PRF 扩大到 192、256 | trace-model `exp/area-explore` | 未提交、未合入 | 都翻倍到 256 只快约 0.8%（coremark 3%），ROB 128 合理 |
 | [EXP-002](#exp-002-全核面积浪费排查) | 2026-11-04 | 全核面积浪费排查：各 IQ、ibuf、front2back、分支资源、ALU/BRU 端口 | trace-model `exp/area-explore` | 未提交、未合入 | IQ 总项数 384→192、BRU 4→2 等组合后无性能损失；BPU 存储需大负载评估（“ROB 是瓶颈”的说法已被 EXP-003 否定） |
 | [EXP-001](#exp-001-面积优化三个方向) | 2026-11-04 | 面积优化：FTQ 合并、LSU 端口、LD/STA IQ 合并 | trace-model `exp/area-explore` | 未提交、未合入 | 三个方向都能省面积，性能代价 0–1% |
+
+---
+
+## EXP-007 TAGE 备选提供者计数器更新
+
+- **日期**：2026-11-05
+- **分支**：trace-model `exp/tage-alt`（工作区 `trace-model-tage`，从 `exp/batch3` 切出），改动未提交
+- **问题**：BPU 预测时算出“备选提供者”的表号 `altpcpn`，一路存进 PTAB、FTQ、更新队列，但训练（`Tage::update`）从不读它。标准 TAGE（Seznec）在提供者的有用位为 0 时也训练备选提供者的计数器——补上这一步，分支预测会不会更准？
+- **方法**：开关 `CFG_TAGE_ALT_UPDATE`（默认 0，关闭时 gate 62/62 与基线逐个相同）。打开后，提供者有用位为 0 时，备选提供者表的计数器（没有备选时是基础表）也向实际方向更新一步；备选表号小于提供者，与分配新项的表不重叠。打开时 gate 15 个程序周期变化，全部 difftest Success、无不一致。
+- **负载**：第 3 批配置，quick SPEC（覆盖 90% 权重的点）里分支预测差的 6 个程序，共 176 个点；基线 perlbench/gcc/mcf/sjeng 用 EXP-005 的第 3 批结果，gobmk/astar 补跑。
+
+| 程序 | MPKI 基线 | MPKI 加更新 | IPC 基线 | IPC 加更新 |
+|---|---|---|---|---|
+| perlbench | 8.53 | 8.53 | 2.468 | 2.471 |
+| gcc | 9.30 | 9.30 | 2.566 | 2.565 |
+| mcf | 16.61 | 16.62 | 1.327 | 1.327 |
+| sjeng | 18.73 | 18.69 | 2.027 | 2.029 |
+| gobmk | 16.26 | 16.35 | 2.130 | 2.126 |
+| astar | 26.90 | 26.95 | 1.253 | 1.252 |
+| 几何平均 IPC | | | 1.889 | 1.889 |
+
+（MPKI 按 SimPoint 权重加权，分母含 1000 万条预热。）
+
+- **结论**：没有收益（MPKI ±0.6%，有升有降）。推测原因：备选预测只在“提供者弱 + 有用位低 + `use_alt` 倾向备选”时才被采用，稳态下很少；备选表项多分支共享，额外更新也可能干扰。**不合入**；`altpcpn` 的存储可以删除（统一 FTQ 的 RTL 试做里已删，周期不变）。
+- **顺带**：gobmk（16.3）、astar（26.9）的 MPKI 高于 quick 集合里的程序，做分支预测相关实验时应一起测。
+- **复现**：`gmake EXTRA_CXXFLAGS="<第 3 批默认> -DCFG_TAGE_ALT_UPDATE=1" BUILD_DIR=build_area/alt`，`replay_one.sh` 回放，结果在 `~/personal/AI-Huma-data/spec-rv32imab/tm/{b3,tagealt}`。
 
 ---
 
