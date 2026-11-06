@@ -4,6 +4,7 @@
 
 | 编号 | 日期 | 题目 | 分支 | 状态 | 一句话结论 |
 |---|---|---|---|---|---|
+| [EXP-012](#exp-012-mov-消除move-elimination) | 2026-11-06 | `addi rd, rs, 0` 在重命名时共用源物理寄存器（mov 消除），架构引用计数，3 位计数器 + 引用上限 | trace-model `exp/move-elim-v2`、rtl `exp/move-elim` | 已合入 main（默认开启） | quick SPEC 几何平均 IPC 1.550 → 1.551（+0.06%），coremark −1.15% 周期；`ren` +21.5k 单元（+10%）；收益在噪声量级 |
 | [EXP-009](#exp-009-l1d-数据预取器与指令侧预取) | 2026-11-06 | 电路风格的 L1D 数据预取器（步长 + LLC 次级 next-line + 准确度限流）；指令侧 next-line / FDIP | trace-model `exp/prefetch-h1`、rtl `exp/l1d-prefetch` | 已提交、未合入 | 20 个访存瓶颈点（14 训练 + 6 留出）几何平均 IPC：训练 +37.9%、留出 +30.4%；计算密集守卫集 +0.5%；指令侧最多 +0.4%，不采用 |
 | [EXP-008](#exp-008-decode-宽度-8-降到-6) | 2026-11-05 | decode/rename 宽度 8→6（含 commit 宽度拆分）；前端取指仍为 8 | trace-model `exp/decode6` | 未提交、不合入；保持 8 | quick SPEC 几何平均 IPC −3.1%（hmmer −12%，其余 5 个 −1.1%）；损失来自 hmmer 的高 IPC 阶段，commit 宽度不是原因 |
 | [EXP-007](#exp-007-tage-备选提供者计数器更新) | 2026-11-05 | TAGE 训练时也更新备选提供者的计数器（`altpcpn` 的用途） | trace-model `exp/tage-alt`（工作区 `trace-model-tage`） | 未提交、不合入 | 6 个分支难预测的 SPEC 上 MPKI 变化 ±0.6%、IPC 不变；`altpcpn` 可以删除 |
@@ -12,6 +13,39 @@
 | [EXP-003](#exp-003-rob-与-prf-扩大到-256) | 2026-11-04 | ROB/PRF 扩大到 192、256 | trace-model `exp/area-explore` | 未提交、未合入 | 都翻倍到 256 只快约 0.8%（coremark 3%），ROB 128 合理 |
 | [EXP-002](#exp-002-全核面积浪费排查) | 2026-11-04 | 全核面积浪费排查：各 IQ、ibuf、front2back、分支资源、ALU/BRU 端口 | trace-model `exp/area-explore` | 未提交、未合入 | IQ 总项数 384→192、BRU 4→2 等组合后无性能损失；BPU 存储需大负载评估（“ROB 是瓶颈”的说法已被 EXP-003 否定） |
 | [EXP-001](#exp-001-面积优化三个方向) | 2026-11-04 | 面积优化：FTQ 合并、LSU 端口、LD/STA IQ 合并 | trace-model `exp/area-explore` | 未提交、未合入 | 三个方向都能省面积，性能代价 0–1% |
+
+---
+
+## EXP-012 mov 消除（move elimination）
+
+- **日期**：2026-11-06（最早的探索 2026-11-03：trace-model `exp/move-elim`，3 个提交，未合入；2026-11-06 重放到新 main 并做到 RTL）
+- **分支**：trace-model `exp/move-elim-v2`（`767c25f`，基于 main `88e5254`）、rtl `exp/move-elim`（`1e5d656`，基于 main `b19a181`）；已快进合入 main。
+- **问题**：`addi rd, rs, 0`（rd、rs 都是真寄存器）占提交指令的 3%（dhrystone 64 次）到 9%（coremark），能否在重命名时去掉，省下一个物理寄存器、一个发射槽和一次写回？
+- **做法**：
+  - Ren：这类指令不取空闲寄存器，rd 直接指向 rs 的物理寄存器（`dest_preg = src1_preg`）；不产生 uop，ROB 条目在 dispatch 时就完成，Dispatch 不置 busy 位、不参与组内 RAW 判断。
+  - 寄存器的释放：**提交时**统计架构 RAT 里有多少项指向它（`arch_cnt`），旧寄存器的计数降到 0 才放回空闲表。重命名端不改计数，所以分支误预测和冲刷**不需要回滚计数**；`free_head_commit` 跳过被消除的 mov，空闲表头指针的检查点仍然有效。
+  - 计数器上限：某条 mov 提交后的架构状态等于它重命名后的推测 RAT，所以架构计数不会超过重命名时推测 RAT 中指向该寄存器的项数。规则（`Ren::elim_refs_ok`）：源寄存器直接来自推测 RAT（本组内没有更老的指令写同一个源架构寄存器），且（推测 RAT 中指向它的项数）+（本组更老的有目的寄存器的指令数）+ 1 ≤ `CFG_MOVE_ELIM_REFS`（默认 7）。这样计数器只要 3 位，不用维护第二份推测计数，同组内的 mov 链也没有组合依赖。
+  - RTL：新增 `ren_elim_sel`（判定）、`ren_arch_cnt`（计数与释放）、`ren_rank`；`me_elim` 一位从 Ren 经 Dispatch、ROB 回到 Ren；`MOVE_ELIM = 0` 时不生成任何新逻辑。
+- **开关**：trace-model `CFG_MOVE_ELIM`（默认 1，原 `ME_ELIM` 环境变量）、`CFG_MOVE_ELIM_REFS`（7）；RTL 参数 `MOVE_ELIM`、`MOVE_ELIM_MAX_REFS` 由 `make cfg` 从 config.h 取。运行时 `ME_CHECK=1` 每周期检查：计数等于架构 RAT 指向该寄存器的项数、无物理寄存器泄漏，并打印最大引用数。
+- **关闭开关时**：trace-model gate 62/62 与原基线逐个相同，dhrystone 162,033、coremark 255,335 不变；RTL（`MOVE_ELIM=0`）`fm_gate` 66/66，周期与原 `ref_cycles.txt` 逐个相等。
+- **结果**（周期，1 GHz + DRAMsim3 基线）：
+
+| 负载 | 关闭 | 开启 | 变化 | 被消除的 mov |
+|---|---|---|---|---|
+| dhrystone（64 次） | 162,033 | 162,033 | 0 | 129 |
+| coremark（2 次迭代） | 255,335 | 252,400 | −1.15% | 34,737 |
+| memory-stress | 2,428,470 | 2,425,220 | −0.13% | |
+| gate 62 个程序 | | | 7 个程序周期变化 | |
+
+  quick SPEC（6 个程序、129 个点，`replay.sh quick`，每点 1000 万条指令，无 difftest 不一致）：perlbench 2.100 → 2.090、gcc 1.523 → 1.525、mcf 0.420 → 0.420、hmmer 3.770 → 3.771、sjeng 1.830 → 1.831、h264ref 1.497 → 1.507；**几何平均 1.550 → 1.551（+0.06%）**。引用数最大 4（coremark），上限 7 有余量。
+  没有引用上限的第一版（旧基线，2026-11-03）：dhrystone −0.77%、coremark10 −1.15%、quick SPEC +0.46%；加上限后 coremark 少消除约 25% 的 mov（组内旁路的源不再消除），周期反而略好（噪声内）。
+- **面积**（yosys 通用门面积代理，`scripts/synth_cfg.sh`，原配置 vs 开启）：`ren` 206,228 → 227,720 单元（+21.5k，+10.4%）；`dispatch` 86,637、`rob` 201,672 不变（`me_elim` 一位的存储没有计入）。**注意**：`arch_cnt` 是数组，综合脚本（`SYNTH_MEM=1`）把它当存储，128×3 位触发器**没有计入**；整机占比不到 0.5%。
+- **验证**：trace-model gate 62/62、`ME_CHECK=1` 零断言；RTL 开启时 `fm_gate` 66/66、周期与 trace-model 逐个相等；trace-model Linux 从复位启动到 `rv32 login:`；lint.sh/lint_chip.sh 0 警告（开、关两种配置）。
+- **与开源设计的对比（只查到一部分）**：香山 `Rename.scala` / `BaseFreeList.scala`：被消除的 mov 不分配寄存器（`allocateReq := needIntDest && !isMove`），架构头指针 `archHeadPtr` 同样跳过 mov，空闲表头指针靠快照或从架构头指针回走恢复——与本实现的 `free_head_commit` 思路一致；引用计数本身（计数宽度、上限、推测/架构是否分开）在读到的源码里没有找到（`MEFreeList.scala` 里只有一条提到 refCounter 的过期注释），**没有确认**。文献上"重命名时计数"的做法能精确判断上限，但计数是推测的，冲刷时要回滚（快照或回走 ROB）；本实现只数架构表项，免回滚，代价是上限判断保守、提交端每拍要做 8 个提交槽的计数算术（面积的主要来源）。
+- **模型近似/未覆盖**：① 同一拍里提交带目的寄存器的指令与分支误预测同拍，ME 模式下会 `Assert`（原空闲表检查本来就当作不可达；门禁、大程序、Linux、SPEC 均未触发）；② `add rd, rs, x0` 不处理（工具链不生成压缩 `c.mv`）；③ 面积没有计入计数器触发器；④ RTL 的 Linux 逐条对比启动见 MAIN_RECORDS（合入时尚未跑完）；⑤ 没有做时序（提交端 8 路计数算术和重命名端 33 项比较求和是新的关键路径，未评估）。
+- **结论**：功能正确、关闭时零影响，但收益在噪声量级（quick SPEC +0.06%，coremark −1.15% 周期），面积 `ren` +10%。按负责人决定默认开启并合入；如果以后面积成为约束，把 `CFG_MOVE_ELIM` 设为 0 即可去掉。
+- **后续**：若要提高收益，可放宽"源来自同组旁路不消除"的限制；3 位计数器的面积收益和 `ren` 的关键路径需要有工艺库的综合才能评估。
+- **复现**：trace-model `gmake LDFLAGS="-lz"`（默认开）、`ME_CHECK=1 build/simulator rtl/programs/big/coremark.bin`；关闭 `gmake EXTRA_CXXFLAGS="-DCFG_MOVE_ELIM=0" BUILD_DIR=build_off`；quick SPEC `scripts/spec/replay.sh quick`；RTL `make cfg`（取 trace-model 默认）、`scripts/fm_gate.sh`、`scripts/tm_cycles.sh <simulator>`（重新生成 `ref_cycles.txt`）。
 
 ---
 
