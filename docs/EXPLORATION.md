@@ -4,7 +4,7 @@
 
 | 编号 | 日期 | 题目 | 分支 | 状态 | 一句话结论 |
 |---|---|---|---|---|---|
-| [EXP-009](#exp-009-l1d-数据预取器与指令侧预取) | 2026-11-06 | 电路风格的 L1D 数据预取器（步长 + LLC 次级 next-line + 准确度限流）；指令侧 next-line / FDIP | trace-model `exp/prefetch` | 未提交、未合入 | 20 个访存瓶颈点（14 训练 + 6 留出）几何平均 IPC：训练 +37.9%、留出 +30.4%；计算密集守卫集 +0.5%；指令侧最多 +0.4%，不采用 |
+| [EXP-009](#exp-009-l1d-数据预取器与指令侧预取) | 2026-11-06 | 电路风格的 L1D 数据预取器（步长 + LLC 次级 next-line + 准确度限流）；指令侧 next-line / FDIP | trace-model `exp/prefetch-h1`、rtl `exp/l1d-prefetch` | 已提交、未合入 | 20 个访存瓶颈点（14 训练 + 6 留出）几何平均 IPC：训练 +37.9%、留出 +30.4%；计算密集守卫集 +0.5%；指令侧最多 +0.4%，不采用 |
 | [EXP-008](#exp-008-decode-宽度-8-降到-6) | 2026-11-05 | decode/rename 宽度 8→6（含 commit 宽度拆分）；前端取指仍为 8 | trace-model `exp/decode6` | 未提交、不合入；保持 8 | quick SPEC 几何平均 IPC −3.1%（hmmer −12%，其余 5 个 −1.1%）；损失来自 hmmer 的高 IPC 阶段，commit 宽度不是原因 |
 | [EXP-007](#exp-007-tage-备选提供者计数器更新) | 2026-11-05 | TAGE 训练时也更新备选提供者的计数器（`altpcpn` 的用途） | trace-model `exp/tage-alt`（工作区 `trace-model-tage`） | 未提交、不合入 | 6 个分支难预测的 SPEC 上 MPKI 变化 ±0.6%、IPC 不变；`altpcpn` 可以删除 |
 | [EXP-005](#exp-005-opt1-的-spec-对比与不改结构的参数同步到-rtl) | 2026-11-05 | opt1 的 quick SPEC 对比；不改结构的参数（第 1–3 批）同步到 RTL | trace-model `exp/batch3`、rtl `exp/batch3` | **已合入 main**（2026-11-05） | quick SPEC 6 个程序 opt1、第 3 批都慢 0.5%（gcc 1.3%）；第 1–3 批（不改结构的部分）RTL 门禁均 66/66、周期与 trace-model 一致，约省 161 万门、5 万触发器 |
@@ -15,10 +15,34 @@
 
 ---
 
+## EXP-010 BPU 预测延迟：现有模型每个 taken 分支 0 气泡，换成真实延迟后 IPC 掉多少
+
+- **日期**：2026-11-06
+- **分支**：trace-model `exp/realistic-timing`（工作区 `trace-model-timing`，基于 main `88e5254`，改动未提交）。
+- **问题**：`BPU::comb` 在一拍里完成 type 表 → 8 bank TAGE → BTB → RAS → next_pc（`rtl/docs/modules/bpu.md` 第 3 节），阵列是异步读的寄存器堆，约 10^6 位，NLP/2-ahead 和 SRAM 延迟模型已作为死代码删除（`16a0774`、`e99145a`）。也就是说模型里每个 taken 分支 0 气泡。1 GHz 下做不到；真实设计是"1 周期小表 + 多周期主预测器 override"。这对 IPC 估计偏乐观多少？
+- **开关**（默认 0，关闭时 gate 与基线逐个相同：dhrystone 162,033 周期不变）：
+  - `BPU_BUBBLE=B`：预测 taken 的取指组之后，BPU 空转 B 个周期（`bpu_instance.bubble()` 让前端的 `bpu_can_run` 为假）；
+  - `BPU_UBTB=N`：N 项直接映射、12 位 tag 的 1 周期目标表（索引取取指组基址）；命中且目标与主预测器一致则免气泡；陈旧命中（主预测器说不跳）也吃气泡并失效。
+- **微基准**（`tests/ubench/`，`scripts/ubench.sh`，两个迭代数相减）：L1D 命中 load-to-use **4.0 周期**；store→load 转发链 5.0（转发也是 4 周期）；2 条指令的循环、16 个连续跳转、call/ret 都是 **1 周期/taken 分支**（0 气泡）；同目标 `jr` 3 周期/2 个 taken（间接跳转多 1 气泡，基线就有）；50% 随机分支约 **11.6 周期/次误预测**。所以 load-to-use 和误预测恢复延迟本身是合理的，问题只在预测延迟。
+- **负载**：8 个程序（perlbench gcc mcf hmmer sjeng gobmk astar h264ref），SimPoint 覆盖 25% 权重，共 30 个点，每点 1000 万预热 + 1000 万测量；基线为现有 `tm/res_dram60`（同一份代码，周期逐点相同）。`scripts/spec/timing_eval.sh`、`timing_eval_all.sh`，结果在 `tm/tim_{b1,b1u64,b2}`。
+
+| 配置（IPC 相对 0 气泡基线） | 几何平均 | perlbench | gcc | sjeng | gobmk | hmmer | astar | mcf | h264ref |
+|---|---|---|---|---|---|---|---|---|---|
+| 每个 taken +1 气泡，无 uBTB（2 周期预测器） | **−6.8%** | −19.1% | −21.7% | −8.3% | −4.6% | −5.0% | −2.6% | −1.6% | −0.4% |
+| +1 气泡，加 64 项 uBTB | **−2.2%** | −5.2% | −6.7% | −4.2% | −2.9% | −0.1% | −0.9% | −0.5% | 0.0% |
+| 每个 taken +2 气泡，无 uBTB（3 周期预测器） | **−13.5%** | −33.1% | −34.5% | −17.6% | −10.7% | −12.4% | −6.8% | −3.2% | −1.9% |
+
+- **结论**：现有所有 IPC 数字相对"可实现的预测器"偏乐观；2 周期预测器约 −7%，3 周期约 −13%，perlbench/gcc（代码足迹大、taken 分支多）最敏感，超过 −19%。一个 64 项的 1 周期 uBTB 能拿回约三分之二（−6.8% → −2.2%），但 perlbench、gcc 仍有 −5%~−7%，说明 uBTB 容量值得单独扫（128/256/512）。预测器需要 uBTB 或同类的快速路径，这是便宜且收益确定的方向。
+- **模型近似**：① uBTB 用主预测器的输出训练，真实硬件用解析结果训练，命中率偏乐观；② 主预测器的"B 个气泡"是整体常数，没有区分条件分支/间接/返回，也没有 TAGE 在 override 时与 uBTB 方向不一致的重定向惩罚；③ 间接跳转额外那 1 个气泡没有建模；④ 每个程序只有 2~8 个点（perlbench 只有 2 个，范围 −7.8%~−29%），程序级数字噪声大，几何平均较稳。
+- **没做**：uBTB 容量/相联度扫描；NLP/2-ahead；LSU 的同拍组合链（`rtl/docs/modules/lsu.md` 第 1.1 节，是时序问题，不影响模型周期）；TAGE 容量与历史长度（4 个表，历史 {8,13,32,119}）。
+- **复现**：`gmake LDFLAGS="-lz" BUILD_DIR=build_base DS3_DIR=… DS3_LIB=…`；`BPU_BUBBLE=1 BPU_UBTB=64 bash scripts/spec/timing_eval.sh <tag> BPU_BUBBLE=1 BPU_UBTB=64`；微基准 `bash scripts/ubench.sh $PWD/build_base/simulator`。
+
+---
+
 ## EXP-009 L1D 数据预取器与指令侧预取
 
 - **日期**：2026-11-06
-- **分支**：trace-model `exp/prefetch`（基于 `main` 的 `88e5254`，改动未提交）。`scripts/pf/` 里有评测脚本、`scripts/pf/cloud/` 里有云上批量运行脚本。
+- **分支**：trace-model `exp/prefetch`（研究快照 `27a878f`）→ `exp/prefetch-h1`（冻结版，默认开）；rtl `exp/l1d-prefetch`（RTL 实现，`PF_EN`）。`scripts/pf/` 里有评测脚本、`scripts/pf/cloud/` 里有云上批量运行脚本。
 - **问题**：在 DRAMsim3、不分频的新基线上，加一个"能在电路上实现、状态能数清楚"的预取器能带来多少性能？分别放在 L1D 数据侧和 I-cache 侧。次要目标：总结用 agent 迭代做架构探索的经验，以及 trace-model 自身的提速方向。
 
 ### 1. 先回答"流量建模够不够真实"（预取实验的前提）
@@ -197,6 +221,15 @@ quick 的 6 个程序（旧基线 `tm/b3` 同一批点）：几何平均 IPC 旧
 | `dcache_resp`、`axi_cpu_port_chan` | 14,113 / 38；59 / 24 | 相同 | 0 | 单独综合时 `phase0`、`phase_last` 是悬空输入，看不出常量化的效果 |
 
 净变化约 +9.9k 单元（+33.3k − 23.4k），相对整机推算的约 952 万个门不到 0.2%；触发器 +8,260，相对整机约 18.1 万是 +4.6%，全部来自 `RQD`。`mem_top` 的 `TICKS == 1` 常量化（去掉 16 tick 折叠逻辑）预计是减量，但 `mem_top` 太大，Yosys 超时，没有测到。每增加一项 `RQD`，4 个队列合计约 +8.3k 单元（`RQD=5` 即最小可用值约 +8.3k，`RQD=6` 约 +16.7k，`RQD=8` 为 +33.3k）。
+
+### 10. 冻结版 h1 与 RTL 实现（2026-11-06）
+- **冻结版**：trace-model `exp/prefetch-h1`（从研究快照 `exp/prefetch` `27a878f` 切出，`0eb258c`；默认开 `1fe92b5`）。单表项全局步长（8 位有符号步长，2 位置信度，度 8、距离 2，页内）+ 1 行 LLC-only next-line + 8 项请求 FIFO；无 PC、无限流、无 BOP、无 I 侧预取、无研究开关。`PF_ENABLE=0` 关闭。状态约 0.4 KB（FIFO 8×27 位、步长表项、两个生成器、训练输入寄存器）+ L1D 每行 1 位（1,024 位）。
+- **与研究版 rv_s2 的差别**：步长 8 位有符号（研究版曾把负步长截成无符号）；因此冻结版的 20 点数字不会与 rv_s2 逐位一致，**云上 20 点复跑尚未做**（服务器已关），引用的 +35.5% / +30.6% 仍是研究版 rv_s2 的数字。
+- **关闭时周期不变**：trace-model gate 62/62 与旧基线逐个相同（`results/baseline/baseline_nopf.csv`）；64 KiB LLC 的 5 个测试与 main 相同。
+- **开启时**（默认）：gate 62/62 对照新 `baseline.csv`；dhrystone 162,033 → 161,183（−0.5%），coremark 255,335 → 256,573（+0.5%），memory-stress 2,428,470 → 2,383,063（−1.9%），memory-stress-small 347,305 → 334,635（−3.6%；64 KiB LLC 下 971,687 → 632,880）。小程序里 25 个周期有变化。
+- **RTL**（rtl `exp/l1d-prefetch`，规格 `rtl/docs/modules/dcache_pf.md`）：新 `dcache_pf`、L1D stage1 探测槽、stage2 事件、MSHR 的 `is_prefetch/no_fill`/提升/两遍 AXI 选择/无填充释放、阵列 pf 位、LSU 到 L1D 的 `replay` 位（训练要排除 LSU 重放；原 RTL 接口里没有）。`PF_EN=1`（默认）：门禁 66/66 逐条对比通过，**66 个程序周期与 trace-model 逐个相等**；`PF_EN=0`：66/66，周期与旧基线相同。面积代理：`dcache_pf` 3,334 单元、422 触发器，阵列 +1,024 触发器，`dcache_mshr` 95,540 → 95,020（噪声内）；工艺库、WNS 未做。
+- **RTL 里发现的实现错误**：`always_comb` 多驱动（预取器从不入队）、`no_fill` 标志没有和 `pf` 相与（需求项被误标，dhrystone 差 2 周期）。逐周期定位办法：两边各打印 `take/alloc/relnf` 事件序列后对比。
+- **未做**：`axi_llc` 读响应队列 RQD（现 8）在预取下的重测；冻结版 SPEC 20 点复跑；跨页预取（要 DTLB 翻译）；时序。
 
 ### 后续
 
