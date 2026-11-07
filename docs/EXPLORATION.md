@@ -268,14 +268,14 @@ quick 的 6 个程序（旧基线 `tm/b3` 同一批点）：几何平均 IPC 旧
 
 ### 11. 全量 SPEC、坏点原因与控制实验、合入（2026-11-07）
 
-- **全量 SPEC（579/580 点，fast warmup，对比 2026-11-05 精确 PF 关基线）**：按 SimPoint 权重的 12 个程序几何平均 **+8.2%**（libquantum +96.3%、mcf +10.8%、gcc +9.0%、bzip2 +6.2%、h264ref +2.7%、perlbench +2.7%、astar +2.3%、omnetpp +0.9%、xalancbmk −0.2%、gobmk −0.8%、hmmer −1.6%、sjeng −3.0%）；579 个点不加权的几何平均 +11.2%。fast warmup 的系统偏差约 −0.5%（绝对 IPC）、对"预取加速比"约 −0.3 个百分点，方案之间的差异同口径可比。缺 1 个点：`400.perlbench ckpt_sp11_target184332`（服务器端 stub 恢复失败，本地 gz 完好），未补。
+- **全量 SPEC（580 点，fast warmup，对比 2026-11-05 精确 PF 关基线）**：按 SimPoint 权重的 12 个程序几何平均 **+8.3%**（libquantum +96.3%、mcf +10.8%、gcc +9.0%、bzip2 +6.2%、h264ref +2.7%、perlbench +2.7%、astar +2.3%、omnetpp +0.9%、xalancbmk −0.2%、gobmk −0.8%、hmmer −1.6%、sjeng −3.0%）；580 个点不加权的几何平均约 +11.2%。fast warmup 的系统偏差约 −0.5%（绝对 IPC）、对"预取加速比"约 −0.3 个百分点，方案之间的差异同口径可比。`400.perlbench ckpt_sp11_target184332` 曾缺失：服务器上的检查点文件被截断（本地 gz 完好），重传校验后补齐，该点 +12.2%。
 - **坏点是真的，不是 fast warmup 的假象**：12 个最差点用精确预热重跑，omnetpp sp22 −40.7%（fast −40.9%）、gcc sp38 −29.9%、xalancbmk sp34 −22.2%；只有 hmmer、sjeng 和 xalancbmk sp30 的约 −5% 是 fast warmup 造成的（精确预热下约 0%）。全量里低于 −10% 的点共 5 个（约 0.9%）。
 - **原因**：LLC-only 的 next-line 引擎在这些点上发出几十万个预取、真正被用到的只有几百个（omnetpp sp22：发出 50 万、用到约 500）；关掉该引擎后 12 个点中 10 个回到 0% 附近。omnetpp 的伤害是 MSHR 争抢（`probe_mshr_full` 52 万次），gcc sp38 是 DRAM 带宽或 LLC 污染（MSHR 预留无效）。xalancbmk sp15 例外：关掉引擎反而更差（−11.8% → −21.3%）。但引擎也是 mcf（+10.8%）、gcc、bzip2 收益的主要来源。
 - **控制实验（都没有进入源码树，补丁在 trace-model `docs/experiments/exp009_llc_engine_control.patch`，开关 `PF_LLC_THR/PF_LLC_WIN`、`PF_RES_LLC`、`PF_DUEL_SLICE/PF_DUEL_EXPLOIT`）**：
   1. 准确率节流（256 位过滤器记"本该预取的行"，每窗口命中数低于阈值则关）：THR=6、窗口 32 最好，最坏点压到 omnetpp sp22 −1.2%、gcc sp38 −8.1%，但 mcf 只剩 +2.1%（第一版 64 位过滤器假命中约 40%，永远不关，无效）。
   2. LLC 预取探测时预留 MSHR：预留 6 才修好 omnetpp sp22（−4.4%），mcf 同时降到 +0.6%；对 gcc sp38 基本无效。
   3. 时间片对抗（轮流开/关 LLC 引擎，比较 demand 访问数/周期）：片长 131072 周期、生效 8 片，mcf +7.7%，但 gcc sp38 仍 −28%、omnetpp sp22 −14%。
-  全量对比：h1 **+8.2%**，THR=6 +7.2%，对抗 +7.7%；低于 −10% 的点 5 / 2 / 4 个，最差点 −40.9% / −23.6% / −28.3%。**结论：平均收益 h1 最高、硬件最简单，保持 h1 原样合入**；mcf 与坏点此消彼长，没有哪个静态阈值或简单反馈能同时保住。xalancbmk sp34（−22%）原因与 LLC 引擎无关，未查。
+  全量对比（三方案都有结果的 579 个点）：h1 **+8.2%**，THR=6 +7.2%，对抗 +7.7%；低于 −10% 的点 5 / 2 / 4 个，最差点 −40.9% / −23.6% / −28.3%。**结论：平均收益 h1 最高、硬件最简单，保持 h1 原样合入**；mcf 与坏点此消彼长，没有哪个静态阈值或简单反馈能同时保住。xalancbmk sp34（−22%）原因与 LLC 引擎无关，未查。
 - **评测基础设施**：稀疏检查点恢复（只恢复非零页，RSS −62% 到 −96%，结果逐字节相同；function-model `exp/sparse-mem`）；fast warmup（EXP-011 的 `--fast-warmup`）并入后单点墙钟约 1.75 倍快；云服务器 32 核/121 GB 全量约 1 小时；并发超过内存（40 以上的 4.7 GB 进程）会 OOM（rc=137）。
 - **合入**：2026-11-07 合入本地 main（未推送）。合并时 main 已有 move elimination（EXP-012），基线用合并后的树重新生成；预取关与 main 基线 62/62 相同。
 

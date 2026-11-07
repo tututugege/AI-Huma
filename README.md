@@ -18,7 +18,7 @@ AI-Huma 有两层意思：
 | 阶段 | 时间 | 做了什么 |
 |---|---|---|
 | 建立起点 | 至 2026-11-04 | 从 tututugege/simulator 蒸馏出 trace-model（代码从约 8.4 万行降到 4.3 万行、更快，周期与原模型完全一致）；逐模块翻译出 RTL，与原模型逐拍对照；接入 function-model。逐拍对照体系完成使命后退役（rtl `docs/history/`、标签 `legacy-reference`）。 |
-| 自主优化 | 2026-11-04 起 | 正确性改为对照 function-model，周期不再要求与原模型一致；建立探索 → 验证 → 合入 main 的流程（[WORKFLOW.md](docs/WORKFLOW.md) 第 4–6 节）；重建 SPEC 检查点；第一次合入：第 3 批面积配置。正在做：LD/STA 发射队列合并、统一 FTQ（[TODO.md](docs/TODO.md)）。 |
+| 自主优化 | 2026-11-04 起 | 正确性改为对照 function-model，周期不再要求与原模型一致；建立探索 → 验证 → 合入 main 的流程（[WORKFLOW.md](docs/WORKFLOW.md) 第 4–6 节）；重建 SPEC 检查点。已合入 main 的优化：第 3 批面积配置（EXP-005）、DRAMsim3 DDR 内存模型并去掉 AXI 分频（EXP-006，新基线）、mov 消除（EXP-012）、**L1D 数据预取器 h1（EXP-009，SPEC 估算 8.12 → 约 8.80 分/GHz）**。正在做：LD/STA 发射队列合并、统一 FTQ（[TODO.md](docs/TODO.md)）。 |
 
 ## 三个部分
 
@@ -59,12 +59,13 @@ git submodule update --init          # 取出 function-model、trace-model、rtl
 - **旧的逐模块锁步 / trace 回放 / 变异检查体系已退役**（代码在 rtl 标签 `legacy-reference`，文档在 `rtl/docs/history/`）。
 - **目标是方法，而不只是代码**：AI 和人能否系统地做 CPU 架构优化——每个想法先在模型上量化，再落到 RTL，保证正确，留下可复用的验证手段和完整记录（包括负面结果）。
 
-## 当前状态（2026-11-05）
+## 当前状态（2026-11-07）
 
-- **配置**：第 3 批面积配置（EXP-005）正在合入 main：取指宽度 8、在飞分支 32、IQ 总项数 384→240、发射端口 22→18 等。quick SPEC 6 个程序 IPC −0.5%，受影响模块约 −161 万门（整机约 17%）。
-- **trace-model**：gate 62/62；Linux 启动到登录约 7–8 千万周期；quick/full SPEC 回放（580 个 rv32imab 检查点）。
-- **rtl**：lint 干净（按目录和整芯片）；66 个程序逐条对比全部通过、周期与 trace-model 逐个相等；有面积代理综合（`rtl/docs/09-synthesis-report.md`）；**还没有时序综合**，store 数据不在逐条对比范围内。已知风险见 [rtl/docs/08-risk-register.md](rtl/docs/08-risk-register.md)。
-- **在做的实验**：LD/STA IQ 合并、统一 FTQ 的 RTL 试做（见 [docs/TODO.md](docs/TODO.md)）。
+- **配置与基线**：第 3 批面积配置（取指宽度 8、在飞分支 32、IQ 384→240）→ DRAMsim3 DDR4-3200 + 60 ns 非核心延迟、核心 1 GHz、去掉 AXI 子系统分频（EXP-006，周期基线重做）→ mov 消除（EXP-012）→ **L1D 数据预取器 h1（EXP-009，默认开）**：单条全局步长表项、度 8、距离 2、页内、LLC-only next-line 引擎、无 PC，约 1,460 个触发器。
+- **性能（SPEC full，对精确的预取关基线）**：12 个程序几何平均 IPC 加速 **+8.3%**（580 个点），估算分数 8.12 → 约 8.80 分/GHz（libquantum +96%、mcf +11%、gcc +9%、bzip2 +6%；gobmk/hmmer/sjeng −1% 到 −3%）。已知回退：5 个 SPEC 点低于 −10%（最差 omnetpp −41%），原因是 LLC-only 引擎；三个修复方案（节流、MSHR 预留、时间片对抗）在全量上都不如原样 h1，见 [EXPLORATION.md](docs/EXPLORATION.md) EXP-009 第 11 节。
+- **trace-model**：gate 63/63（预取开）；预取关与合并前的 main 逐个相同；Linux 启动到登录；full SPEC 回放（580 个 rv32imab 检查点）。
+- **rtl**：lint 干净（按目录和整芯片）；67 个程序逐条对比全部通过（预取开、关各一遍），周期与 trace-model 逐个相等；Linux 分 13 段（检查点接力）逐条对比 0 不一致；有面积代理综合（`rtl/docs/09-synthesis-report.md`）；**还没有工艺库综合和时序（WNS）**，store 数据不在逐条对比范围内。已知风险见 [rtl/docs/08-risk-register.md](rtl/docs/08-risk-register.md)。
+- **每次合入 main 的数字**以 [docs/MAIN_RECORDS.md](docs/MAIN_RECORDS.md) 为准；在做的实验见 [docs/TODO.md](docs/TODO.md)。
 
 ## 复现
 
@@ -75,7 +76,7 @@ git submodule update --init          # 取出 function-model、trace-model、rtl
 gmake -C function-model librefcpu.a LDFLAGS="-lz"
 cd trace-model
 gmake LDFLAGS="-lz" -j8
-bash scripts/run_gate.sh build/simulator results/gate      # 62 个程序，周期等于 results/baseline/baseline.csv
+bash scripts/run_gate.sh build/simulator results/gate      # 63 个程序，周期等于 results/baseline/baseline.csv（预取开）
 
 # rtl：lint，带 function-model 逐条对比的整核门禁（需要先构建 trace-model 的测试程序）
 cd ../rtl
