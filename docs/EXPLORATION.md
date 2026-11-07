@@ -5,7 +5,7 @@
 | 编号 | 日期 | 题目 | 分支 | 状态 | 一句话结论 |
 |---|---|---|---|---|---|
 | [EXP-012](#exp-012-mov-消除move-elimination) | 2026-11-06 | `addi rd, rs, 0` 在重命名时共用源物理寄存器（mov 消除），架构引用计数，3 位计数器 + 引用上限 | trace-model `exp/move-elim-v2`、rtl `exp/move-elim` | 已合入 main（默认开启） | quick SPEC 几何平均 IPC 1.550 → 1.551（+0.06%），coremark −1.15% 周期；`ren` +21.5k 单元（+10%）；收益在噪声量级 |
-| [EXP-009](#exp-009-l1d-数据预取器与指令侧预取) | 2026-11-06 | 电路风格的 L1D 数据预取器（步长 + LLC 次级 next-line + 准确度限流）；指令侧 next-line / FDIP | trace-model `exp/prefetch-h1`、rtl `exp/l1d-prefetch` | 已提交、未合入 | 20 个访存瓶颈点（14 训练 + 6 留出）几何平均 IPC：训练 +37.9%、留出 +30.4%；计算密集守卫集 +0.5%；指令侧最多 +0.4%，不采用 |
+| [EXP-009](#exp-009-l1d-数据预取器与指令侧预取) | 2026-11-06 | 电路风格的 L1D 数据预取器（步长 + LLC 次级 next-line + 准确度限流）；指令侧 next-line / FDIP | trace-model `exp/prefetch-h1`、rtl `exp/l1d-prefetch` | 已合入 main（2026-11-07） | 20 个访存瓶颈点（14 训练 + 6 留出）几何平均 IPC：训练 +37.9%、留出 +30.4%；计算密集守卫集 +0.5%；指令侧最多 +0.4%，不采用 |
 | [EXP-008](#exp-008-decode-宽度-8-降到-6) | 2026-11-05 | decode/rename 宽度 8→6（含 commit 宽度拆分）；前端取指仍为 8 | trace-model `exp/decode6` | 未提交、不合入；保持 8 | quick SPEC 几何平均 IPC −3.1%（hmmer −12%，其余 5 个 −1.1%）；损失来自 hmmer 的高 IPC 阶段，commit 宽度不是原因 |
 | [EXP-007](#exp-007-tage-备选提供者计数器更新) | 2026-11-05 | TAGE 训练时也更新备选提供者的计数器（`altpcpn` 的用途） | trace-model `exp/tage-alt`（工作区 `trace-model-tage`） | 未提交、不合入 | 6 个分支难预测的 SPEC 上 MPKI 变化 ±0.6%、IPC 不变；`altpcpn` 可以删除 |
 | [EXP-005](#exp-005-opt1-的-spec-对比与不改结构的参数同步到-rtl) | 2026-11-05 | opt1 的 quick SPEC 对比；不改结构的参数（第 1–3 批）同步到 RTL | trace-model `exp/batch3`、rtl `exp/batch3` | **已合入 main**（2026-11-05） | quick SPEC 6 个程序 opt1、第 3 批都慢 0.5%（gcc 1.3%）；第 1–3 批（不改结构的部分）RTL 门禁均 66/66、周期与 trace-model 一致，约省 161 万门、5 万触发器 |
@@ -265,6 +265,19 @@ quick 的 6 个程序（旧基线 `tm/b3` 同一批点）：几何平均 IPC 旧
 - **RTL**（rtl `exp/l1d-prefetch`，规格 `rtl/docs/modules/dcache_pf.md`）：新 `dcache_pf`、L1D stage1 探测槽、stage2 事件、MSHR 的 `is_prefetch/no_fill`/提升/两遍 AXI 选择/无填充释放、阵列 pf 位、LSU 到 L1D 的 `replay` 位（训练要排除 LSU 重放；原 RTL 接口里没有）。`PF_EN=1`（默认）：门禁 66/66 逐条对比通过，**66 个程序周期与 trace-model 逐个相等**；`PF_EN=0`：66/66，周期与旧基线相同。面积代理：`dcache_pf` 3,334 单元、422 触发器，阵列 +1,024 触发器，`dcache_mshr` 95,540 → 95,020（噪声内）；工艺库、WNS 未做。
 - **RTL 里发现的实现错误**：`always_comb` 多驱动（预取器从不入队）、`no_fill` 标志没有和 `pf` 相与（需求项被误标，dhrystone 差 2 周期）。逐周期定位办法：两边各打印 `take/alloc/relnf` 事件序列后对比。
 - **未做**：`axi_llc` 读响应队列 RQD（现 8）在预取下的重测；冻结版 SPEC 20 点复跑；跨页预取（要 DTLB 翻译）；时序。
+
+### 11. 全量 SPEC、坏点原因与控制实验、合入（2026-11-07）
+
+- **全量 SPEC（579/580 点，fast warmup，对比 2026-11-05 精确 PF 关基线）**：按 SimPoint 权重的 12 个程序几何平均 **+8.2%**（libquantum +96.3%、mcf +10.8%、gcc +9.0%、bzip2 +6.2%、h264ref +2.7%、perlbench +2.7%、astar +2.3%、omnetpp +0.9%、xalancbmk −0.2%、gobmk −0.8%、hmmer −1.6%、sjeng −3.0%）；579 个点不加权的几何平均 +11.2%。fast warmup 的系统偏差约 −0.5%（绝对 IPC）、对"预取加速比"约 −0.3 个百分点，方案之间的差异同口径可比。缺 1 个点：`400.perlbench ckpt_sp11_target184332`（服务器端 stub 恢复失败，本地 gz 完好），未补。
+- **坏点是真的，不是 fast warmup 的假象**：12 个最差点用精确预热重跑，omnetpp sp22 −40.7%（fast −40.9%）、gcc sp38 −29.9%、xalancbmk sp34 −22.2%；只有 hmmer、sjeng 和 xalancbmk sp30 的约 −5% 是 fast warmup 造成的（精确预热下约 0%）。全量里低于 −10% 的点共 5 个（约 0.9%）。
+- **原因**：LLC-only 的 next-line 引擎在这些点上发出几十万个预取、真正被用到的只有几百个（omnetpp sp22：发出 50 万、用到约 500）；关掉该引擎后 12 个点中 10 个回到 0% 附近。omnetpp 的伤害是 MSHR 争抢（`probe_mshr_full` 52 万次），gcc sp38 是 DRAM 带宽或 LLC 污染（MSHR 预留无效）。xalancbmk sp15 例外：关掉引擎反而更差（−11.8% → −21.3%）。但引擎也是 mcf（+10.8%）、gcc、bzip2 收益的主要来源。
+- **控制实验（都没有进入源码树，补丁在 trace-model `docs/experiments/exp009_llc_engine_control.patch`，开关 `PF_LLC_THR/PF_LLC_WIN`、`PF_RES_LLC`、`PF_DUEL_SLICE/PF_DUEL_EXPLOIT`）**：
+  1. 准确率节流（256 位过滤器记"本该预取的行"，每窗口命中数低于阈值则关）：THR=6、窗口 32 最好，最坏点压到 omnetpp sp22 −1.2%、gcc sp38 −8.1%，但 mcf 只剩 +2.1%（第一版 64 位过滤器假命中约 40%，永远不关，无效）。
+  2. LLC 预取探测时预留 MSHR：预留 6 才修好 omnetpp sp22（−4.4%），mcf 同时降到 +0.6%；对 gcc sp38 基本无效。
+  3. 时间片对抗（轮流开/关 LLC 引擎，比较 demand 访问数/周期）：片长 131072 周期、生效 8 片，mcf +7.7%，但 gcc sp38 仍 −28%、omnetpp sp22 −14%。
+  全量对比：h1 **+8.2%**，THR=6 +7.2%，对抗 +7.7%；低于 −10% 的点 5 / 2 / 4 个，最差点 −40.9% / −23.6% / −28.3%。**结论：平均收益 h1 最高、硬件最简单，保持 h1 原样合入**；mcf 与坏点此消彼长，没有哪个静态阈值或简单反馈能同时保住。xalancbmk sp34（−22%）原因与 LLC 引擎无关，未查。
+- **评测基础设施**：稀疏检查点恢复（只恢复非零页，RSS −62% 到 −96%，结果逐字节相同；function-model `exp/sparse-mem`）；fast warmup（EXP-011 的 `--fast-warmup`）并入后单点墙钟约 1.75 倍快；云服务器 32 核/121 GB 全量约 1 小时；并发超过内存（40 以上的 4.7 GB 进程）会 OOM（rc=137）。
+- **合入**：2026-11-07 合入本地 main（未推送）。合并时 main 已有 move elimination（EXP-012），基线用合并后的树重新生成；预取关与 main 基线 62/62 相同。
 
 ### 后续
 
