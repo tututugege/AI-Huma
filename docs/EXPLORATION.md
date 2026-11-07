@@ -4,6 +4,7 @@
 
 | 编号 | 日期 | 题目 | 分支 | 状态 | 一句话结论 |
 |---|---|---|---|---|---|
+| EXP-015 | 2026-11-08 | 分级 LSU（含 IPC 修复）+ 流水化 S+R BPU 合并 | trace-model/rtl `lsu-bpu`（旧版 `lsu-bpu-v1`） | 已合入 main | 30 点精确预热 IPC +2.87%；全量 580 点快速预热 −1.20%（bzip2 −10.2%），已知回退，见 MAIN_RECORDS |
 | [EXP-014](#exp-014-cache-替换策略与组织形式离线回放--周期模型标定) | 2026-11-07 | cache 替换策略与组织形式的收益空间：用功能模型（FastWarm）录 L1I/L1D/LLC/TLB 访问序列，离线回放各种策略与容量/路数，再用周期模型标定 IPC | trace-model `exp/repl-oracle`（工作区 `trace-model-repl`） | 未提交、不合入（只测空间，没有实现策略） | 替换策略的空间很小：LLC DRRIP 缺失 −3.9%、L1D 现策略已接近最优、L1I SRRIP 缺失 −17% 但标定后全集只有 +0.3% IPC；容量翻倍（L1D 128KB / L1I 64KB / LLC 8MB）各约 +1.1~1.3%（单点、噪声 ±3%）；TLB 离线缺失 −73% 但周期模型只 +2.2% |
 | [EXP-013](#exp-013-pmu硬件计数器--trace-model-分析层) | 2026-11-07 | PMU：硬件计数器块（事件总线 + HPM CSR）与 trace-model 分析层（TMA、逐 PC 堵塞画像、直方图、相位）共用一张事件表 | trace-model `exp/pmu`（工作区 `trace-model-pmu`）、rtl `exp/pmu`（工作区 `rtl-pmu`） | 已合入 main（2026-11-07） | trace-model 完整；RTL 只做简单的一档（提交流、重定向、TMA 一级的槽事件）+ 计数器块（未接 CSR） | 52 个事件、槽位恒等式逐拍成立；开关与否周期不变（dhrystone、coremark、mcf 检查点）；mcf 点 Backend Bound 81%（L1D 缺失 53%），两条 load 占堵塞的 61% |
 | [EXP-012](#exp-012-mov-消除move-elimination) | 2026-11-06 | `addi rd, rs, 0` 在重命名时共用源物理寄存器（mov 消除），架构引用计数，3 位计数器 + 引用上限 | trace-model `exp/move-elim-v2`、rtl `exp/move-elim` | 已合入 main（默认开启） | quick SPEC 几何平均 IPC 1.550 → 1.551（+0.06%），coremark −1.15% 周期；`ren` +21.5k 单元（+10%）；收益在噪声量级 |

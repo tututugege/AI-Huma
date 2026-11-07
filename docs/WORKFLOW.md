@@ -101,5 +101,7 @@
    - rtl：`lint.sh`、`lint_chip.sh` 0 警告；`fm_gate.sh` 66/66，周期与 trace-model 逐个相等；串口输出与上一版一致（打印计时器的 `timer-mmio` 除外）；Linux 从复位启动到 `rv32 login:`，全程逐条对比；
    - 原配置参数下的回归：改动若声称“原配置下不变”，用原配置包再跑一遍门禁确认周期逐个相同。
 5. **性能和面积**：固定负载（第 5.2 节）+ quick SPEC（`trace-model/scripts/spec/replay.sh quick`）；受影响模块的综合前后对比。
+   - **旧配置（main）的 SPEC 数字先查记录，不要重跑**：先看 `trace-model/results/baseline/baseline.csv`、`MAIN_RECORDS.md`、`LOG.md`（例如 `deb15b4` 已记录合并后全量 580/580）。记录里有同一预热方式、同一检查点的结果就直接引用；只有记录缺失，或 main 自那次记录之后周期有变化（改了模型默认值），才重跑，且只重跑缺的点或抽样核对。SPEC 一律上服务器（`fleet.sh`），新配置才需要全量跑。
+   - **SPEC 默认开 `PMU=1`**：每次跑 SPEC（quick、30 点、全量）都带 `PMU=1`，结果里要有 TMA 一级（retiring / bad-spec / frontend / backend）。PMU 不改周期，开了没有代价；没开的结果事后补不回来。性能对比表里 TMA 一级新旧差异和周期一起给。
 6. **记录**：`MAIN_RECORDS.md` 一行 + “变化”一节；`LOG.md` 每个 commit 一行；`EXPLORATION.md` 对应实验的状态改成“已合入”；`TODO.md` 删除已完成项。
 7. **合入**：各子仓库把分支快进合入 `main`，总仓库更新子模块指针并提交。提交作者用 `tututugege <903306512@qq.com>`。没有明确要求不推送。
