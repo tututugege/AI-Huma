@@ -27,7 +27,7 @@
   - 在 FastWarm（`diff/FastWarm.cpp`，EXP-011 的功能预热，按程序序、只有已提交路径、无预取、无错误路径）的 `LlcModel::access`、`dcache_warm_access`、`L1iModel::access`、`TlbModel::translate` 入口录访问序列（`include/LlcOracle.h`，环境变量 `LLC_ORACLE/L1D_ORACLE/L1I_ORACLE/ITLB_ORACLE/DTLB_ORACLE=rec:<文件>`，默认关、对周期零影响）。每点功能重放 1000 万条指令约 5 秒（`--fast-warmup -w 100000 -c 100000`），580 点 8 并行 3~6 分钟。
   - 离线回放程序 `scripts/repl/llc_replay.cpp`：指针（现 LLC）、tree-PLRU（现 L1D）、全局轮转（现 L1I）、FIFO（现 TLB）、LRU、SRRIP、BRRIP、DRRIP（set dueling）、Belady、Belady+旁路；任意容量/路数。构造序列验证（17 行循环 16 路：LRU/SRRIP 全缺失，BRRIP 12%，Belady 6.5%）。统计窗口取序列后半（前半预热），按 SimPoint 权重汇总，12 个程序取几何平均。
   - 周期模型标定：`scripts/pf/run_point.sh` 跑 `-c 10000000`（前门恢复、精确预热），变体用 `-DCFG_ICACHE_WAYS/CFG_DCACHE_SETS/CFG_DTLB_ENTRIES/CONFIG_AXI_LLC_SIZE_BYTES`。
-- **发现 1：LLC 每个请求被查两次。** 周期模型录到的 LLC 序列里 50.02% 的访问与上一条完全相同（第二次必命中），所以 BRRIP 与 SRRIP 的缺失数逐位相同（新行刚插入就被第二次访问提到最近）。回放时折叠了连续重复。FastWarm 的功能序列没有这个现象。**这是模型行为还是建模问题没核实**，RRIP 类策略要先弄清。
+- **更正：不存在"LLC 每个请求被查两次"。** 早先在周期模型里录到的 LLC 序列有 50% 是紧邻重复，我一度当成性能问题，**查清后是测量伪影**：`AXI_Interconnect` 每个周期调用两次 `llc.comb()`（`AXI_Interconnect.cpp` 1212 行和 1302 行），`llc.seq()` 一次；`accept_new_requests → start_lookup` 只写 `reg_write`（重复求值幂等），实际一次查找、一次响应。我把录制钩子放在组合逻辑里，所以每条被记了两遍（诊断：L1D MSHR 接受 76,382 次、互联捕获 76,382 次、LLC 钩子和"响应入队"计数各 152,764 次，恰为 2 倍；两次"接受"的 `lookup_valid` 都是 0）。含义：① 周期模型序列里 BRRIP 与 SRRIP 逐位相同是因为第二份副本把新行立刻提升；② **本记录里所有结果用的是 FastWarm 的功能序列（单次、不重复），不受影响**；③ 闭环 Belady 的钩子同样被数了两遍，使那次 oracle 结果更不可信（失败的根因仍未查清）；④ 以后在 trace-model 里挂计数/录制钩子要放在 `seq`，不要放在会重复求值的 `comb`。
 - **结果 1：替换策略（缺失数相对现策略，580 点、12 程序几何平均）**
 
 | 结构 | 现策略 | LRU | SRRIP | BRRIP | DRRIP | Belady（不可达） |
@@ -54,7 +54,7 @@
   3. 现有的 EXP-009 预取器已经把最大的内存瓶颈吃掉，剩下的 cache 空间都是小头。
 - **局限**：功能序列没有预取（h1 默认开，预取污染/提前量未计入）、没有错误路径；每点只 ~900 万条指令（后半 450 万）；IPC 换算靠 14 点的线性标定；统一对照每程序一个点；TLB 的序列只有虚拟页号，没有区分超级页；没有测 L2（私有二级）、LLC 命中延迟敏感度、预取行低优先级插入。
 - **复现**：`scripts/repl/fw_seq.sh`（LLC）、`fw_seq_l1.sh`（L1D/L1I）、`fw_seq_tlb.sh`（TLB）录序列，`llc_agg.py` 汇总策略，`org_sweep.py L1D|L1I|LLC|DTLB|ITLB` 扫组织形式，`l1i_est.py` 标定；序列在 `~/personal/AI-Huma-data/repl_fw`（LLC，1.3GB）、`repl_l1`（L1D/L1I，21GB）、`repl_tlb`，周期模型标定结果在 `repl_cl`。
-- **后续**：① L1I SRRIP 在 trace-model 实现，quick SPEC 验证（预期 +0.3%）；② 查清 LLC 每请求两次查找；③ LLC 命中延迟敏感度（`CONFIG_AXI_LLC_LOOKUP_LATENCY`）与私有 L2 的价值；④ 预取行低优先级插入（需要闭环）；⑤ 若关心 TLB，先量页表遍历代价为何被隐藏。
+- **后续**：① L1I SRRIP 在 trace-model 实现，quick SPEC 验证（预期 +0.3%）；② LLC 命中延迟敏感度（`CONFIG_AXI_LLC_LOOKUP_LATENCY`）与私有 L2 的价值；③ 预取行低优先级插入（需要闭环）；④ 若关心 TLB，先量页表遍历代价为何被隐藏。
 
 ## EXP-013 PMU：硬件计数器 + trace-model 分析层
 
