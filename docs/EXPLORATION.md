@@ -4,6 +4,7 @@
 
 | 编号 | 日期 | 题目 | 分支 | 状态 | 一句话结论 |
 |---|---|---|---|---|---|
+| [EXP-014](#exp-014-cache-替换策略与组织形式离线回放--周期模型标定) | 2026-11-07 | cache 替换策略与组织形式的收益空间：用功能模型（FastWarm）录 L1I/L1D/LLC/TLB 访问序列，离线回放各种策略与容量/路数，再用周期模型标定 IPC | trace-model `exp/repl-oracle`（工作区 `trace-model-repl`） | 未提交、不合入（只测空间，没有实现策略） | 替换策略的空间很小：LLC DRRIP 缺失 −3.9%、L1D 现策略已接近最优、L1I SRRIP 缺失 −17% 但标定后全集只有 +0.3% IPC；容量翻倍（L1D 128KB / L1I 64KB / LLC 8MB）各约 +1.1~1.3%（单点、噪声 ±3%）；TLB 离线缺失 −73% 但周期模型只 +2.2% |
 | [EXP-013](#exp-013-pmu硬件计数器--trace-model-分析层) | 2026-11-07 | PMU：硬件计数器块（事件总线 + HPM CSR）与 trace-model 分析层（TMA、逐 PC 堵塞画像、直方图、相位）共用一张事件表 | trace-model `exp/pmu`（工作区 `trace-model-pmu`）、rtl `exp/pmu`（工作区 `rtl-pmu`） | 已合入 main（2026-11-07） | trace-model 完整；RTL 只做简单的一档（提交流、重定向、TMA 一级的槽事件）+ 计数器块（未接 CSR） | 52 个事件、槽位恒等式逐拍成立；开关与否周期不变（dhrystone、coremark、mcf 检查点）；mcf 点 Backend Bound 81%（L1D 缺失 53%），两条 load 占堵塞的 61% |
 | [EXP-012](#exp-012-mov-消除move-elimination) | 2026-11-06 | `addi rd, rs, 0` 在重命名时共用源物理寄存器（mov 消除），架构引用计数，3 位计数器 + 引用上限 | trace-model `exp/move-elim-v2`、rtl `exp/move-elim` | 已合入 main（默认开启） | quick SPEC 几何平均 IPC 1.550 → 1.551（+0.06%），coremark −1.15% 周期；`ren` +21.5k 单元（+10%）；收益在噪声量级 |
 | [EXP-009](#exp-009-l1d-数据预取器与指令侧预取) | 2026-11-06 | 电路风格的 L1D 数据预取器（步长 + LLC 次级 next-line + 准确度限流）；指令侧 next-line / FDIP | trace-model `exp/prefetch-h1`、rtl `exp/l1d-prefetch` | 已合入 main（2026-11-07） | 20 个访存瓶颈点（14 训练 + 6 留出）几何平均 IPC：训练 +37.9%、留出 +30.4%；计算密集守卫集 +0.5%；指令侧最多 +0.4%，不采用 |
@@ -16,6 +17,44 @@
 | [EXP-001](#exp-001-面积优化三个方向) | 2026-11-04 | 面积优化：FTQ 合并、LSU 端口、LD/STA IQ 合并 | trace-model `exp/area-explore` | 未提交、未合入 | 三个方向都能省面积，性能代价 0–1% |
 
 ---
+
+## EXP-014 cache 替换策略与组织形式：离线回放 + 周期模型标定
+
+- **日期**：2026-11-07。**分支**：trace-model `exp/repl-oracle`（工作区 `trace-model-repl`，基于 main `a7960e4`，**未提交**）。
+- **问题**：L1D（64KB 4 路 tree-PLRU）、L1I（32KB 8 路，全局轮转指针，命中不更新）、LLC（4MB 16 路，"最近被碰的路的下一个"指针）、ITLB/DTLB（各 64 项全相联 FIFO）的替换策略和容量还有多少空间。
+- **走过的弯路（没有用）**：先把 Belady 直接做进周期模型的 LLC（第一遍录序列、第二遍按序列选 victim），mcf sp0 上 oracle 那遍 44.3M 周期，基线 27.76M，慢 60%，且改成按组位置比较后周期逐位不变；原因是闭环下两遍运行的访问顺序会分叉（oracle 一改时序，LSU 就报 `REQ-GEN-MISMATCH`），我没有查到更细的根因，放弃。结论：**Belady 只能开环测**。
+- **做法**（开环）：
+  - 在 FastWarm（`diff/FastWarm.cpp`，EXP-011 的功能预热，按程序序、只有已提交路径、无预取、无错误路径）的 `LlcModel::access`、`dcache_warm_access`、`L1iModel::access`、`TlbModel::translate` 入口录访问序列（`include/LlcOracle.h`，环境变量 `LLC_ORACLE/L1D_ORACLE/L1I_ORACLE/ITLB_ORACLE/DTLB_ORACLE=rec:<文件>`，默认关、对周期零影响）。每点功能重放 1000 万条指令约 5 秒（`--fast-warmup -w 100000 -c 100000`），580 点 8 并行 3~6 分钟。
+  - 离线回放程序 `scripts/repl/llc_replay.cpp`：指针（现 LLC）、tree-PLRU（现 L1D）、全局轮转（现 L1I）、FIFO（现 TLB）、LRU、SRRIP、BRRIP、DRRIP（set dueling）、Belady、Belady+旁路；任意容量/路数。构造序列验证（17 行循环 16 路：LRU/SRRIP 全缺失，BRRIP 12%，Belady 6.5%）。统计窗口取序列后半（前半预热），按 SimPoint 权重汇总，12 个程序取几何平均。
+  - 周期模型标定：`scripts/pf/run_point.sh` 跑 `-c 10000000`（前门恢复、精确预热），变体用 `-DCFG_ICACHE_WAYS/CFG_DCACHE_SETS/CFG_DTLB_ENTRIES/CONFIG_AXI_LLC_SIZE_BYTES`。
+- **发现 1：LLC 每个请求被查两次。** 周期模型录到的 LLC 序列里 50.02% 的访问与上一条完全相同（第二次必命中），所以 BRRIP 与 SRRIP 的缺失数逐位相同（新行刚插入就被第二次访问提到最近）。回放时折叠了连续重复。FastWarm 的功能序列没有这个现象。**这是模型行为还是建模问题没核实**，RRIP 类策略要先弄清。
+- **结果 1：替换策略（缺失数相对现策略，580 点、12 程序几何平均）**
+
+| 结构 | 现策略 | LRU | SRRIP | BRRIP | DRRIP | Belady（不可达） |
+|---|---|---|---|---|---|---|
+| LLC 4MB 16 路 | 指针 | −0.7% | −1.4% | −3.0% | **−3.9%** | −11.9%（8MB 时 −5.3%） |
+| L1D 64KB 4 路 | tree-PLRU | −1.1% | −0.3% | +1.4% | −0.0% | −18.6% |
+| L1I 32KB 8 路 | 全局轮转 | −3.3% | **−17.4%** | −12.4% | −16.2% | −45.7% |
+
+  - LLC：只有 bzip2（任何近 LRU 策略 −10%）、gcc（只有 BRRIP/DRRIP −23%，抗抖动）、mcf（DRRIP −6.9%，Belady −33%）、astar（Belady −38%、实用策略 ≈0，LRU 反而 +6.7%）有变化，7 个程序 LLC 根本没满或纯流式。
+  - L1D：所有实用策略在 ±1.5% 内；DRRIP 与 PLRU 持平。
+  - L1I：SRRIP 在各程序上稳定受益（gobmk −37%、sjeng −42%、gcc −23.5%、xalancbmk −22%、omnetpp −26%、perlbench −17%）。LRU 在 xalancbmk、omnetpp 上比轮转还差 13~14%。
+- **结果 2：容量/路数（缺失数相对现组织形式，几何平均，策略不变）**
+  - L1D（PLRU）：32KB 4 路 +39%；128KB 4 路 −20%；256KB 4 路 −32%；64KB 8 路 −3%；2 路 +19%；直接映射 +100%。
+  - L1I（轮转）：16KB +235%（8 路）；64KB 8 路 −79%；64KB 16 路 −81%；32KB 16 路 −25%；4 路 +42%。SRRIP 下 32KB 16 路 −43%。
+  - LLC（指针）：2MB +22%；8MB −15%；16MB −20%；路数 8/16/32 差别 <1.5%。
+  - DTLB（FIFO）：**LRU 换 FIFO（64 项全相联）−23.6%**；128 项 −39%（LRU −50%）；256 项 −58%；512 项 4 路 −73%；1024 项 −85%。ITLB：128 项 −59%，但绝大多数程序基数很小。
+- **结果 3：周期模型标定（单点有 ±3% 噪声，只看量级）**
+  - L1I 32KB→64KB（16 路，缺失 −80%），14 个 L1I 压力最大的点：**几何平均 IPC +9.5%**（perlbench +10~16%、xalancbmk +10~25%、gobmk +9~11%）。用这 14 点标定"每减少 1000 个 L1I 缺失涨 0.196% IPC"（R²≈0.62），套到全部 580 点：**SRRIP 全集几何平均 +0.30%**（gobmk +1.8%、xalancbmk +0.6%、perlbench +0.5%、gcc +0.4%），64KB L1I 全集约 +0.95%。
+  - DTLB 64→128→512 项，14 个 DTLB 压力最大的点：+0.7% / +2.2%（mcf 离线 DTLB 缺失率 32%，每千条指令约 142 次，IPC 只 +0.1% / +1.4%）；**离线缺失减少不能直接当 IPC**。
+  - 统一对照（每个程序最高权重 1 个点，12 点几何平均，相对基线）：L1D 128KB **+1.3%**（mcf +8.9%、bzip2 +6.1%）、L1I 64KB **+1.3%**（gobmk +15%）、LLC 8MB **+1.1%**（omnetpp +13%、mcf +2.8%）、DTLB 512 项 **+0.2%**。有反直觉的负值（perlbench L1I 64KB −3.4%、gcc DTLB 512 −2.8%、libquantum LLC 8MB −2.0%），属于单点噪声（h1 预取与时序交互），不是结论。
+- **结论**：
+  1. **替换策略的空间很小**：LLC DRRIP 估约 +0.3~0.5%、L1I SRRIP +0.3%、L1D 无；与 EXP-012 mov 消除（+0.06%）同量级。可以做的（成本极低）：L1I SRRIP（1 Kb）、LLC DRRIP（16 KB 状态）、TLB FIFO→PLRU/NRU（几位）。
+  2. **容量收益也不大**：各结构翻倍各 +1.1~1.3%（单点估计），面积成本远高于替换策略；L1D 128KB 对 mcf、bzip2 有 +6~9%，L1I 64KB 对 gobmk 有 +15%。
+  3. 现有的 EXP-009 预取器已经把最大的内存瓶颈吃掉，剩下的 cache 空间都是小头。
+- **局限**：功能序列没有预取（h1 默认开，预取污染/提前量未计入）、没有错误路径；每点只 ~900 万条指令（后半 450 万）；IPC 换算靠 14 点的线性标定；统一对照每程序一个点；TLB 的序列只有虚拟页号，没有区分超级页；没有测 L2（私有二级）、LLC 命中延迟敏感度、预取行低优先级插入。
+- **复现**：`scripts/repl/fw_seq.sh`（LLC）、`fw_seq_l1.sh`（L1D/L1I）、`fw_seq_tlb.sh`（TLB）录序列，`llc_agg.py` 汇总策略，`org_sweep.py L1D|L1I|LLC|DTLB|ITLB` 扫组织形式，`l1i_est.py` 标定；序列在 `~/personal/AI-Huma-data/repl_fw`（LLC，1.3GB）、`repl_l1`（L1D/L1I，21GB）、`repl_tlb`，周期模型标定结果在 `repl_cl`。
+- **后续**：① L1I SRRIP 在 trace-model 实现，quick SPEC 验证（预期 +0.3%）；② 查清 LLC 每请求两次查找；③ LLC 命中延迟敏感度（`CONFIG_AXI_LLC_LOOKUP_LATENCY`）与私有 L2 的价值；④ 预取行低优先级插入（需要闭环）；⑤ 若关心 TLB，先量页表遍历代价为何被隐藏。
 
 ## EXP-013 PMU：硬件计数器 + trace-model 分析层
 
