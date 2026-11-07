@@ -42,6 +42,7 @@ AI-Huma/                     总仓库：全项目文档（本目录）
 | [TODO.md](TODO.md) | **唯一的**待办清单（进行中 / 待做：验证、RTL 实现、流程与工具） | 随时；做完删除并在 LOG 留一行 |
 | [LOG.md](LOG.md) | 每个 commit 一行：做了什么、怎么验证、结论 | 每次提交 |
 | [EXPLORATION.md](EXPLORATION.md) | 每次架构/性能探索一节（EXP-编号）：问题、方法、模型近似、结果、结论；不论是否合入 | 每次探索 |
+| [PMU.md](PMU.md) | 性能监控单元：事件表、TMA 口径、硬件计数器块、trace-model 分析层、接进 RTL 的计划 | PMU 设计变化时 |
 | [MAIN_RECORDS.md](MAIN_RECORDS.md) | 每次合入 main 一行（版本、正确性、性能、RTL 周期、综合）+ 一节“变化”；**当前数字的权威来源** | 每次合入 main |
 
 ### function-model

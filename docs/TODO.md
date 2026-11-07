@@ -7,6 +7,7 @@
 
 | 事项 | 状态 | 做完的标准 |
 |---|---|---|
+| DRAMsim3（EXP-006）合入 main，连同 LSU store 窗口修复 | trace-model `exp/dram-sim`、rtl `exp/dram-sim`（工作区 `*-dram`）已基于新 main，未提交；LSU store 窗口修复在 rtl `exp/lsu-stwin`（`b94b4f5`，未合入）：16 倍分频下触发不到，只能在不分频配置下验证 | rtl `exp/dram-sim` rebase 到 `exp/lsu-stwin`；DRAMsim3 纳入版本管理（子模块或固定版本脚本，Makefile 默认 `DS3=1` 不能依赖仓库外路径）；**对照测试**：不分频 + STA 端口 1（store 窗口 5）下，修复前（只修提交窗口）与修复后的 RTL 对 trace-model 周期，修复后 66/66 相等；trace-model gate 开 difftest 比较；trace-model 与 RTL 的 Linux 到登录；新基线 quick SPEC；LLC 读响应队列 4→32 的综合对比；MAIN_RECORDS + 变化 |
 | LD/STA IQ 合并、统一 FTQ 的 RTL 试做结果入档 | 两个 RTL 试做都已完成（工作区 `rtl-ldsta`/`trace-model-ldsta`、`rtl-uftq`/`trace-model-uftq`，未提交）：门禁 66/66，66 个程序周期与各自的 trace-model 全部一致 | 在 [EXPLORATION.md](EXPLORATION.md) 记为新实验（含综合数字和未覆盖项）；工作区改动提交到各自的 `exp/` 分支 |
 
 ## 待做：验证
@@ -25,6 +26,7 @@
 
 | 事项 | 为什么 | 做完的标准 |
 |---|---|---|
+| **mov 消除拉长了 `ren` 的关键路径**（EXP-012，已合入 main，默认开启） | 局部 yosys（通用门级数，不是时序）：`ren` 最长组合路径 63 → 130 级；开启后路径是 流水寄存器 → `ren_elim_sel`（33 项 RAT 比较求和）→ `ren_alloc_sel`（8 级串行选择）→ 目的寄存器选择 → RAT 快照 → 分支检查点，消除判定串在分配之前；收益只有 quick SPEC +0.06%、coremark −1.15% 周期，`ren` +12% 单元 | 先做有工艺库的综合量出真实 `ren` 时序（依赖下面“时序综合流程”）；若超标，按下面顺序试：① 判定与分配解耦（所有请求目的寄存器的槽先分配，被消除的槽丢弃分到的寄存器，不让判定进入分配链；会少用空闲寄存器，trace-model 要同步，周期要重新对齐）；② 判定拆成流水一级（用上一拍的 RAT 引用数，上限判定更保守）；③ 放宽到只按“RAT 引用数”不数组内写者；④ 都不行则 `CFG_MOVE_ELIM` 默认改 0（trace-model 与 RTL 一起改，基线、`ref_cycles.txt` 重生成）。每一步 trace-model 先量 quick SPEC，RTL 门禁 66/66 周期对齐 |
 | AMO 改为“特殊 store、在 DCache 里读改写”（BOOM/香山式） | 现在 AMO 和 C910 一样拆成 LOAD + STA + STD（运算在 STD 里，rd=x0 借 32 号寄存器），同时占 LDQ 和 STQ；LD/STA 队列合并后一条 AMO 要在同一拍进 MEM 队列两次，dispatch 为此专留了一条通路（暂时保留这种做法） | trace-model 和 RTL：AMO 只占 STQ（一个地址 uop + STD），在 STQ 头、ROB 已排空时发给 DCache，DCache 流水线内做读改写（AMOALU），旧值经写回口送 rd；dispatch 的 AMO 双写口通路删除；门禁和 Linux 通过。可与 LD/STA 共享 AGU 一起考虑 |
 | 统一 FTQ 的提交读口按块读 | 统一 FTQ 现在每条提交指令一个读口（PC 8 口 + 元数据 8 口，各从 64 项×8 槽里选），是 `ftq_top` 面积的大头。trace-model 统计（2026-11-05，SPEC 6 个最大权重点 + 5 个小程序）：一拍提交跨的 FTQ 块数超过 4 的周期最多 0.06%，超过 3 的在 gcc 上有 9.5% | decode 组队时限制一组最多跨 K 个块（trace-model IDU 与 RTL `pre_idu` 同步，参数 `CFG_DECODE_MAX_BLOCKS`，建议 K=4）；`ftq_top` 提交读口改为从 commit 指针读 K 个连续块整行再按块号/偏移选；quick SPEC 比较 K=3/4；RTL 门禁 66/66、周期与 trace-model 相等；提交读口选择器预计元数据 −44%、PC −50%（K=4） |
 | 删除分开式结构里的 `altpcpn` 存储 | BPU 训练从不读它（EXP-007 补上标准 TAGE 的备选更新也无收益）；现在 PTAB、front2back、后端 FTQ 每个槽都白存 3 位 | trace-model 与 RTL 删掉这份存储和连线，周期不变（门禁 66/66、gate 62/62 逐个相同）；统一 FTQ 若合入则随之消失 |
@@ -39,7 +41,8 @@
 
 | 事项 | 为什么 | 做完的标准 |
 |---|---|---|
-| 性能计数（PMU）专项 | 探索要靠队列占用、端口使用、阻塞原因统计。现在只有 trace-model `exp/area-explore` 上的 ArchStats（`ARCH_STATS=1`），夹杂实验专用的东西，暂不进 main | 统一的计数器框架：trace-model 和 RTL 都有（RTL 可对应 HPM CSR）、关闭时周期不变；以 ArchStats 的统计项为起点 |
+| **快速 warmup（功能预热）** | 每个 SPEC 点现在要模拟 2000 万条指令（1000 万详细预热 + 1000 万测量），预热占一半；前门恢复强制预热等于检查点间隔（`--restore-stub` 不允许缩短），所以评测提速只能缩测量窗口。云上一个 20 点配置约 12~15 分钟，由最慢的 mcf 点决定，预热是其中一半（EXP-009，2026-11-06） | 用快速的功能模型先跑完预热，把 L1D/LLC 的 tag、分支预测器、预取器表（步长表、BO 的 RR 表）训练好再交给详细模型，详细预热缩到约 100 万条；**验收线**：在已有的精确结果（基线、h1 等 20 点）上，近似版本的"提升比"与精确版本偏差 <0.5 个百分点、配置排序不变；ROB/LSU/MSHR 等冷启动的影响单独量化；`--restore-stub` 的"预热必须等于检查点间隔"检查改为可配置；预期每点约 ×1.8 |
+| 性能计数（PMU）后续（EXP-013 已合入 main：trace-model `PMU=1`、RTL tier 1 事件总线 + 计数器块） | RTL 计数器块还没接 CSR（软件不可见）；RTL 只有 18 个事件；详见 [PMU.md](PMU.md) 第 4 节 | ① 决定软件是否可见（改 function-model / trace-model IDU / RTL CSR 的"这些 CSR 不存在"约定，OpenSBI 会探测，Linux 要重跑）；② 需要时给 icache/rob/lsu 加输出，补二级事件（取指延迟/带宽、Memory/Core）；③ 综合 `pmu`（接上后）；④ 前门恢复 `cycle_base` 未清零（`sim-time` 少报恢复程序的周期，mcf 点 −0.04%，改它会动所有 SPEC 基线）；⑤ dhrystone 两条 `ret` 预测错误率约 100% 的原因 |
 | 时序综合流程 | MAIN_RECORDS 要求记 WNS，但现在只有 yosys 通用门面积代理，没有工艺库、时序约束和静态时序分析；整机面积推算也只在旧配置下做过（第 3 批只综合了受影响模块） | 选定开源工艺库（如 ASAP7/Nangate45）+ 约束频率，主要模块能出面积和 WNS；整机推算可按需重跑 |
 | SPEC 检查点生成提速 | 生成检查点要把整个程序顺序再跑一遍（sjeng 约 3.7 小时，单线程） | BBV 时顺带存粗粒度检查点，生成 SimPoint 检查点时从最近的粗检查点并行起跑 |
 | `/tmp` 里的其他生成数据 | Linux 特殊检查点 `/tmp/ckpt`、综合中间结果等重启会丢（SPEC 检查点已因此丢过一次） | 挪到 `~/personal/AI-Huma-data/`，文档写明位置和生成命令 |

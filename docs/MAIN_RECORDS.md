@@ -10,6 +10,7 @@
 
 | 日期 | 版本（总仓库 / function-model / trace-model / rtl） | 正确性 | dhrystone 周期 (IPC) | coremark 周期 (IPC) | memory-stress-small 周期 (IPC) | RTL 周期 | 综合（工具 / 频率 / 面积 / WNS） | 说明 |
 |---|---|---|---|---|---|---|---|---|
+| 2026-11-07 | 本行所在提交 / `7b8ee1b` / `a7960e4` / `5829f07` | trace-model gate 63/63（PMU 关、`PMU=1` 各一遍，都与基线逐个相同）；RTL 逐条对比 67/67，预取开、关（`PF_EN=0`）周期都与参考逐个相等（0 个不同），0 个函数模型不一致；`lint.sh`、`lint_chip.sh` 0 警告；Linux 13 段（s01–s13 接力，每段 1600 万周期，s01–s04 本机、s05–s13 服务器 4 线程）逐条对比 13/13 通过、0 不一致；PMU 的 RTL 与 trace-model 在 dhrystone、coremark 上 18 个 tier-1 事件总数逐个相等；`tests/pmu/run.sh` 30 万拍随机 0 不一致 | 161,183 (1.811)，0% | 251,535 (2.140)，0% | 334,635 (3.232)，0% | 与 trace-model 相同（67 个程序逐个相等，预取开、关都是） | yosys 通用门面积代理（相对数字，无工艺库、无时序，`SYNTH_LIGHT=1 SYNTH_MEM=1`）：`dispatch` 86,637 → 86,637（不变）；新增 `pmu_ev_core` 518 个单元；`pmu` 计数器块（8 个 HPM）约 10.2k 单元，计数器存储按 `$mem` 未计触发器（估计约 750 个触发器），**计数器块没有接到任何东西，综合器会把它整个删掉**；工艺库、WNS：**未做** | PMU（EXP-013）：trace-model `PMU=1`（默认关）51 个事件、TMA 一二级、逐 PC 堵塞画像、相位；RTL 事件总线 tier 1（18 个事件含 TMA 一级）+ 计数器块（未接 CSR，软件不可见）；周期不变 |
 | 2026-11-07 | 本行所在提交 / `7b8ee1b` / `b301161` / `9279125` | trace-model gate 63/63（基线更新，预取开；`PF_ENABLE=0` 对 main 基线 62/62 相同，另加 pf-stress）；RTL 逐条对比 67/67，预取开、关两种配置周期都与 trace-model 逐个相等（0 个不同），0 个函数模型不一致；`lint.sh`、`lint_chip.sh` 0 警告；Linux 分 13 段（检查点 s01–s13 接力，每段 1600 万周期，每段检查 630 万到 2400 万条指令，不是一次连续运行、微架构每段冷启动，周期不比较）在**合并后的树**（预取开 + move elimination，rtl `9279125`）上逐条对比，13/13 通过、0 不一致；SPEC full 580/580 点（fast warmup），无 difftest 不一致 | 161,183 (1.811)，−0.52% | 251,535 (2.140)，−0.34% | 334,635 (3.232)，−3.65% | 与 trace-model 相同（67 个程序逐个相等） | yosys 通用门面积代理（相对数字，无工艺库、无时序；合并后的树，2026-11-07 重测，`SYNTH_LIGHT=1`）：新增 `dcache_pf` 4,172 个单元、422 个触发器；`dcache_mshr`（`SYNTH_LIGHT=1 SYNTH_MEM=1`）main 96,296 → 96,931 个单元（+635，+0.7%）、触发器 748 → 764；L1D 阵列新增 pf 位 256×4 = 1,024 个触发器（未重测）；净增触发器约 1,460；工艺库、约束频率、WNS：**未做** | L1D 数据预取器 h1（EXP-009）：单条全局步长表项、度 8、距离 2、页内、LLC-only next-line 引擎、无 PC、无限流；默认开（`PF_ENABLE` / RTL `PF_EN`）。SPEC full 12 个程序几何平均 +8.3%，估算分数 8.12 → 约 8.80 分/GHz（SimPoint 权重，对精确 PF 关基线，分数 = 旧分数 × 加速比，参考时间未核对官方表；libquantum +96.3%、mcf +10.8%、gcc +9.0%、bzip2 +6.2%，gobmk/hmmer/sjeng −0.8%/−1.6%/−3.0%）；低于 −10% 的 5 个点（omnetpp sp22 −40.7%、sp7 −22.8%，gcc sp38 −29.9%，xalancbmk sp34 −22.2%、sp15 −11.8%）是已知回退，原因是 LLC-only 引擎；节流、MSHR 预留、时间片对抗三个修复中，节流（几何平均 +7.2%）和时间片对抗（+7.7%）在全量上都不如 h1（+8.2%，三方案都有结果的 579 个点同口径），MSHR 预留只在抽样点上测过、也没有同时保住 mcf，按负责人决定保持 h1 合入 |
 | 2026-11-06 | 本行所在提交 / `d40c588` / `767c25f` / `1e5d656` | trace-model gate 62/62（基线更新，7 个程序周期变化，全部 difftest Success、`ME_CHECK=1` 0 次断言）；RTL 66 个程序逐条对比 66/66，周期与 trace-model 逐个相等（开、关 `MOVE_ELIM` 两种配置都跑了：关闭时与原 `ref_cycles.txt` 逐个相等）；Linux 从复位启动到 `rv32 login:`：trace-model 与 RTL（`SOC_TB_FM=1`，每条提交逐条对比，0 不一致、无断言；登录后手动结束，没有总周期数和"N 条已检查"汇总）都通过；quick SPEC 129 个点无 difftest 不一致 | 162,033 (1.802)，0 | 252,400 (2.133)，−1.15% | 347,305 (3.114)，0 | 与 trace-model 相同 | yosys 通用门面积代理（相对数字，无工艺库、无时序）：`ren` 206,228 → 227,720 个单元（+21.5k，+10.4%；`arch_cnt` 映射成触发器后 → 231,029，+24.8k，+12.0%，触发器 +384），`dispatch` 86,637、`rob` 201,672 不变；`ren` 最长组合路径 63 → 130 级（通用门级数，不是时序）；工艺库、约束频率、WNS：**未做** | mov 消除（EXP-012），默认开启。quick SPEC 6 个程序几何平均 IPC 1.550 → 1.551（+0.06%）：收益在噪声量级，按负责人决定合入 |
 | 2026-11-06 | 本行所在提交 / `d40c588` / `88e5254` / `b19a181` | trace-model gate 62/62（基线更新，63 个程序周期全部变化）；RTL 66 个程序逐条对比 66/66，周期与 trace-model 逐个相等；Linux 从复位启动到 `rv32 login:`：trace-model 与 RTL（每条提交逐条对比，无断言、0 不一致；登录后手动结束，没有总周期数和"N 条已检查"汇总）；SPEC full 580 点无失败、无 difftest 不一致 | 162,033 (1.802)，+7.7% | 255,335 (2.108)，+9.4% | 347,305 (3.114)，+83.6% | 与 trace-model 相同 | yosys 通用门面积代理（相对数字，无工艺库、无时序）：`axi_llc` 489,436 → 522,758 个单元（+33.3k）、触发器 22,324 → 30,584；`lsu_dc_req_st` 86,150 → 62,755（−23.4k）；净约 +9.9k 单元（不到整机的 0.2%）、触发器 +8.3k（约 +4.6%）；`mem_top` 太大综合超时，`TICKS=1` 常量化的效果未测到；工艺库、约束频率、WNS：**未做** | DRAMsim3 DDR（EXP-006）：去掉 16 倍 AXI 子系统分频、核心 1 GHz、DDR4-3200 加 60 ns 非核心延迟，见下文“变化”。SPEC full 几何平均 IPC 1.396、估算 8.12 分/GHz；quick 6 个程序 IPC 2.204 → 1.550（−29.7%）。周期变多是因为旧基线靠分频把 DRAM 做快了约 13 倍 |
@@ -17,6 +18,20 @@
 | 2026-11-04 | `6210e46` / `4f99467` / `41a5cdd` / `dc46f6d`（rtl 工作区有未提交修改） | gate 62/62；RTL gate+vm 64 个程序逐条对比一致 | 150,838 (1.935) | 226,991 (2.371) | 189,128 (5.718) | 待补 | **未做**：还没有综合流程（见 README"下一步"第 2 条） | 起始记录（本表从这里开始） |
 
 ## 变化
+
+### 2026-11-07 PMU（EXP-013）
+
+**配置变化**：无新配置参数；trace-model 环境变量 `PMU`（默认关）、`PMU_OUT`、`PMU_INTERVAL`、`PMU_PCPROF`。周期不变。
+
+**设计改动**
+- trace-model：`include/pmu_events.def`（唯一事件表）、`back-end/Pmu*.cpp`、`BackTop::pmu_sample()`、`Dispatch::pmu_slots()`、`Rob::pmu_head_incomplete()`；`scripts/pmu/`（报告、SPEC 逐程序 TMA）；顺带修 `RealLsu::load_miss_mask` 的 64 位掩码（ROB 有 128 项）。
+- rtl：`rtl/pmu/`（`pmu.sv` 计数器块 + HPM CSR、`pmu_ev_core.sv` 事件总线 tier 1、`pmu_ev_pkg.sv` 由 `scripts/gen_pmu_pkg.py` 从事件表生成）；dispatch 新输出 `slot_valid`；back_top 新导出 `dis2rob_dis_fire`、`rob_bcast_interrupt`；`tools/gen_backtop.py` 现在能原样生成 `back_top.sv`（补了 `spec/lsu.io` 的 replay 输出）；SoC 测试平台累加事件总线，`scripts/pmu_parity.sh` 逐事件对比。
+
+**验证范围**
+- 跑了：见上表"正确性"。另：12 个 SPEC 点（每个程序权重最高的 SimPoint）的 TMA，见 PMU.md 第 7 节。
+- 没跑 / 未完成：trace-model 的 Linux 整段启动（只做了 RTL 的 13 段）；RTL 上 SPEC；计数器块接 CSR（软件可见，要改 function-model/OpenSBI 看到的 ISA 约定）；二级以下事件的 RTL 实现（取指延迟/访存拆分、前端、访存、占用）；工艺库综合与 WNS。
+
+**已知问题（不是本次引入）**：前门恢复的 SPEC 点里 `cycle_base` 在预热结束后没清零，`sim-time(cycle)` 比测量窗口少恢复程序用的周期（mcf 点 −0.04%）；dhrystone 的两条 `ret`（打印路径）预测错误率约 100%，原因未确认。
 
 ### 2026-11-07 L1D 数据预取器 h1（EXP-009）
 

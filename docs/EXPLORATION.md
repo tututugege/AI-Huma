@@ -4,6 +4,7 @@
 
 | 编号 | 日期 | 题目 | 分支 | 状态 | 一句话结论 |
 |---|---|---|---|---|---|
+| [EXP-013](#exp-013-pmu硬件计数器--trace-model-分析层) | 2026-11-07 | PMU：硬件计数器块（事件总线 + HPM CSR）与 trace-model 分析层（TMA、逐 PC 堵塞画像、直方图、相位）共用一张事件表 | trace-model `exp/pmu`（工作区 `trace-model-pmu`）、rtl `exp/pmu`（工作区 `rtl-pmu`） | 已合入 main（2026-11-07） | trace-model 完整；RTL 只做简单的一档（提交流、重定向、TMA 一级的槽事件）+ 计数器块（未接 CSR） | 52 个事件、槽位恒等式逐拍成立；开关与否周期不变（dhrystone、coremark、mcf 检查点）；mcf 点 Backend Bound 81%（L1D 缺失 53%），两条 load 占堵塞的 61% |
 | [EXP-012](#exp-012-mov-消除move-elimination) | 2026-11-06 | `addi rd, rs, 0` 在重命名时共用源物理寄存器（mov 消除），架构引用计数，3 位计数器 + 引用上限 | trace-model `exp/move-elim-v2`、rtl `exp/move-elim` | 已合入 main（默认开启） | quick SPEC 几何平均 IPC 1.550 → 1.551（+0.06%），coremark −1.15% 周期；`ren` +21.5k 单元（+10%）；收益在噪声量级 |
 | [EXP-009](#exp-009-l1d-数据预取器与指令侧预取) | 2026-11-06 | 电路风格的 L1D 数据预取器（步长 + LLC 次级 next-line + 准确度限流）；指令侧 next-line / FDIP | trace-model `exp/prefetch-h1`、rtl `exp/l1d-prefetch` | 已合入 main（2026-11-07） | 20 个访存瓶颈点（14 训练 + 6 留出）几何平均 IPC：训练 +37.9%、留出 +30.4%；计算密集守卫集 +0.5%；指令侧最多 +0.4%，不采用 |
 | [EXP-008](#exp-008-decode-宽度-8-降到-6) | 2026-11-05 | decode/rename 宽度 8→6（含 commit 宽度拆分）；前端取指仍为 8 | trace-model `exp/decode6` | 未提交、不合入；保持 8 | quick SPEC 几何平均 IPC −3.1%（hmmer −12%，其余 5 个 −1.1%）；损失来自 hmmer 的高 IPC 阶段，commit 宽度不是原因 |
@@ -13,6 +14,30 @@
 | [EXP-003](#exp-003-rob-与-prf-扩大到-256) | 2026-11-04 | ROB/PRF 扩大到 192、256 | trace-model `exp/area-explore` | 未提交、未合入 | 都翻倍到 256 只快约 0.8%（coremark 3%），ROB 128 合理 |
 | [EXP-002](#exp-002-全核面积浪费排查) | 2026-11-04 | 全核面积浪费排查：各 IQ、ibuf、front2back、分支资源、ALU/BRU 端口 | trace-model `exp/area-explore` | 未提交、未合入 | IQ 总项数 384→192、BRU 4→2 等组合后无性能损失；BPU 存储需大负载评估（“ROB 是瓶颈”的说法已被 EXP-003 否定） |
 | [EXP-001](#exp-001-面积优化三个方向) | 2026-11-04 | 面积优化：FTQ 合并、LSU 端口、LD/STA IQ 合并 | trace-model `exp/area-explore` | 未提交、未合入 | 三个方向都能省面积，性能代价 0–1% |
+
+---
+
+## EXP-013 PMU：硬件计数器 + trace-model 分析层
+
+- **日期**：2026-11-07。**分支**：trace-model `exp/pmu`（工作区 `trace-model-pmu`，基于 main `ac16e92`，已快进合入：`ee988d0`、`a7960e4`）、rtl `exp/pmu`（工作区 `rtl-pmu`，基于 main `9279125`，已快进合入：`b5a299a`、`5829f07`）。设计和用法见 [PMU.md](PMU.md)。
+- **问题**：探索靠队列占用、阻塞原因、TMA，旧的统计套件（2026-11-02 随清理删除）口径松散、不能进 RTL；要一套两边都有的计数器框架，再加只有模型能做的更细分析。
+- **做法**：
+  - 事件表 `trace-model/include/pmu_events.def`（52 个事件，每个 = 一个信号每拍加几）；trace-model 每拍在 `BackTop::comb()` 末尾填事件向量并累加（`back-end/PmuSample.cpp`），dispatch 的 8 个槽逐槽归桶（`Dispatch::pmu_slots`），恒等式 `slots = FIRE + KILLED + FE_EMPTY + BE_*` 每拍检查。
+  - 分析层：逐 PC 堵塞画像（把丢掉的 dispatch 槽记给最老未完成指令）、提交数/ROB/LDQ/STQ/未完成缺失数直方图、`PMU_INTERVAL` 相位曲线；`scripts/pmu/pmu_report.py` 汇总。
+  - RTL：`rtl/pmu/pmu.sv`（mcycle、minstret、8 个可编程 HPM、mcountinhibit、mcounteren、user 影子，事件由 `mhpmevent = 事件号+1` 选择）；`pmu_ev_pkg.sv` 由 `scripts/gen_pmu_pkg.py` 从事件表生成。
+- **开关**：环境变量 `PMU=1`（默认关）、`PMU_OUT`、`PMU_INTERVAL`、`PMU_PCPROF=0`。
+- **验证**：① 周期：dhrystone 161,183、coremark 251,535、mcf 检查点 sp0（10M+10M）27,764,655，`PMU=1` 与 main 的 `build/simulator` 逐个相同；② 槽恒等式违反 0 次（三个负载）；`INSTRET` 等于提交数（检查点模式停在拍中间，最多多计 7 条）；③ **RTL tier 1 逐事件对齐**：`rtl/scripts/pmu_parity.sh`，dhrystone、coremark 各 18 个事件（含 TMA 一级的槽事件）RTL 与 trace-model 总数全部相等（周期 161,183 / 251,535）；④ RTL 计数器块：`tests/pmu/run.sh` 30 万拍随机对 C++ 模型 0 不一致，故意改坏模型能被抓到；lint 干净。
+- **结果（样例，只看分析层能给什么）**：
+  - mcf sp0：IPC 0.36；Retiring 4.5% / Bad Spec 10.5% / Frontend 3.8% / **Backend 81.2%**；按 ROB 头看 Memory 74.9%（L1D 缺失 53.1%），按资源看 ROB 满 80.6%；L1D load 缺失 162 MPKI（48%），MLP 4.4，83.5% 的周期有缺失在途；**两条 load（0x123ac、0x10938）占全部堵塞槽的 61%**，访存指令占 94%；分支 15.7 MPKI，0x12388 一条分支占误预测 55%。预取 744,735 次、有用 13 次（计数口径见 PMU.md 第 6 节，需要核实）。
+  - dhrystone 64 次：Retiring 22.6% / Bad Spec 27.3% / Frontend 32.0% / Backend 18.1%；**两条 `ret`（xputc/打印路径里）预测错误率 99.9%**，占全部误预测的 46%、Bad Spec 的大头——像是 `jalr a1` 这类间接调用没有压 RAS，**没有确认**。
+  - coremark：Retiring 26.8% / Bad Spec 20.4% / Frontend 23.5% / Backend 29.3%（ROB 满 29%）。
+- **顺带发现（不是本实验引入，未处理）**：
+  1. `RealLsu::load_miss_mask` 用 `uint64_t` 与 `1ULL << rob_idx`，ROB 有 128 项：rob_idx ≥ 64 的缺失标记丢失、移位越界；只喂旧 TMA 元数据，不影响周期。本分支已改成 `bitset<ROB_NUM>`。
+  2. 前门恢复的 SPEC 点：`cycle_base`（恢复程序用的周期，mcf 点 10,668）在预热结束的 `perf_reset()` 之后没有清零，报告的 `sim-time(cycle)` 比测量窗口实际周期少 `cycle_base`（mcf 点 27,764,655 对 27,775,324，−0.04%）。基线都带同样的偏差所以比值基本不变，但绝对 IPC 偏高；修它会改所有 SPEC 基线周期，需要你定。
+- **未覆盖**：RTL 只接了 tier 1（18 个事件，PMU.md 第 4 节），其余事件（二级拆分、前端、访存、占用）只在 trace-model；CSR 软件可见（要改 function-model/OpenSBI 看到的 ISA 约定）没做；计数器块没综合；没有 L2/LLC/DRAM 级事件；没跑 gate（工作区没建测试程序）、没跑 SPEC 全量。
+- **合入前复验（在提交后的代码上）**：trace-model gate 63/63（PMU 关、`PMU=1` 各一遍，都与基线逐个相同）；RTL `fm_gate.sh` 67/67、周期与 `ref_cycles.txt` 全部相同（预取开），关预取（`PF_EN=0`）67/67、与 `ref_cycles_nopf.txt` 全部相同，0 个函数模型不一致；`lint.sh`、`lint_chip.sh` 0 警告；Linux 13 段（s01–s13，每段 1600 万周期）逐条对比 13/13 通过、0 不一致，s01–s04 在本机、s05–s13 在服务器（4 线程 Verilator），s05/s08/s13 检查指令数 18,017,937 / 21,387,965 / 6,331,761，与合并预取后的树相同；综合代理（yosys 通用门）`dispatch` 86,637 不变，`pmu_ev_core` 518 单元，`pmu`（8 个 HPM）约 10.2k 单元（计数器存储按 `$mem`，不计触发器）。
+- **结论**：已合入。trace-model 侧可以用了（`PMU=1`，默认关）；RTL 带 tier 1 事件总线（永远在，组合逻辑）和还没接 CSR 的计数器块；周期不受影响。后续见 TODO（软件可见、更多事件、综合）。
+- **复现**：`gmake LDFLAGS="-lz"`；`PMU=1 PMU_OUT=out/x build/simulator prog.bin`；`python3 scripts/pmu/pmu_report.py out/x`；rtl `bash tests/pmu/run.sh`、`python3 scripts/gen_pmu_pkg.py <pmu_events.def>`。
 
 ---
 

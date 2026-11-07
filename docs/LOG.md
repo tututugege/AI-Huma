@@ -10,6 +10,11 @@
 
 | 日期 | 仓库 / 分支 | commit | 做了什么 | 验证 | 结论 |
 |---|---|---|---|---|---|
+| 2026-11-07 | 总仓库 `main` | 本行所在提交 | **合入 main**：trace-model `ee988d0`、`a7960e4`，rtl `b5a299a`、`5829f07`（EXP-013 PMU）；文档 PMU.md、EXPLORATION、MAIN_RECORDS、GUIDE、TODO | 见 MAIN_RECORDS 2026-11-07 PMU 行 | 已合入 |
+| 2026-11-07 | rtl `exp/pmu` | `5829f07` | EXP-013：`pmu_ev_core` 事件总线 tier 1（提交流、重定向、TMA 一级槽事件），dispatch `slot_valid`、back_top 导出，`gen_backtop.py` 重新对齐，测试平台累加 + `pmu_parity.sh` | fm_gate 67/67（预取开、关），lint 0，Linux 13 段 13/13，dhrystone/coremark 18 个事件逐个相等 | 已合入 |
+| 2026-11-07 | rtl `exp/pmu` | `b5a299a` | EXP-013：`rtl/pmu`（计数器块 + HPM CSR、生成的事件包）、`tests/pmu` | 30 万拍随机 0 不一致，变异能被抓到，lint 0 | 已合入（未接 CSR） |
+| 2026-11-07 | trace-model `exp/pmu` | `a7960e4` | EXP-013：`PMU=1` 事件计数、TMA、逐 PC 画像、直方图、相位、SPEC 脚本 | gate 63/63（PMU 关、开），dhrystone/coremark/mcf 点周期不变，恒等式 0 违反 | 已合入 |
+| 2026-11-07 | trace-model `exp/pmu` | `ee988d0` | `RealLsu::load_miss_mask` 改为 `bitset<ROB_NUM>`（64 位掩码丢 ROB 项 ≥64） | gate 63/63 周期不变 | 已合入 |
 | 2026-11-07 | 总仓库 `main`（trace-model `exp/prefetch-h1`、rtl `exp/l1d-prefetch`、function-model `exp/sparse-mem` 合入 main） | 本次 | EXP-009 L1D 预取器 h1 合入本地 main（未推送）：先把 main 的 move elimination 合进两个分支（只有基线/参考周期/PROJECT.md 有冲突），用合并后的树重新生成 `baseline.csv`、`ref_cycles.txt`、`ref_cycles_nopf.txt`；函数模型稀疏拷贝；LLC 引擎控制实验作为补丁保存 | trace-model gate 63/63，关预取对 main 基线 62/62；RTL 逐条对比 67/67（开、关各一遍，周期与 trace-model 相等）；lint 0 警告；SPEC full 580/580（fast warmup）几何平均 +8.3% | 已合入 main；合并后的树上 Linux 13 段 0 不一致（2026-11-07 补跑） |
 | 2026-11-07 | trace-model `exp/prefetch-h1` | `c2e2d67` | 全量 SPEC 脚本；节流、MSHR 预留、时间片对抗实验存为补丁 `docs/experiments/exp009_llc_engine_control.patch`，源码树保持冻结的 h1 | 全量 579 点：h1 +8.2%，节流 +7.2%，对抗 +7.7%（几何平均，SimPoint 权重） | 不采用 |
 | 2026-11-06 | rtl / `exp/l1d-prefetch`（未合入） | `17ffdf7`、`a03ad5e`、`96f67c8`、`3df9dda` | **L1D 预取器 h1 的 RTL**（EXP-009）：新 `dcache_pf`；stage1 探测槽、stage2 训练事件、MSHR 预取标志/晋升/无填充释放、阵列 pf 位、LSU 到 L1D 的 `replay` 位；参数 `PF_EN`（默认 1）；`fm_gate.sh` 加 `REF_CYCLES`，`ref_cycles.txt` = 预取开，`ref_cycles_nopf.txt` = 旧基线 | `PF_EN=1`：`fm_gate.sh` 66/66 逐条对比通过且 **66 个程序周期与 trace-model 全部相等**（25 个因预取而变）；`PF_EN=0`：66/66、周期与旧基线相同；`lint.sh`、`lint_chip.sh` 0 警告；Linux 启动进行中 | 未合入 main；RQD 重测、冻结版 SPEC 复跑、WNS 未做 |
