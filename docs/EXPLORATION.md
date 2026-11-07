@@ -4,6 +4,7 @@
 
 | 编号 | 日期 | 题目 | 分支 | 状态 | 一句话结论 |
 |---|---|---|---|---|---|
+| [EXP-016](#exp-016-issue-queue-入队宽度限制) | 2026-11-08 | 每个 IQ 的入队（dispatch 写口）宽度从 8 限到发射口数附近，省写口 | trace-model `exp/iq-enq`（`cefaee4`）、rtl `exp/iq-enq`（`121324c`，工作区 `trace-model-iqenq`、`rtl-iqenq`） | 已提交到实验分支，未合入 main | INT7/LD6/STA4/STD4/BR5（写口 40→26）：全量 580 点快速预热几何平均 IPC −0.05%；先试的 6/4/3/3/3 为 −1.12%（mcf −3.2%、omnetpp −4.3%） |
 | EXP-015 | 2026-11-08 | 分级 LSU（含 IPC 修复）+ 流水化 S+R BPU 合并 | trace-model/rtl `lsu-bpu`（旧版 `lsu-bpu-v1`） | 已合入 main | 30 点精确预热 IPC +2.87%；全量 580 点快速预热 −1.20%（bzip2 −10.2%），已知回退，见 MAIN_RECORDS |
 | [EXP-014](#exp-014-cache-替换策略与组织形式离线回放--周期模型标定) | 2026-11-07 | cache 替换策略与组织形式的收益空间：用功能模型（FastWarm）录 L1I/L1D/LLC/TLB 访问序列，离线回放各种策略与容量/路数，再用周期模型标定 IPC | trace-model `exp/repl-oracle`（工作区 `trace-model-repl`） | 未提交、不合入（只测空间，没有实现策略） | 替换策略的空间很小：LLC DRRIP 缺失 −3.9%、L1D 现策略已接近最优、L1I SRRIP 缺失 −17% 但标定后全集只有 +0.3% IPC；容量翻倍（L1D 128KB / L1I 64KB / LLC 8MB）各约 +1.1~1.3%（单点、噪声 ±3%）；TLB 离线缺失 −73% 但周期模型只 +2.2% |
 | [EXP-013](#exp-013-pmu硬件计数器--trace-model-分析层) | 2026-11-07 | PMU：硬件计数器块（事件总线 + HPM CSR）与 trace-model 分析层（TMA、逐 PC 堵塞画像、直方图、相位）共用一张事件表 | trace-model `exp/pmu`（工作区 `trace-model-pmu`）、rtl `exp/pmu`（工作区 `rtl-pmu`） | 已合入 main（2026-11-07） | trace-model 完整；RTL 只做简单的一档（提交流、重定向、TMA 一级的槽事件）+ 计数器块（未接 CSR） | 52 个事件、槽位恒等式逐拍成立；开关与否周期不变（dhrystone、coremark、mcf 检查点）；mcf 点 Backend Bound 81%（L1D 缺失 53%），两条 load 占堵塞的 61% |
@@ -16,6 +17,29 @@
 | [EXP-003](#exp-003-rob-与-prf-扩大到-256) | 2026-11-04 | ROB/PRF 扩大到 192、256 | trace-model `exp/area-explore` | 未提交、未合入 | 都翻倍到 256 只快约 0.8%（coremark 3%），ROB 128 合理 |
 | [EXP-002](#exp-002-全核面积浪费排查) | 2026-11-04 | 全核面积浪费排查：各 IQ、ibuf、front2back、分支资源、ALU/BRU 端口 | trace-model `exp/area-explore` | 未提交、未合入 | IQ 总项数 384→192、BRU 4→2 等组合后无性能损失；BPU 存储需大负载评估（“ROB 是瓶颈”的说法已被 EXP-003 否定） |
 | [EXP-001](#exp-001-面积优化三个方向) | 2026-11-04 | 面积优化：FTQ 合并、LSU 端口、LD/STA IQ 合并 | trace-model `exp/area-explore` | 未提交、未合入 | 三个方向都能省面积，性能代价 0–1% |
+
+---
+
+## EXP-016 issue queue 入队宽度限制
+
+- **日期**：2026-11-08。**分支**：trace-model `exp/iq-enq`（基于 main `1d08b15`，提交 `5851e1d`、`9da2f6e`、`e0d7375`、`cefaee4`）、rtl `exp/iq-enq`（基于 `cc90cc2`，`66f7096`、`121324c`）。**未合入。** 提交说明里写的是"EXP-014"，是编号撞车写错了，正确编号是 EXP-016。
+- **问题**：五个 IQ 的入队宽度都等于 DECODE_WIDTH=8，每个 IQ 8 个写口，不现实。
+- **开关**：`CFG_{INT,LD,STA,STD,BR}_IQ_ENQ_WIDTH`（编译期，`config.h`），导出为 `IQ_*_ENQ_WIDTH` 给 RTL 配置包；原设计 = 全 8，周期不变。RTL：`isu.sv` 每个 IQ 只实例化这么多入队通道，`iss2dis_ready_num = min(空位, 通道数)`（模型也是两个条件都查）。
+- **PMU 补充**（trace-model 专用，事件表末尾追加，id 不变）：`SLOT_BE_IQ_SPACE_*`（该 IQ 没空位）、`SLOT_BE_IQ_WIDTH_*`（有空位但本拍入队宽度用完）、`OCC_IQ_*`；十个停顿事件之和恒等于 `SLOT_BE_IQ_FULL`（每拍检查）。**LD 被 LD IQ 入队宽度挡住原来记成 `LDQ_FULL`，现在记在 IQ 里**（宽度 8 时不会发生，旧数字不变）。
+- **结果**（周期；快速预热，预取开，对比 main `1d08b15` 的 `/root/lsubpu/res/full_new`；dhrystone / coremark）：
+
+| INT/LD/STA/STD/BR | dhrystone | coremark | 全量 580 点几何平均 IPC |
+|---|---|---|---|
+| 8/8/8/8/8（main） | 123,684 | 295,351 | — |
+| 6/4/3/3/3 | 123,608 | 295,601 | **−1.12%**（563 点；30 点精确预热 −1.55%；mcf −3.15%、omnetpp −4.30%） |
+| **7/6/4/4/5** | 123,519 | 293,286 | **−0.05%**（580 点；mcf −0.33%、omnetpp −0.94%、hmmer +0.92%、sjeng +0.82%） |
+
+  - 小程序看不出差别（6/4/3/3/3 在 dhrystone/coremark 上 ±0.1%），SPEC 的 mcf/omnetpp 才暴露。
+  - 定位方法：用新计数器看 mcf/omnetpp 的 28 个点（mcf 每 5 取 1、omnetpp 每 3 取 1）。6/4/3/3/3 下的宽度停顿占槽位：omnetpp BR 1.54%、INT 0.50%、STA 0.42%、LD 0.20%；mcf LD 0.58%、BR 0.43%、STA 0.25%；IQ 本身基本没满，STD 队列（16 项）有一点。放宽后（同 28 点，对比 main）：6/4/3/3/3 mcf −2.66%/omnetpp −4.03%；6/5/4/3/4 −0.76%/−1.90%；7/6/4/3/5 −0.41%/−1.06%（剩下的是 STD 宽度 3）；**7/6/4/4/5 −0.28%/−0.85%**；6/5/4/4/4 −0.54%/−1.68%。
+- **面积依据**：入队写口数 8×5=40 → 7+6+4+4+5=26（−35%）；RTL 只是少实例化通道，没做综合，**没有量面积**。
+- **验证**：trace-model gate 63/63（基线按新默认重生成，20 个程序周期变化，全部 difftest 通过）；RTL `lint.sh`、`lint_chip.sh` 0 警告；fm_gate 67/67，周期与 trace-model（`LSU_PIPE_NOWD=1`）0 处不同。**没跑**：Linux 启动、小 LLC 检查、综合、30 点精确预热（只跑了 6/4/3/3/3 的）。
+- **未覆盖**：全量只比了 7/6/4/4/5 的快速预热；omnetpp 仍 −0.94%，接近判据；INT 7、LD 6 比发射口数（INT 6 口、LD 4 口）还宽，是否还能降没有试；未测时序（写口少应有利）。
+- **复现**：`CFG_*_IQ_ENQ_WIDTH` 用 `-D`（`EXTRA_CXXFLAGS`）；SPEC 用 `scripts/pf/run_eval.sh`，`PF_ENABLE=1 PMU=1 FASTWARM=1000000`，点列表 `points_full.txt`；服务器用法见 [SERVER.md](SERVER.md)。
 
 ---
 
