@@ -10,6 +10,7 @@
 
 | 日期 | 版本（总仓库 / function-model / trace-model / rtl） | 正确性 | dhrystone 周期 (IPC) | coremark 周期 (IPC) | memory-stress-small 周期 (IPC) | RTL 周期 | 综合（工具 / 频率 / 面积 / WNS） | 说明 |
 |---|---|---|---|---|---|---|---|---|
+| 2026-11-09 | 本行所在提交 / `7b8ee1b` / `31bfb03` / `RTLMAIN` | trace-model gate 64/64（63 + load-store，默认配置，全部 difftest Success、0 个 TB_CHECK 不一致；基线重生成，63 个程序周期变化，最大 −51%）；旧配置回归（`LSU_MEMSPEC=0 FE_RFAST=0`）对 main 基线 63/63 逐个相同，dhrystone 123,519、coremark 293,286 与 main 相同；trace-model Linux 从复位到 `rv32 login:`；RTL `lint.sh`/`lint_chip.sh` 0 警告（默认与 `LSU_MEMSPEC=0` 各一遍）；`fm_gate.sh` 68/68（67 + `directed/memspec_vio`），周期与 trace-model（`LSU_PIPE_NOWD=1`）68/68 逐个相等；kill switch（`LSU_MEMSPEC=0`，`FE_RFAST` 仍为固定值 15）68/68，周期 68/68 相等；Linux 13 段（s01–s13，服务器 4 线程，每提交逐条对比）13/13、0 不一致；SPEC 全量 580/580 成功（快速预热，`PMU=1`，对同一服务器上构建的 main `7f8456e`），12 个程序 SimPoint 加权几何平均 IPC **+11.02%**，最差点 −4.3% | 114,299（−7.46%） | 283,280（−3.41%） | 328,606（−0.98%）；RTL 参考表（`LSU_PIPE_NOWD=1`）里该程序是 328,787 | RTL 与 trace-model（`NOWD=1` 表）逐个相等：dhrystone 114,299、coremark 283,280、memory-stress-small 328,787 | yosys 通用门面积代理（`synth_cfg.sh` 轻量 ABC 数单元，`synth_depth.sh` 平衡 ABC 数深度，相对数字，无工艺库、无时序），main `edf9d3b` → 合并后：`lsu` 969,441 → 894,874（−7.7%，深度 131 → 128）、`bpu` 223,476 → 202,257（深度 149 → 141）、`front_pred_path` 226,649 → 208,401（深度 134 → 142，**+6%，超过 5% 判据**）、`rob` 201,672 → 206,695、`dispatch` 91,937 → 92,518、`pre_idu_queue` 49,795 → 54,186；工艺库、WNS：**未做** | EXP-019/020/023：LSU 访存相关推测（`LSU_MEMSPEC`，默认开，等待表 + 值路径 `LSU_MS_DATA`）+ 前端快速通路（`FE_RFAST=15` 固定、`FE_BFAST` 默认关）；SPEC 估算分数 9.42 → 约 10.46 分/GHz（**参考时间未核对官方表**；9.42 是最后一次记录的分数（EXP-015），EXP-016/017 在其后合入，起点只是近似）；SPEC 只在 trace-model 上跑过，**RTL 没跑 SPEC** |
 | 2026-11-08 | 本行所在提交 / `7b8ee1b` / `7f8456e` / `edf9d3b` | trace-model gate 63/63（与基线逐个相同）；7 个大程序（dhrystone、coremark、memory-stress、memory-stress-small、smc-div、smc-addi、pf-stress）周期与 main `cefaee4` 的构建逐个相同；quick SPEC 178 点（`PMU=1`）与 main 构建**逐点周期相同**（总周期 1,842,054,299，0 个 difftest 不一致）；trace-model Linux 到 `rv32 login:`；RTL 生成的 `pmu_ev_pkg.sv`、`ttg_cfg_pkg.sv` 与 main **逐字节相同**；RTL 中间版本（PMU 包 68 个事件）`lint.sh`/`lint_chip.sh` 0 警告、逐条对比 67/67、周期与 `ref_cycles.txt` 0 处不同 | 123,519（0%） | 293,286（0%） | 331,844（0%） | 不变（RTL 逻辑与 PMU 包都没改） | RTL 逻辑没改，**未重做综合**；中间版本把 2 个 model-only 事件放进 RTL 包会使 `pmu` 11,465 → 11,627 个单元（+1.4%，事件选择多路器变宽），因此改为让生成器跳过它们；工艺库、WNS：**未做** | EXP-016：后端资源 DSE（无配置默认值变化）：新增 `CFG_LDQ_SIZE`（默认 64）、PMU 的 model-only 事件 `SLOT_FE_OTHER_NOPREG/NOBRTAG`、`scripts/dse/`；RTL 只改 `gen_pmu_pkg.py`（跳过标 `// model-only` 的事件） |
 | 2026-11-08 | 本行所在提交 / `7b8ee1b` / `cefaee4` / `121324c` | trace-model gate 63/63（基线重生成，20 个程序周期变化，全部 difftest 通过）；RTL 逐条对比 67/67，周期与 trace-model（`LSU_PIPE_NOWD=1` 表）0 处不同；`lint.sh`/`lint_chip.sh` 0 警告；`ttg_cfg_pkg.sv` 与模型配置一致；trace-model、RTL Linux 均到 `rv32 login:`，RTL 逐条对比 0 不一致；SPEC 全量 580/580 成功（快速预热）、30 点精确预热 30/30 成功 | 123,519（−0.13%） | 293,286（−0.70%） | 331,844（+0.16%） | 见 ref_cycles | yosys 通用门面积代理（`synth_cfg.sh`，相对数字，无工艺库、无时序）：`isu` 全 8 入队 1,039,339 → 843,910 个单元（−18.8%）；工艺库、WNS：**未做** | EXP-017：每个 IQ 的入队宽度 INT7/LD6/STA4/STD4/BR5（原来全是 8，写口 40→26）；SPEC 全量几何平均 IPC −0.05%、30 点精确预热 −0.48%（mcf −1.26%、perlbench −1.53%） |
 | 2026-11-08 | 本行所在提交 / `7b8ee1b` / `1d08b15` / `cc90cc2` | trace-model gate 63/63（预取开、关）；旧设计开关串 63/63 与 `legacy_lsu_baseline*.csv` 逐个相同；`LSU_PIPE_NOWD=1` gate 63/63；小 LLC 5/5；RTL 逐条对比 67/67（预取开、关），周期与 trace-model（NOWD=1 表）0 处不同；`lint.sh`/`lint_chip.sh` 0 警告；`ttg_cfg_pkg.sv` 与模型配置逐字节相同；RTL、模型 Linux 均到 `rv32 login:`，RTL 逐条对比 0 不一致 | 123,684 | 295,351 | 331,311 | 见 ref_cycles | 未测 | |
@@ -21,6 +22,70 @@
 | 2026-11-04 | `6210e46` / `4f99467` / `41a5cdd` / `dc46f6d`（rtl 工作区有未提交修改） | gate 62/62；RTL gate+vm 64 个程序逐条对比一致 | 150,838 (1.935) | 226,991 (2.371) | 189,128 (5.718) | 待补 | **未做**：还没有综合流程（见 README"下一步"第 2 条） | 起始记录（本表从这里开始） |
 
 ## 变化
+
+### 2026-11-09 LSU 访存相关推测 + 前端快速通路（EXP-019 / EXP-020 / EXP-023）
+
+- **配置变化**：
+
+| 参数 | 旧值 | 新值 |
+|---|---|---|
+| `CFG_LSU_MEMSPEC` / RTL `LSU_MEMSPEC` | 0 | **1**（kill switch：模型 `LSU_MEMSPEC=0`，RTL `bash scripts/gen_cfg.sh -DCFG_LSU_MEMSPEC=0`） |
+| `CFG_LSU_MS_DATA`（模型值路径，仅 MEMSPEC=1 时有效） | 无 | 1 |
+| `CFG_LSU_MDP_BITS`（等待表索引位数，表 64 × 1） | 无（实验阶段 12） | 6，RTL 里是生成器写死的常量 |
+| `CFG_LSU_MDP_CLR`（等待表清零周期） | 无 | 2000，RTL 里是写死的常量 |
+| `CFG_LSU_MDP_HW`（训练方式） | 无 | 2（违例标志寄存，每拍训练一个标志项，表在违例后两拍写入） |
+| `CFG_LSU_MDP_MODE` / `CFG_LSU_MS_SLOTS` | 无 | 0（等待表）/ 0（不限推测 load 数），只在模型里 |
+| `CFG_FE_RFAST` / RTL `FE_RFAST`（4 位：S0 在重取指周期发射、PTAB 旁路、重定向后 I$ 立即 ready、pre-IDU 缓冲旁路） | 0 | **15**，RTL 里是写死的常量 |
+| `CFG_FE_BFAST` / RTL `FE_BFAST` | 0 | 0（保持关；深度 +34%） |
+| `FE_PAIR`（两块并取）、`FE_IPF`（I$ 预取） | 无 | 只在模型里，环境变量、默认 0，**RTL 没有** |
+
+- **开关策略**：导出给 RTL 的开关只有两个：`LSU_MEMSPEC`（默认 1，kill switch）和 `FE_BFAST`（默认 0）。`LSU_MDP_BITS`、`LSU_MDP_CLR`、`FE_RFAST` 是 `harness/tools/gen_cfg_pkg.py` 里 `FIXED` 的常量，不从 `config.h` 导出；其余（`LSU_MDP_HW/MODE/SLOTS`、`LSU_MS_DATA`、`FE_PAIR`、`FE_IPF`）是模型的宏或环境变量，RTL 不读。注意：RTL 的 kill switch 只关 `LSU_MEMSPEC`，`FE_RFAST=15` 关不掉，所以 RTL 无法逐位还原成 main 的设计；模型的旧配置回归（`LSU_MEMSPEC=0 FE_RFAST=0`）只在模型一侧成立。模型要保持 `LSU_MS_DATA=1`：`LSU_MEMSPEC=1` 而 `LSU_MS_DATA=0` 时模型与 RTL 在 dhrystone、vm_pagefault_test 上分别差 66、1 个周期。
+
+- **设计改动**（一句一条）：
+  - 访存推测：load 可越过地址未知的更老 store；推测 load 的第一次写回先延迟、ROB 不完成（`rob_defer`），STA 到达时 CAM 检查每个 LDQ 项（`lp_ent_ms`），违例 load 二次写回并在提交时冲刷（`flush_pipe`，pc+4 重取）；用 PC 哈希查等待表（`lp_mdp`，64 × 1 位，每 2000 周期清零），表里置位的 load 不推测。
+  - RTL 的 FTQ 给 dispatch 读 PC：64 选 1 的块基 PC 加 4 × 偏移，不用 8 个 512 选 1 读口（+16.9k 单元，**不计入上表的 `pre_idu_queue`**）；6 位 PC 哈希进 `dis_inst_t` 和 LDQ 项。
+  - 重叠判断 `lp_ovl`：一个对数深度比较器代替两个加法器和三个比较，`lp_cam` 73.7k → 31.3k 单元（×4 口），关闭推测时也受益；`lp_cam` 的 `unk` 复用 find-first 的前缀。
+  - 值路径（EXP-020，模型）：推测 load 读到未被更老 store 覆盖的旧值，消费者按真实 ISA 语义用旧值计算，分支可能因旧值翻转，成为只在 RTL 里出现的预测错误。模型按轨迹里的事实执行、不算数据，RTL 执行真实数据；没有这条路径时两者在 dhrystone（27 次同一条分支的翻转，+66 周期）和 vm_pagefault_test（+1）上周期不同，`LSU_MS_DATA=1` 把这个效果放进模型，所以现在模型周期等于 RTL。
+  - 修掉的 bug：违例检查漏掉停在 `L_RPW` 的 load（被更老 store 挡住、被唤醒后直接从该 store 转发，没有第二次 CAM，漏掉它越过的更年轻 store）；是 RTL Linux 逐条对比发现的，模型靠轨迹事实看不到。
+  - 前端：`FE_RFAST` 四个位见 EXPLORATION EXP-023；`bpu_spec` 里重取指专用的 S0 状态（`spec_r1`/`sras_r1`），快速配置下历史用一步线性多位推入（`bpu_hist_vec`）；`front_pred_path` 把 `slot_kind` 声明提到使用之前（原文件被 slang 拒绝，`lint.sh` 此前只对它做规范检查）；`icache_kill` 对 RFAST bit2 加 `accepted_now`（RTL 的 I$ AXI 接收脉冲比模型早一拍，不修会在 6/67 个程序上差 1–4 周期）。
+
+- **SPEC 全量（580 点，快速预热 `FASTWARM=1000000`，`PF_ENABLE=1`，`PMU=1`，服务器 106.14.7.26）**：基线 = 同一台服务器上构建的 main `7f8456e`（`/root/integbase/res`），因为已有的全量结果是 EXP-015 的 main（无 PMU）或零散的 EXP-017 局部结果；这个新基线与 EXP-015 全量（`lsubpu/full_new`）的几何平均比为 1.0000（一致性检查）。580/580 成功，无失败。SimPoint 权重 CPI，12 个程序几何平均（`trace-model/scripts/integ/spec_cmp.py`）：
+
+| 程序 | 点数 | IPC main | IPC 合并 | 变化 |
+|---|---|---|---|---|
+| 429.mcf | 79 | 0.5394 | 0.5523 | +2.40% |
+| 403.gcc | 55 | 1.9366 | 2.0591 | +6.33% |
+| 462.libquantum | 51 | 2.2475 | 2.4931 | +10.92% |
+| 473.astar | 35 | 1.2500 | 1.5314 | +22.51% |
+| 445.gobmk | 50 | 1.6986 | 1.9150 | +12.74% |
+| 401.bzip2 | 76 | 1.5146 | 2.0895 | +37.95% |
+| 458.sjeng | 28 | 1.7251 | 2.0656 | +19.73% |
+| 483.xalancbmk | 51 | 2.0868 | 2.1600 | +3.51% |
+| 464.h264ref | 37 | 1.5882 | 1.6465 | +3.67% |
+| 471.omnetpp | 40 | 1.3886 | 1.4624 | +5.32% |
+| 400.perlbench | 44 | 2.1725 | 2.3979 | +10.38% |
+| 456.hmmer | 34 | 3.4736 | 3.5441 | +2.03% |
+| **几何平均** | 580 | | | **+11.02%** |
+
+  不加权的逐点几何平均 +11.63%，最大 ×2.77，最小 −4.3%（401.bzip2 sp20），没有低于 −5% 的点。估算分数 9.42 × 1.1102 = **约 10.46 分/GHz**：参考时间没有核对官方表；9.42 是最后一次记录的分数（EXP-015 全量），EXP-016/017 在其后合入（EXP-017 −0.05%），所以起点是近似值。
+- **收益拆分**（便宜的估计，来自已有的 25/30 点精确预热结果，不可相加）：`FE_RFAST=15` 约 +2.6%（25 点）；访存推测 +5.35%（30 点，`LSU_MS_DATA=1`）；全量合计 +11.0% 大于二者之和，主要来自 bzip2、astar、sjeng，**拆分没有在全量上验证**。早先的模型组合运行（`exp/combo`）报过 +20.16%，**不是 RTL 能得到的数字**：RTL 里没有 `FE_PAIR`、`FE_IPF`，`FE_BFAST` 关闭，RTL 对应的模型数是 +11.02%（+20.16% 的出处笔记本次整理时没有找到，数字照负责人给出的写）。
+- **TMA 一级**（12 个程序各取权重最高的点，快速预热，`PMU=1`，12 个平均，槽位 %）：Retiring 41.7 → 43.2，BadSpec 9.3 → 7.3，Frontend 29.7 → 31.5，Backend 19.3 → 18.0。BadSpec 降幅最大：gobmk 23.7 → 18.3、sjeng 21.2 → 15.3、astar 14.7 → 11.7、mcf 18.5 → 15.0；sjeng 的 Backend 20.0 → 11.9。原始数据在服务器 `/root/integ/tma`、`/root/integbase/tma`，本机 `~/personal/AI-Huma-data/integ/`。全量运行里 `PMU=1` 的 `pmu_*.csv` 写在同一个 cwd、被并发的点互相覆盖，所以没有逐点 TMA，TMA 来自单独的最高权重点运行。
+- **综合与深度**（见上表，相对数字）：判据是"没有模块比 main 深 5% 以上"，除 `front_pred_path`（134 → 142，+6%）外都满足。`front_pred_path` main 一侧的数字（226,649 单元、深度 134）是在**临时副本**上量的：main 里的文件被 slang 拒绝（`slot_kind` 先使用后声明），合并后的树已改好声明顺序。`bpu` 本身更浅（149 → 141）。`FE_BFAST=3` 在前端笔记里量到 192（+43%），所以 `FE_BFAST` 保持关。`lsu` 总单元 −7.7%：`lp_cam`、`lp_l1b` 变小（重叠判断重写，对关闭推测的设计也有利），`lp_ldq` +56k，新增 `lp_ms` 4.3k；笔记没有把"推测本身的代价"和"重写的收益"拆开，**不能把 −7.7% 当作推测免费**。新增触发器合计约 779（LSU）+ 128（ROB）+ 48（dispatch）。
+- **文档之间互相矛盾或没有对上的数字**（不隐藏）：
+  1. **BPU 面积**：合并笔记的综合表里 `bpu` 是 223,476（main）→ 202,257（合并后），即 −9.5%；前端笔记按 `FE_RFAST` 逐位量的结果是 off 199,240、`RFAST=15` 237,174（**+19%**，来自重取指专用状态和第二套历史更新网络）。两组数字来自不同的综合脚本（`synth_cfg.sh` 轻量 ABC 与 `synth_depth.sh` 平衡 ABC）和不同的树（前端笔记早先量到的 off 是 222,883，与合并笔记里 main 的 223,476 接近，而与同一笔记后面的 199,240 差 12%）。没有在同一流程里对合并后的树做 `RFAST=0` 与 15 的对比，所以"RFAST 的真实 BPU 面积代价"没有定论；保守起见按 +19% 理解，合并后 `bpu` 总量比 main 低的原因没有查明（综合噪声笔记里写约 ±10%）。
+  2. **memory-stress-small 周期**：trace-model 默认 328,606，RTL 参考表（`LSU_PIPE_NOWD=1`）328,787；RTL 没有 LDQ/STQ 看门狗，参考表与默认模型在个别程序上本来就会不同（EXP-015 已记过），这一项没有逐个核对原因。
+  3. **程序个数**：模型 gate 64（63 + load-store），RTL 68（67 + `directed/memspec_vio`），不是同一组。
+  4. **dhrystone 的中间数字**：只开访存推测（`FE_RFAST=0`）116,217；访存推测笔记里的 115,896 是更早的 `LSU_MDP_HW` 模式；默认配置 114,299。
+  5. **服务器 gate**：前端笔记里服务器 64/67，3 个 zfinx 程序在服务器旧的 `librefcpu.a` 上对函数模型检查失败（所有设置、包括全关），环境问题；本机测试平台 67/67，合并后 68/68。
+- **模型和 RTL 能相等的前提**：靠 `LSU_MS_DATA` 值路径（上面第三条设计改动）。它覆盖旧值、污染传播和分支翻转；**没有在 RTL 上验证的情况**：旧地址的 load/store（模式位 2，30 点里也没跑）、CSR/FP/AMO 消费者（这批程序里没有出现）。30 点上它使模型收益从 +5.30% 降到 +5.21%（预言机模型高估约 0.09 个百分点）。
+- **违例代价**（模型 `[MS_PENALTY]`）：从检测到恢复提交 28–52 个周期，其中真正损失（提交空闲）13–32 个周期；约 55% 的违例会走到冲刷提交（其余死在错误路径上）。
+- **已知回退与风险**：
+  - 最差点 −4.3%（bzip2 sp20）；TMA 里 BadSpec 降，但 Frontend 占比升（29.7 → 31.5）。
+  - `front_pred_path` 深度 +6%（超过 5% 判据）；`FE_RFAST=15` 的 BPU 面积 +19%（见上）；没有时序库，深度只是通用门级数。
+  - 违例检查的 `L_RPW` 漏洞只被 RTL Linux 逐条对比抓到，说明 gate 程序和模型覆盖不到这类情况；合并后的树上 Linux 是 13 段检查点接力。
+  - FTQ 读口的 +16.9k 单元不在上表里；`spec/*.io` 没更新。
+- **没跑**：RTL 上的 SPEC；合并后的 RTL 树上从复位一次连续跑到 `rv32 login:` 的 Linux（只做了 13 段接力，微架构每段冷启动）；小 LLC 检查（模型和 RTL）；有工艺库的综合与时序（WNS）；`FE_PAIR`、`FE_IPF` 的 RTL；FTQ 读口面积计入；`spec/*.io` 更新。服务器上 FE 扫描的 3 个 zfinx 程序在旧 `librefcpu.a` 上失败，是环境问题，不是这次改动。
+- **对应记录**：EXPLORATION.md EXP-019、EXP-020、EXP-023；各仓库 commit：trace-model `31bfb03`（`exp/integ`，快进）、rtl `RTLMAIN`（`exp/integ` `bd6ba1d` 快进，再 cherry-pick 前端笔记提交 `71468eb`，只改 `RTL_FE_NOTES.md`）。分支内笔记：trace-model `INTEG_NOTES.md`、`MS_DATA_NOTES.md`（`97cca34`）、`FRONTEND_NOTES.md`（`exp/frontend`，工作区 `trace-model-fe`，未合入 main）；rtl `RTL_INTEG_NOTES.md`、`RTL_MEMSPEC_NOTES.md`、`RTL_FE_NOTES.md`。
 
 ### 2026-11-08 后端资源 DSE 的支持代码（EXP-016）
 

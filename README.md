@@ -18,7 +18,7 @@ AI-Huma 有两层意思：
 | 阶段 | 时间 | 做了什么 |
 |---|---|---|
 | 建立起点 | 至 2026-11-04 | 从 tututugege/simulator 蒸馏出 trace-model（代码从约 8.4 万行降到 4.3 万行、更快，周期与原模型完全一致）；逐模块翻译出 RTL，与原模型逐拍对照；接入 function-model。逐拍对照体系完成使命后退役（rtl `docs/history/`、标签 `legacy-reference`）。 |
-| 自主优化 | 2026-11-04 起 | 正确性改为对照 function-model，周期不再要求与原模型一致；建立探索 → 验证 → 合入 main 的流程（[WORKFLOW.md](docs/WORKFLOW.md) 第 4–6 节）；重建 SPEC 检查点。已合入 main 的优化：第 3 批面积配置（EXP-005）、DRAMsim3 DDR 内存模型并去掉 AXI 分频（EXP-006，新基线）、mov 消除（EXP-012）、**L1D 数据预取器 h1（EXP-009，SPEC 估算 8.12 → 约 8.80 分/GHz）**。正在做：LD/STA 发射队列合并、统一 FTQ（[TODO.md](docs/TODO.md)）。 |
+| 自主优化 | 2026-11-04 起 | 正确性改为对照 function-model，周期不再要求与原模型一致；建立探索 → 验证 → 合入 main 的流程（[WORKFLOW.md](docs/WORKFLOW.md) 第 4–6 节）；重建 SPEC 检查点。已合入 main 的优化：第 3 批面积配置（EXP-005）、DRAMsim3 DDR 内存模型并去掉 AXI 分频（EXP-006，新基线）、mov 消除（EXP-012）、**L1D 数据预取器 h1（EXP-009，SPEC 估算 8.12 → 约 8.80 分/GHz）**。以及 EXP-015/017/019/020/023（分级 LSU + 流水化 BPU、IQ 入队宽度、访存推测、前端快速通路，见 MAIN_RECORDS）。正在做：LD/STA 发射队列合并、统一 FTQ（[TODO.md](docs/TODO.md)）。 |
 
 ## 三个部分
 
@@ -59,14 +59,15 @@ git submodule update --init          # 取出 function-model、trace-model、rtl
 - **旧的逐模块锁步 / trace 回放 / 变异检查体系已退役**（代码在 rtl 标签 `legacy-reference`，文档在 `rtl/docs/history/`）。
 - **目标是方法，而不只是代码**：AI 和人能否系统地做 CPU 架构优化——每个想法先在模型上量化，再落到 RTL，保证正确，留下可复用的验证手段和完整记录（包括负面结果）。
 
-## 当前状态（2026-11-08）
+## 当前状态（2026-11-09）
 
 - **配置与基线**：第 3 批面积配置（取指宽度 8、在飞分支 32、IQ 384→240）→ DRAMsim3 DDR4-3200 + 60 ns 非核心延迟、核心 1 GHz、去掉 AXI 子系统分频（EXP-006，周期基线重做）→ mov 消除（EXP-012）→ **L1D 数据预取器 h1（EXP-009，默认开）**：单条全局步长表项、度 8、距离 2、页内、LLC-only next-line 引擎、无 PC，约 1,460 个触发器。
 - **性能（SPEC full，对精确的预取关基线）**：12 个程序几何平均 IPC 加速 **+8.3%**（580 个点），估算分数 8.12 → 约 8.80 分/GHz（libquantum +96%、mcf +11%、gcc +9%、bzip2 +6%；gobmk/hmmer/sjeng −1% 到 −3%）。已知回退：5 个 SPEC 点低于 −10%（最差 omnetpp −41%），原因是 LLC-only 引擎；三个修复方案（节流、MSHR 预留、时间片对抗）在全量上都不如原样 h1，见 [EXPLORATION.md](docs/EXPLORATION.md) EXP-009 第 11 节。
+- **EXP-019 / EXP-020 / EXP-023（2026-11-09 合入本地 main，未推送）**：LSU 访存相关推测（`LSU_MEMSPEC` 默认开：load 越过地址未知的更老 store，PC 哈希等待表 64 × 1 位、每 2000 周期清零，违例重做并在提交时冲刷；模型的值路径 `LSU_MS_DATA` 使模型周期等于 RTL）+ 前端重定向快速通路（`FE_RFAST=15` 写死，`FE_BFAST` 默认关）。**trace-model 的 SPEC 全量 580 点（快速预热，`PMU=1`，对同一服务器上构建的 main）12 个程序几何平均 IPC +11.02%**，估算分数 9.42 → 约 10.46 分/GHz（参考时间未核对官方表，9.42 是 EXP-015 的记录、EXP-016/017 在其后合入，起点是近似值）；最差点 −4.3%。**RTL 没有跑 SPEC**，模型与 RTL 在 68 个程序上周期逐个相等、Linux 13 段 13/13；`front_pred_path` 深度 +6%（超过 5% 判据）、`FE_RFAST` 的 BPU 面积 +19%（和合并综合表不一致，见 MAIN_RECORDS）；`FE_PAIR`、`FE_IPF` 只在模型里（默认关），旧的模型组合 +20.16% 不是 RTL 能得到的数字。
 - **EXP-017（2026-11-08 合入）**：issue queue 入队宽度 INT7/LD6/STA4/STD4/BR5（原来全 8，写口 40→26）；SPEC 全量 −0.05%，`isu` 综合单元 −18.8%。
 - **EXP-015（2026-11-08 合入）**：分级 LSU + 流水化 S+R BPU；30 点精确预热 IPC +2.87%，全量 580 点快速预热 −1.20%（已知回退，见 MAIN_RECORDS）。
-- **trace-model**：gate 63/63（预取开）；预取关与合并前的 main 逐个相同；Linux 启动到登录；full SPEC 回放（580 个 rv32imab 检查点）。
-- **rtl**：lint 干净（按目录和整芯片）；67 个程序逐条对比全部通过（预取开、关各一遍），周期与 trace-model 逐个相等；Linux 分 13 段（检查点接力）逐条对比 0 不一致；有面积代理综合（`rtl/docs/09-synthesis-report.md`）；**还没有工艺库综合和时序（WNS）**，store 数据不在逐条对比范围内。已知风险见 [rtl/docs/08-risk-register.md](rtl/docs/08-risk-register.md)。
+- **trace-model**：gate 64/64（预取开，访存推测与 `FE_RFAST` 默认开）；`LSU_MEMSPEC=0 FE_RFAST=0` 对合并前的 main 基线 63/63 逐个相同；Linux 启动到登录；full SPEC 回放（580 个 rv32imab 检查点）。
+- **rtl**：lint 干净（按目录和整芯片）；68 个程序（67 + 定向测试）逐条对比全部通过（默认配置与 `LSU_MEMSPEC=0` 各一遍），周期与 trace-model 逐个相等；Linux 分 13 段（检查点接力）逐条对比 0 不一致（合并后的树上没有从复位连续跑到登录）；有面积代理综合（`rtl/docs/09-synthesis-report.md`）；**还没有工艺库综合和时序（WNS）**，store 数据不在逐条对比范围内。已知风险见 [rtl/docs/08-risk-register.md](rtl/docs/08-risk-register.md)。
 - **每次合入 main 的数字**以 [docs/MAIN_RECORDS.md](docs/MAIN_RECORDS.md) 为准；在做的实验见 [docs/TODO.md](docs/TODO.md)。
 
 ## 复现
@@ -78,11 +79,11 @@ git submodule update --init          # 取出 function-model、trace-model、rtl
 gmake -C function-model librefcpu.a LDFLAGS="-lz"
 cd trace-model
 gmake LDFLAGS="-lz" -j8
-bash scripts/run_gate.sh build/simulator results/gate      # 63 个程序，周期等于 results/baseline/baseline.csv（预取开）
+bash scripts/run_gate.sh build/simulator results/gate      # 64 个程序，周期等于 results/baseline/baseline.csv（默认配置）
 
 # rtl：lint，带 function-model 逐条对比的整核门禁（需要先构建 trace-model 的测试程序）
 cd ../rtl
 bash scripts/lint.sh && bash scripts/lint_chip.sh
 SOC_FM=1 SOC_OUT=$PWD/build/soc_fm bash tb/soc/build.sh
-bash scripts/fm_gate.sh $PWD/build/soc_fm/obj/soc_tb $PWD/build/gate   # 66/66，并报告与 trace-model 周期不同的个数
+bash scripts/fm_gate.sh $PWD/build/soc_fm/obj/soc_tb $PWD/build/gate   # 68/68，并报告与 trace-model 周期不同的个数
 ```
