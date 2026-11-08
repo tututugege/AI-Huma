@@ -37,7 +37,7 @@
   - 小程序看不出差别（6/4/3/3/3 在 dhrystone/coremark 上 ±0.1%），SPEC 的 mcf/omnetpp 才暴露。
   - 定位方法：用新计数器看 mcf/omnetpp 的 28 个点（mcf 每 5 取 1、omnetpp 每 3 取 1）。6/4/3/3/3 下的宽度停顿占槽位：omnetpp BR 1.54%、INT 0.50%、STA 0.42%、LD 0.20%；mcf LD 0.58%、BR 0.43%、STA 0.25%；IQ 本身基本没满，STD 队列（16 项）有一点。放宽后（同 28 点，对比 main）：6/4/3/3/3 mcf −2.66%/omnetpp −4.03%；6/5/4/3/4 −0.76%/−1.90%；7/6/4/3/5 −0.41%/−1.06%（剩下的是 STD 宽度 3）；**7/6/4/4/5 −0.28%/−0.85%**；6/5/4/4/4 −0.54%/−1.68%。
 - **面积依据**：入队写口数 8×5=40 → 7+6+4+4+5=26（−35%）；RTL 只是少实例化通道，没做综合，**没有量面积**。
-- **验证**：trace-model gate 63/63（基线按新默认重生成，20 个程序周期变化，全部 difftest 通过）；RTL `lint.sh`、`lint_chip.sh` 0 警告；fm_gate 67/67，周期与 trace-model（`LSU_PIPE_NOWD=1`）0 处不同。trace-model Linux 到 `rv32 login:`，mismatch 0RTL Linux（`SOC_FM=1 SOC_TB_FM=1`，逐条对比函数模型）也到 `rv32 login:`，不一致 0（登录后手动停止仿真，约 3.7 h 墙钟）。**没跑**：小 LLC 检查、综合。
+- **验证**：trace-model gate 63/63（基线按新默认重生成，20 个程序周期变化，全部 difftest 通过）；RTL `lint.sh`、`lint_chip.sh` 0 警告；fm_gate 67/67，周期与 trace-model（`LSU_PIPE_NOWD=1`）0 处不同。trace-model Linux 到 `rv32 login:`，mismatch 0RTL Linux（`SOC_FM=1 SOC_TB_FM=1`，逐条对比函数模型）也到 `rv32 login:`，不一致 0（登录后手动停止仿真，约 3.7 h 墙钟）。综合（`synth_cfg.sh`，Yosys 单元数代理）：`isu` 全 8 入队 1,039,339 → 7/6/4/4/5 入队 843,910，**−18.8%（−195k 单元）**。**没跑**：小 LLC 检查、顶层时序/WNS。
 - **未覆盖**：全量只比了 7/6/4/4/5 的快速预热；omnetpp 仍 −0.94%，接近判据；INT 7、LD 6 比发射口数（INT 6 口、LD 4 口）还宽，是否还能降没有试；未测时序（写口少应有利）。
 - **复现**：`CFG_*_IQ_ENQ_WIDTH` 用 `-D`（`EXTRA_CXXFLAGS`）；SPEC 用 `scripts/pf/run_eval.sh`，`PF_ENABLE=1 PMU=1 FASTWARM=1000000`，点列表 `points_full.txt`；服务器用法见 [SERVER.md](SERVER.md)。
 
