@@ -272,4 +272,4 @@
 | 2026-11-08 | trace-model `lsu-bpu` | `1d08b15`（`a7960e4..`，13 个提交） | EXP-015：分级 LSU（含 IPC 修复：DRAIN=3、DCAND=4、RP=4、CUT=127、L2=115）+ 流水化 S+R BPU，`baseline*.csv`、`legacy_lsu_baseline*.csv`、`PROJECT.md` 更新 | gate 63/63；旧开关串 63/63 与 legacy 基线相同 |
 | 2026-11-08 | rtl `lsu-bpu` | `cc90cc2`（`5829f07..`，16 个提交） | EXP-015：RTL 实现分级 LSU 与流水化 BPU；`ref_cycles*.txt` 用 `LSU_PIPE_NOWD=1` 生成；isu/dispatch 的死取消逻辑改 generate | fm_gate 67/67 周期与模型相等；lint 0；Linux 到登录 |
 | 2026-11-08 | trace-model `exp/iq-enq` | `5851e1d`、`9da2f6e`、`e0d7375`、`cefaee4` | EXP-016（未合入）：每个 IQ 的入队宽度开关，默认 7/6/4/4/5；PMU 分 IQ 的没空位/宽度停顿和占用；基线重生成 | gate 63/63；全量 580 点 IPC −0.05% |
-| 2026-11-08 | rtl `exp/iq-enq` | `66f7096`、`121324c` | EXP-016（未合入）：isu 按 IQ 入队宽度实例化通道；cfg、PMU 包、`ref_cycles.txt` 同步 | lint 0；fm_gate 67/67 周期与模型相等 |
+| 2026-11-08 | rtl `exp/iq-enq` | `66f7096`、`121324c` | EXP-016（未合入）：isu 按 IQ 入队宽度实例化通道；cfg、PMU 包、`ref_cycles.txt` 同步 | lint 0；fm_gate 67/67 周期与模型相等；Linux 逐条对比到 `rv32 login:`，不一致 0 |
