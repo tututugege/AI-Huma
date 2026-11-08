@@ -10,6 +10,7 @@
 
 | 日期 | 版本（总仓库 / function-model / trace-model / rtl） | 正确性 | dhrystone 周期 (IPC) | coremark 周期 (IPC) | memory-stress-small 周期 (IPC) | RTL 周期 | 综合（工具 / 频率 / 面积 / WNS） | 说明 |
 |---|---|---|---|---|---|---|---|---|
+| 2026-11-08 | 本行所在提交 / `7b8ee1b` / `cefaee4` / `121324c` | trace-model gate 63/63（基线重生成，20 个程序周期变化，全部 difftest 通过）；RTL 逐条对比 67/67，周期与 trace-model（`LSU_PIPE_NOWD=1` 表）0 处不同；`lint.sh`/`lint_chip.sh` 0 警告；`ttg_cfg_pkg.sv` 与模型配置一致；trace-model、RTL Linux 均到 `rv32 login:`，RTL 逐条对比 0 不一致；SPEC 全量 580/580 成功（快速预热）、30 点精确预热 30/30 成功 | 123,519（−0.13%） | 293,286（−0.70%） | 331,844（+0.16%） | 见 ref_cycles | yosys 通用门面积代理（`synth_cfg.sh`，相对数字，无工艺库、无时序）：`isu` 全 8 入队 1,039,339 → 843,910 个单元（−18.8%）；工艺库、WNS：**未做** | EXP-017：每个 IQ 的入队宽度 INT7/LD6/STA4/STD4/BR5（原来全是 8，写口 40→26）；SPEC 全量几何平均 IPC −0.05%、30 点精确预热 −0.48%（mcf −1.26%、perlbench −1.53%） |
 | 2026-11-08 | 本行所在提交 / `7b8ee1b` / `1d08b15` / `cc90cc2` | trace-model gate 63/63（预取开、关）；旧设计开关串 63/63 与 `legacy_lsu_baseline*.csv` 逐个相同；`LSU_PIPE_NOWD=1` gate 63/63；小 LLC 5/5；RTL 逐条对比 67/67（预取开、关），周期与 trace-model（NOWD=1 表）0 处不同；`lint.sh`/`lint_chip.sh` 0 警告；`ttg_cfg_pkg.sv` 与模型配置逐字节相同；RTL、模型 Linux 均到 `rv32 login:`，RTL 逐条对比 0 不一致 | 123,684 | 295,351 | 331,311 | 见 ref_cycles | 未测 | |
 | 2026-11-07 | 本行所在提交 / `7b8ee1b` / `a7960e4` / `5829f07` | trace-model gate 63/63（PMU 关、`PMU=1` 各一遍，都与基线逐个相同）；RTL 逐条对比 67/67，预取开、关（`PF_EN=0`）周期都与参考逐个相等（0 个不同），0 个函数模型不一致；`lint.sh`、`lint_chip.sh` 0 警告；Linux 13 段（s01–s13 接力，每段 1600 万周期，s01–s04 本机、s05–s13 服务器 4 线程）逐条对比 13/13 通过、0 不一致；PMU 的 RTL 与 trace-model 在 dhrystone、coremark 上 18 个 tier-1 事件总数逐个相等；`tests/pmu/run.sh` 30 万拍随机 0 不一致 | 161,183 (1.811)，0% | 251,535 (2.140)，0% | 334,635 (3.232)，0% | 与 trace-model 相同（67 个程序逐个相等，预取开、关都是） | yosys 通用门面积代理（相对数字，无工艺库、无时序，`SYNTH_LIGHT=1 SYNTH_MEM=1`）：`dispatch` 86,637 → 86,637（不变）；新增 `pmu_ev_core` 518 个单元；`pmu` 计数器块（8 个 HPM）约 10.2k 单元，计数器存储按 `$mem` 未计触发器（估计约 750 个触发器），**计数器块没有接到任何东西，综合器会把它整个删掉**；工艺库、WNS：**未做** | PMU（EXP-013）：trace-model `PMU=1`（默认关）51 个事件、TMA 一二级、逐 PC 堵塞画像、相位；RTL 事件总线 tier 1（18 个事件含 TMA 一级）+ 计数器块（未接 CSR，软件不可见）；周期不变 |
 | 2026-11-07 | 本行所在提交 / `7b8ee1b` / `b301161` / `9279125` | trace-model gate 63/63（基线更新，预取开；`PF_ENABLE=0` 对 main 基线 62/62 相同，另加 pf-stress）；RTL 逐条对比 67/67，预取开、关两种配置周期都与 trace-model 逐个相等（0 个不同），0 个函数模型不一致；`lint.sh`、`lint_chip.sh` 0 警告；Linux 分 13 段（检查点 s01–s13 接力，每段 1600 万周期，每段检查 630 万到 2400 万条指令，不是一次连续运行、微架构每段冷启动，周期不比较）在**合并后的树**（预取开 + move elimination，rtl `9279125`）上逐条对比，13/13 通过、0 不一致；SPEC full 580/580 点（fast warmup），无 difftest 不一致 | 161,183 (1.811)，−0.52% | 251,535 (2.140)，−0.34% | 334,635 (3.232)，−3.65% | 与 trace-model 相同（67 个程序逐个相等） | yosys 通用门面积代理（相对数字，无工艺库、无时序；合并后的树，2026-11-07 重测，`SYNTH_LIGHT=1`）：新增 `dcache_pf` 4,172 个单元、422 个触发器；`dcache_mshr`（`SYNTH_LIGHT=1 SYNTH_MEM=1`）main 96,296 → 96,931 个单元（+635，+0.7%）、触发器 748 → 764；L1D 阵列新增 pf 位 256×4 = 1,024 个触发器（未重测）；净增触发器约 1,460；工艺库、约束频率、WNS：**未做** | L1D 数据预取器 h1（EXP-009）：单条全局步长表项、度 8、距离 2、页内、LLC-only next-line 引擎、无 PC、无限流；默认开（`PF_ENABLE` / RTL `PF_EN`）。SPEC full 12 个程序几何平均 +8.3%，估算分数 8.12 → 约 8.80 分/GHz（SimPoint 权重，对精确 PF 关基线，分数 = 旧分数 × 加速比，参考时间未核对官方表；libquantum +96.3%、mcf +10.8%、gcc +9.0%、bzip2 +6.2%，gobmk/hmmer/sjeng −0.8%/−1.6%/−3.0%）；低于 −10% 的 5 个点（omnetpp sp22 −40.7%、sp7 −22.8%，gcc sp38 −29.9%，xalancbmk sp34 −22.2%、sp15 −11.8%）是已知回退，原因是 LLC-only 引擎；节流、MSHR 预留、时间片对抗三个修复中，节流（几何平均 +7.2%）和时间片对抗（+7.7%）在全量上都不如 h1（+8.2%，三方案都有结果的 579 个点同口径），MSHR 预留只在抽样点上测过、也没有同时保住 mcf，按负责人决定保持 h1 合入 |
@@ -19,6 +20,13 @@
 | 2026-11-04 | `6210e46` / `4f99467` / `41a5cdd` / `dc46f6d`（rtl 工作区有未提交修改） | gate 62/62；RTL gate+vm 64 个程序逐条对比一致 | 150,838 (1.935) | 226,991 (2.371) | 189,128 (5.718) | 待补 | **未做**：还没有综合流程（见 README"下一步"第 2 条） | 起始记录（本表从这里开始） |
 
 ## 变化
+
+### 2026-11-08 issue queue 入队宽度（EXP-017）
+
+- **内容**：`CFG_{INT,LD,STA,STD,BR}_IQ_ENQ_WIDTH` 默认 7/6/4/4/5（原来都是 DECODE_WIDTH=8）；`isu` 每个 IQ 只实例化这么多入队通道，`iss2dis.ready_num = min(空位, 通道数)`；PMU 新增 `SLOT_BE_IQ_{SPACE,WIDTH}_*`、`OCC_IQ_*`（trace-model 专用）。
+- **SPEC**：全量 580 点（快速预热）几何平均 IPC 比 main −0.05%；30 点精确预热 −0.48%（mcf −1.26%、perlbench −1.53%、h264ref −0.40%）。先试的 6/4/3/3/3 为 −1.12%（mcf −3.2%、omnetpp −4.3%），不合格。
+- **已知问题**：omnetpp 全量 −0.94%；INT 7、LD 6 比发射口数还宽，能否再降没试；未测时序。LD/STA 合并 IQ 版本（`exp/ldsta-merge`）留到以后。
+- **没跑**：小 LLC 检查；SPEC 的 RTL 侧；时序综合。
 
 ### 2026-11-08 分级 LSU（含 IPC 修复）+ 流水化 S+R BPU（EXP-015）
 

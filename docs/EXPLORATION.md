@@ -4,7 +4,7 @@
 
 | 编号 | 日期 | 题目 | 分支 | 状态 | 一句话结论 |
 |---|---|---|---|---|---|
-| [EXP-016](#exp-016-issue-queue-入队宽度限制) | 2026-11-08 | 每个 IQ 的入队（dispatch 写口）宽度从 8 限到发射口数附近，省写口 | trace-model `exp/iq-enq`（`cefaee4`）、rtl `exp/iq-enq`（`121324c`，工作区 `trace-model-iqenq`、`rtl-iqenq`） | 已提交到实验分支，未合入 main | INT7/LD6/STA4/STD4/BR5（写口 40→26）：全量 580 点快速预热几何平均 IPC −0.05%；先试的 6/4/3/3/3 为 −1.12%（mcf −3.2%、omnetpp −4.3%） |
+| [EXP-017](#exp-017-issue-queue-入队宽度限制) | 2026-11-08 | 每个 IQ 的入队（dispatch 写口）宽度从 8 限到发射口数附近，省写口 | trace-model `exp/iq-enq`（`cefaee4`）、rtl `exp/iq-enq`（`121324c`，工作区 `trace-model-iqenq`、`rtl-iqenq`） | 已合入 main | INT7/LD6/STA4/STD4/BR5（写口 40→26）：全量 580 点快速预热几何平均 IPC −0.05%；先试的 6/4/3/3/3 为 −1.12%（mcf −3.2%、omnetpp −4.3%） |
 | EXP-015 | 2026-11-08 | 分级 LSU（含 IPC 修复）+ 流水化 S+R BPU 合并 | trace-model/rtl `lsu-bpu`（旧版 `lsu-bpu-v1`） | 已合入 main | 30 点精确预热 IPC +2.87%；全量 580 点快速预热 −1.20%（bzip2 −10.2%），已知回退，见 MAIN_RECORDS |
 | [EXP-014](#exp-014-cache-替换策略与组织形式离线回放--周期模型标定) | 2026-11-07 | cache 替换策略与组织形式的收益空间：用功能模型（FastWarm）录 L1I/L1D/LLC/TLB 访问序列，离线回放各种策略与容量/路数，再用周期模型标定 IPC | trace-model `exp/repl-oracle`（工作区 `trace-model-repl`） | 未提交、不合入（只测空间，没有实现策略） | 替换策略的空间很小：LLC DRRIP 缺失 −3.9%、L1D 现策略已接近最优、L1I SRRIP 缺失 −17% 但标定后全集只有 +0.3% IPC；容量翻倍（L1D 128KB / L1I 64KB / LLC 8MB）各约 +1.1~1.3%（单点、噪声 ±3%）；TLB 离线缺失 −73% 但周期模型只 +2.2% |
 | [EXP-013](#exp-013-pmu硬件计数器--trace-model-分析层) | 2026-11-07 | PMU：硬件计数器块（事件总线 + HPM CSR）与 trace-model 分析层（TMA、逐 PC 堵塞画像、直方图、相位）共用一张事件表 | trace-model `exp/pmu`（工作区 `trace-model-pmu`）、rtl `exp/pmu`（工作区 `rtl-pmu`） | 已合入 main（2026-11-07） | trace-model 完整；RTL 只做简单的一档（提交流、重定向、TMA 一级的槽事件）+ 计数器块（未接 CSR） | 52 个事件、槽位恒等式逐拍成立；开关与否周期不变（dhrystone、coremark、mcf 检查点）；mcf 点 Backend Bound 81%（L1D 缺失 53%），两条 load 占堵塞的 61% |
@@ -20,9 +20,9 @@
 
 ---
 
-## EXP-016 issue queue 入队宽度限制
+## EXP-017 issue queue 入队宽度限制
 
-- **日期**：2026-11-08。**分支**：trace-model `exp/iq-enq`（基于 main `1d08b15`，提交 `5851e1d`、`9da2f6e`、`e0d7375`、`cefaee4`）、rtl `exp/iq-enq`（基于 `cc90cc2`，`66f7096`、`121324c`）。**未合入。** 提交说明里写的是"EXP-014"，是编号撞车写错了，正确编号是 EXP-016。
+- **日期**：2026-11-08。**分支**：trace-model `exp/iq-enq`（基于 main `1d08b15`，提交 `5851e1d`、`9da2f6e`、`e0d7375`、`cefaee4`）、rtl `exp/iq-enq`（基于 `cc90cc2`，`66f7096`、`121324c`）。**已合入 main（2026-11-08，快进）。** 提交说明里写的是"EXP-014"，是编号撞车写错了，正确编号是 EXP-017（EXP-016 被后端 DSE 占用）。
 - **问题**：五个 IQ 的入队宽度都等于 DECODE_WIDTH=8，每个 IQ 8 个写口，不现实。
 - **开关**：`CFG_{INT,LD,STA,STD,BR}_IQ_ENQ_WIDTH`（编译期，`config.h`），导出为 `IQ_*_ENQ_WIDTH` 给 RTL 配置包；原设计 = 全 8，周期不变。RTL：`isu.sv` 每个 IQ 只实例化这么多入队通道，`iss2dis_ready_num = min(空位, 通道数)`（模型也是两个条件都查）。
 - **PMU 补充**（trace-model 专用，事件表末尾追加，id 不变）：`SLOT_BE_IQ_SPACE_*`（该 IQ 没空位）、`SLOT_BE_IQ_WIDTH_*`（有空位但本拍入队宽度用完）、`OCC_IQ_*`；十个停顿事件之和恒等于 `SLOT_BE_IQ_FULL`（每拍检查）。**LD 被 LD IQ 入队宽度挡住原来记成 `LDQ_FULL`，现在记在 IQ 里**（宽度 8 时不会发生，旧数字不变）。

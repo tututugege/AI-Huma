@@ -63,6 +63,7 @@ git submodule update --init          # 取出 function-model、trace-model、rtl
 
 - **配置与基线**：第 3 批面积配置（取指宽度 8、在飞分支 32、IQ 384→240）→ DRAMsim3 DDR4-3200 + 60 ns 非核心延迟、核心 1 GHz、去掉 AXI 子系统分频（EXP-006，周期基线重做）→ mov 消除（EXP-012）→ **L1D 数据预取器 h1（EXP-009，默认开）**：单条全局步长表项、度 8、距离 2、页内、LLC-only next-line 引擎、无 PC，约 1,460 个触发器。
 - **性能（SPEC full，对精确的预取关基线）**：12 个程序几何平均 IPC 加速 **+8.3%**（580 个点），估算分数 8.12 → 约 8.80 分/GHz（libquantum +96%、mcf +11%、gcc +9%、bzip2 +6%；gobmk/hmmer/sjeng −1% 到 −3%）。已知回退：5 个 SPEC 点低于 −10%（最差 omnetpp −41%），原因是 LLC-only 引擎；三个修复方案（节流、MSHR 预留、时间片对抗）在全量上都不如原样 h1，见 [EXPLORATION.md](docs/EXPLORATION.md) EXP-009 第 11 节。
+- **EXP-017（2026-11-08 合入）**：issue queue 入队宽度 INT7/LD6/STA4/STD4/BR5（原来全 8，写口 40→26）；SPEC 全量 −0.05%，`isu` 综合单元 −18.8%。
 - **EXP-015（2026-11-08 合入）**：分级 LSU + 流水化 S+R BPU；30 点精确预热 IPC +2.87%，全量 580 点快速预热 −1.20%（已知回退，见 MAIN_RECORDS）。
 - **trace-model**：gate 63/63（预取开）；预取关与合并前的 main 逐个相同；Linux 启动到登录；full SPEC 回放（580 个 rv32imab 检查点）。
 - **rtl**：lint 干净（按目录和整芯片）；67 个程序逐条对比全部通过（预取开、关各一遍），周期与 trace-model 逐个相等；Linux 分 13 段（检查点接力）逐条对比 0 不一致；有面积代理综合（`rtl/docs/09-synthesis-report.md`）；**还没有工艺库综合和时序（WNS）**，store 数据不在逐条对比范围内。已知风险见 [rtl/docs/08-risk-register.md](rtl/docs/08-risk-register.md)。
