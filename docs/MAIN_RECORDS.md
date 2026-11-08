@@ -10,6 +10,7 @@
 
 | 日期 | 版本（总仓库 / function-model / trace-model / rtl） | 正确性 | dhrystone 周期 (IPC) | coremark 周期 (IPC) | memory-stress-small 周期 (IPC) | RTL 周期 | 综合（工具 / 频率 / 面积 / WNS） | 说明 |
 |---|---|---|---|---|---|---|---|---|
+| 2026-11-08 | 本行所在提交 / `7b8ee1b` / `7f8456e` / `edf9d3b` | trace-model gate 63/63（与基线逐个相同）；7 个大程序（dhrystone、coremark、memory-stress、memory-stress-small、smc-div、smc-addi、pf-stress）周期与 main `cefaee4` 的构建逐个相同；quick SPEC 178 点（`PMU=1`）与 main 构建**逐点周期相同**（总周期 1,842,054,299，0 个 difftest 不一致）；trace-model Linux 到 `rv32 login:`；RTL 生成的 `pmu_ev_pkg.sv`、`ttg_cfg_pkg.sv` 与 main **逐字节相同**；RTL 中间版本（PMU 包 68 个事件）`lint.sh`/`lint_chip.sh` 0 警告、逐条对比 67/67、周期与 `ref_cycles.txt` 0 处不同 | 123,519（0%） | 293,286（0%） | 331,844（0%） | 不变（RTL 逻辑与 PMU 包都没改） | RTL 逻辑没改，**未重做综合**；中间版本把 2 个 model-only 事件放进 RTL 包会使 `pmu` 11,465 → 11,627 个单元（+1.4%，事件选择多路器变宽），因此改为让生成器跳过它们；工艺库、WNS：**未做** | EXP-016：后端资源 DSE（无配置默认值变化）：新增 `CFG_LDQ_SIZE`（默认 64）、PMU 的 model-only 事件 `SLOT_FE_OTHER_NOPREG/NOBRTAG`、`scripts/dse/`；RTL 只改 `gen_pmu_pkg.py`（跳过标 `// model-only` 的事件） |
 | 2026-11-08 | 本行所在提交 / `7b8ee1b` / `cefaee4` / `121324c` | trace-model gate 63/63（基线重生成，20 个程序周期变化，全部 difftest 通过）；RTL 逐条对比 67/67，周期与 trace-model（`LSU_PIPE_NOWD=1` 表）0 处不同；`lint.sh`/`lint_chip.sh` 0 警告；`ttg_cfg_pkg.sv` 与模型配置一致；trace-model、RTL Linux 均到 `rv32 login:`，RTL 逐条对比 0 不一致；SPEC 全量 580/580 成功（快速预热）、30 点精确预热 30/30 成功 | 123,519（−0.13%） | 293,286（−0.70%） | 331,844（+0.16%） | 见 ref_cycles | yosys 通用门面积代理（`synth_cfg.sh`，相对数字，无工艺库、无时序）：`isu` 全 8 入队 1,039,339 → 843,910 个单元（−18.8%）；工艺库、WNS：**未做** | EXP-017：每个 IQ 的入队宽度 INT7/LD6/STA4/STD4/BR5（原来全是 8，写口 40→26）；SPEC 全量几何平均 IPC −0.05%、30 点精确预热 −0.48%（mcf −1.26%、perlbench −1.53%） |
 | 2026-11-08 | 本行所在提交 / `7b8ee1b` / `1d08b15` / `cc90cc2` | trace-model gate 63/63（预取开、关）；旧设计开关串 63/63 与 `legacy_lsu_baseline*.csv` 逐个相同；`LSU_PIPE_NOWD=1` gate 63/63；小 LLC 5/5；RTL 逐条对比 67/67（预取开、关），周期与 trace-model（NOWD=1 表）0 处不同；`lint.sh`/`lint_chip.sh` 0 警告；`ttg_cfg_pkg.sv` 与模型配置逐字节相同；RTL、模型 Linux 均到 `rv32 login:`，RTL 逐条对比 0 不一致 | 123,684 | 295,351 | 331,311 | 见 ref_cycles | 未测 | |
 | 2026-11-07 | 本行所在提交 / `7b8ee1b` / `a7960e4` / `5829f07` | trace-model gate 63/63（PMU 关、`PMU=1` 各一遍，都与基线逐个相同）；RTL 逐条对比 67/67，预取开、关（`PF_EN=0`）周期都与参考逐个相等（0 个不同），0 个函数模型不一致；`lint.sh`、`lint_chip.sh` 0 警告；Linux 13 段（s01–s13 接力，每段 1600 万周期，s01–s04 本机、s05–s13 服务器 4 线程）逐条对比 13/13 通过、0 不一致；PMU 的 RTL 与 trace-model 在 dhrystone、coremark 上 18 个 tier-1 事件总数逐个相等；`tests/pmu/run.sh` 30 万拍随机 0 不一致 | 161,183 (1.811)，0% | 251,535 (2.140)，0% | 334,635 (3.232)，0% | 与 trace-model 相同（67 个程序逐个相等，预取开、关都是） | yosys 通用门面积代理（相对数字，无工艺库、无时序，`SYNTH_LIGHT=1 SYNTH_MEM=1`）：`dispatch` 86,637 → 86,637（不变）；新增 `pmu_ev_core` 518 个单元；`pmu` 计数器块（8 个 HPM）约 10.2k 单元，计数器存储按 `$mem` 未计触发器（估计约 750 个触发器），**计数器块没有接到任何东西，综合器会把它整个删掉**；工艺库、WNS：**未做** | PMU（EXP-013）：trace-model `PMU=1`（默认关）51 个事件、TMA 一二级、逐 PC 堵塞画像、相位；RTL 事件总线 tier 1（18 个事件含 TMA 一级）+ 计数器块（未接 CSR，软件不可见）；周期不变 |
@@ -20,6 +21,14 @@
 | 2026-11-04 | `6210e46` / `4f99467` / `41a5cdd` / `dc46f6d`（rtl 工作区有未提交修改） | gate 62/62；RTL gate+vm 64 个程序逐条对比一致 | 150,838 (1.935) | 226,991 (2.371) | 189,128 (5.718) | 待补 | **未做**：还没有综合流程（见 README"下一步"第 2 条） | 起始记录（本表从这里开始） |
 
 ## 变化
+
+### 2026-11-08 后端资源 DSE 的支持代码（EXP-016）
+
+- **内容**：没有改任何默认配置。trace-model：`CFG_LDQ_SIZE`（默认 64，LDQ 大小此前写死）；PMU 新增 `SLOT_FE_OTHER_NOPREG`、`SLOT_FE_OTHER_NOBRTAG`（把取指带宽空槽中"重命名没有空闲物理寄存器"和"IDU 没有空闲分支标签"拆出来），在 `pmu_events.def` 里追加到表尾并标 `// model-only`；`scripts/dse/`（服务器扫描、本机运行、汇总）、`scripts/pf/points_dse*.txt`；`replay.sh` 注释里 quick 的点数改为 178。rtl：`gen_pmu_pkg.py` 跳过标 `// model-only` 的事件，且要求它们在事件表尾部（否则事件 id 会与模型错位）；生成的包不变（66 个事件）。
+- **为什么 RTL 要这样**：不跳过时 RTL 包变成 68 个事件，两个事件没有驱动，`pmu` 多 162 个单元（+1.4%）。EXP-017 的 IQ 事件也是 model-only，但已经在 RTL 包里，没有改。
+- **验证范围**：见上表。RTL 的 fm_gate、lint 是在中间版本（68 个事件的包）上跑的，最终 RTL 的生成产物与 main 逐字节相同，所以沿用 main 的结果，没有再跑；**RTL Linux 没有重跑**（RTL 与 main 一致）；没做综合。
+- **结论**（DSE 本身，见 EXPLORATION.md EXP-016）：基线 PRF128 / ROB128 附近已接近拐点；PRF 不能低于 128；MSHR 8→16 约 +0.8%；LDQ 32、STQ 48、INT IQ 32、BR IQ 16 几乎免费，面积收益还没有综合数字。
+- **对应记录**：EXPLORATION.md EXP-016；各仓库 commit：trace-model `7f8456e`、rtl `edf9d3b`。
 
 ### 2026-11-08 issue queue 入队宽度（EXP-017）
 
