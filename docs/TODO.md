@@ -1,13 +1,13 @@
 # 待办事项
 
 全项目唯一的待办清单（2026-11-05 起，原 rtl `docs/07-roadmap.md`、README “下一步” 中仍有效的条目已并入）。
-每条写清为什么、做到什么算完；做完删掉，在 [LOG.md](LOG.md) 里留一行。风险（验证缺口、变异存活）记在 [rtl/docs/08-risk-register.md](../rtl/docs/08-risk-register.md)，不在这里重复。
+每条写清为什么、做到什么算完；做完删掉，在 [LOG.md](LOG.md) 里留一行。（2026-11-10 清理：删除已完成的“快速 warmup”，DRAMsim3 一条收窄为只剩 `exp/lsu-stwin`。）风险（验证缺口、变异存活）记在 [rtl/docs/08-risk-register.md](../rtl/docs/08-risk-register.md)，不在这里重复。
 
 ## 进行中
 
 | 事项 | 状态 | 做完的标准 |
 |---|---|---|
-| DRAMsim3（EXP-006）合入 main，连同 LSU store 窗口修复 | trace-model `exp/dram-sim`、rtl `exp/dram-sim`（工作区 `*-dram`）已基于新 main，未提交；LSU store 窗口修复在 rtl `exp/lsu-stwin`（`b94b4f5`，未合入）：16 倍分频下触发不到，只能在不分频配置下验证 | rtl `exp/dram-sim` rebase 到 `exp/lsu-stwin`；DRAMsim3 纳入版本管理（子模块或固定版本脚本，Makefile 默认 `DS3=1` 不能依赖仓库外路径）；**对照测试**：不分频 + STA 端口 1（store 窗口 5）下，修复前（只修提交窗口）与修复后的 RTL 对 trace-model 周期，修复后 66/66 相等；trace-model gate 开 difftest 比较；trace-model 与 RTL 的 Linux 到登录；新基线 quick SPEC；LLC 读响应队列 4→32 的综合对比；MAIN_RECORDS + 变化 |
+| rtl `exp/lsu-stwin`（旧 LSU 的 store 侧队列窗口修复，`b94b4f5`，未合入） | DRAMsim3（EXP-006）已合入 main（DRAMsim3 已是子模块），main 的 `lsu_dc_req_st` 已按 `STWIN` 修了提交窗口；这个分支另外修了旧 LSU（`LSU_PIPE=0`）里 `wait_mmu_stq`、`mmu_done_stq` 经通用 `ring_apply` 仍按 load 窗口 20 处理的部分，默认的分级 LSU（`lp_*`）不受影响 | 决定合入还是删除：只对 `LSU_PIPE=0` 的旧路径有意义；合入的话在不分频 + STA 端口 1 的配置下对照修复前后 RTL 与 trace-model 周期（修复后 66/66 相等） |
 | LD/STA IQ 合并、统一 FTQ 的 RTL 试做结果入档 | 两个 RTL 试做都已完成（工作区 `rtl-ldsta`/`trace-model-ldsta`、`rtl-uftq`/`trace-model-uftq`，未提交）：门禁 66/66，66 个程序周期与各自的 trace-model 全部一致 | 在 [EXPLORATION.md](EXPLORATION.md) 记为新实验（含综合数字和未覆盖项）；工作区改动提交到各自的 `exp/` 分支 |
 
 ## 待做：验证
@@ -68,7 +68,6 @@ EXP-024 合入的是"STQ 内分组"的简化版 write buffer：4 个条目、每
 
 | 事项 | 为什么 | 做完的标准 |
 |---|---|---|
-| **快速 warmup（功能预热）** | 每个 SPEC 点现在要模拟 2000 万条指令（1000 万详细预热 + 1000 万测量），预热占一半；前门恢复强制预热等于检查点间隔（`--restore-stub` 不允许缩短），所以评测提速只能缩测量窗口。云上一个 20 点配置约 12~15 分钟，由最慢的 mcf 点决定，预热是其中一半（EXP-009，2026-11-06） | 用快速的功能模型先跑完预热，把 L1D/LLC 的 tag、分支预测器、预取器表（步长表、BO 的 RR 表）训练好再交给详细模型，详细预热缩到约 100 万条；**验收线**：在已有的精确结果（基线、h1 等 20 点）上，近似版本的"提升比"与精确版本偏差 <0.5 个百分点、配置排序不变；ROB/LSU/MSHR 等冷启动的影响单独量化；`--restore-stub` 的"预热必须等于检查点间隔"检查改为可配置；预期每点约 ×1.8 |
 | 性能计数（PMU）后续（EXP-013 已合入 main：trace-model `PMU=1`、RTL tier 1 事件总线 + 计数器块） | RTL 计数器块还没接 CSR（软件不可见）；RTL 只有 18 个事件；详见 [PMU.md](PMU.md) 第 4 节 | ① 决定软件是否可见（改 function-model / trace-model IDU / RTL CSR 的"这些 CSR 不存在"约定，OpenSBI 会探测，Linux 要重跑）；② 需要时给 icache/rob/lsu 加输出，补二级事件（取指延迟/带宽、Memory/Core）；③ 综合 `pmu`（接上后）；④ 前门恢复 `cycle_base` 未清零（`sim-time` 少报恢复程序的周期，mcf 点 −0.04%，改它会动所有 SPEC 基线）；⑤ dhrystone 两条 `ret` 预测错误率约 100% 的原因 |
 | 时序综合流程 | MAIN_RECORDS 要求记 WNS，但现在只有 yosys 通用门面积代理，没有工艺库、时序约束和静态时序分析；整机面积推算也只在旧配置下做过（第 3 批只综合了受影响模块） | 选定开源工艺库（如 ASAP7/Nangate45）+ 约束频率，主要模块能出面积和 WNS；整机推算可按需重跑 |
 | SPEC 检查点生成提速 | 生成检查点要把整个程序顺序再跑一遍（sjeng 约 3.7 小时，单线程） | BBV 时顺带存粗粒度检查点，生成 SimPoint 检查点时从最近的粗检查点并行起跑 |

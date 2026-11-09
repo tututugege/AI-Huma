@@ -18,7 +18,7 @@ AI-Huma 有两层意思：
 | 阶段 | 时间 | 做了什么 |
 |---|---|---|
 | 建立起点 | 至 2026-11-04 | 从 tututugege/simulator 蒸馏出 trace-model（代码从约 8.4 万行降到 4.3 万行、更快，周期与原模型完全一致）；逐模块翻译出 RTL，与原模型逐拍对照；接入 function-model。逐拍对照体系完成使命后退役（rtl `docs/history/`、标签 `legacy-reference`）。 |
-| 自主优化 | 2026-11-04 起 | 正确性改为对照 function-model，周期不再要求与原模型一致；建立探索 → 验证 → 合入 main 的流程（[WORKFLOW.md](docs/WORKFLOW.md) 第 4–6 节）；重建 SPEC 检查点。已合入 main 的优化：第 3 批面积配置（EXP-005）、DRAMsim3 DDR 内存模型并去掉 AXI 分频（EXP-006，新基线）、mov 消除（EXP-012）、**L1D 数据预取器 h1（EXP-009，SPEC 估算 8.12 → 约 8.80 分/GHz）**。以及 EXP-015/017/019/020/023（分级 LSU + 流水化 BPU、IQ 入队宽度、访存推测、前端快速通路，见 MAIN_RECORDS）。正在做：LD/STA 发射队列合并、统一 FTQ（[TODO.md](docs/TODO.md)）。 |
+| 自主优化 | 2026-11-04 起 | 正确性改为对照 function-model，周期不再要求与原模型一致；建立探索 → 验证 → 合入 main 的流程（[WORKFLOW.md](docs/WORKFLOW.md) 第 4–6 节）；重建 SPEC 检查点。已合入 main 的优化：第 3 批面积配置（EXP-005）、DRAMsim3 DDR 内存模型并去掉 AXI 分频（EXP-006，新基线）、mov 消除（EXP-012）、**L1D 数据预取器 h1（EXP-009，SPEC 估算 8.12 → 约 8.80 分/GHz）**。以及 EXP-015/017/019/020/023/024（分级 LSU + 流水化 BPU、IQ 入队宽度、访存推测、前端快速通路、已提交 store 的 write buffer，见 MAIN_RECORDS）。待做：LD/STA 发射队列合并、统一 FTQ 的 RTL 试做结果入档，香山式独立 SBuffer、RTL 上的 SPEC 等（[TODO.md](docs/TODO.md)）。 |
 
 ## 三个部分
 
@@ -26,7 +26,7 @@ AI-Huma 有两层意思：
 |---|---|---|
 | **function-model** | `function-model/` | 功能模型：只管指令执行的结果（寄存器、访存、CSR、分页），不管时序。基于 tututugege/GenSimpoint，库名 `librefcpu`。也负责 SPEC 的 BBV/SimPoint/检查点生成。 |
 | **trace-model** | `trace-model/` | 我们的时序模型和架构探索平台：起点由 tututugege/simulator 蒸馏而来，不计算数据值，分支方向/目标、地址、store 数据、CSR 写数据都来自功能模型提供的“事实”，只保留周期精确的时序行为。核参数的唯一来源（`include/config.h`）。 |
-| **rtl** | `rtl/` | 我们的 SystemVerilog 实现（约 270 个 RTL 文件、2.6 万行）：起点由原模型逐模块翻译，现在随优化独立迭代；整核测试平台（Verilator）逐条提交对比 function-model；参数包由 trace-model 的 `config.h` 生成。 |
+| **rtl** | `rtl/` | 我们的 SystemVerilog 实现（约 350 个 RTL 文件、3.7 万行）：起点由原模型逐模块翻译，现在随优化独立迭代；整核测试平台（Verilator）逐条提交对比 function-model；参数包由 trace-model 的 `config.h` 生成。 |
 
 三者的关系：function-model 定义“对不对”（架构行为），trace-model 定义“快不快”（周期）并用来做架构探索；rtl 的架构行为必须与 function-model 一致，合入 main 时同一配置下的周期必须与 trace-model 逐个程序相等。
 
@@ -59,16 +59,17 @@ git submodule update --init          # 取出 function-model、trace-model、rtl
 - **旧的逐模块锁步 / trace 回放 / 变异检查体系已退役**（代码在 rtl 标签 `legacy-reference`，文档在 `rtl/docs/history/`）。
 - **目标是方法，而不只是代码**：AI 和人能否系统地做 CPU 架构优化——每个想法先在模型上量化，再落到 RTL，保证正确，留下可复用的验证手段和完整记录（包括负面结果）。
 
-## 当前状态（2026-11-09）
+## 当前状态（2026-11-10）
 
-- **配置与基线**：第 3 批面积配置（取指宽度 8、在飞分支 32、IQ 384→240）→ DRAMsim3 DDR4-3200 + 60 ns 非核心延迟、核心 1 GHz、去掉 AXI 子系统分频（EXP-006，周期基线重做）→ mov 消除（EXP-012）→ **L1D 数据预取器 h1（EXP-009，默认开）**：单条全局步长表项、度 8、距离 2、页内、LLC-only next-line 引擎、无 PC，约 1,460 个触发器。
-- **性能（SPEC full，对精确的预取关基线）**：12 个程序几何平均 IPC 加速 **+8.3%**（580 个点），估算分数 8.12 → 约 8.80 分/GHz（libquantum +96%、mcf +11%、gcc +9%、bzip2 +6%；gobmk/hmmer/sjeng −1% 到 −3%）。已知回退：5 个 SPEC 点低于 −10%（最差 omnetpp −41%），原因是 LLC-only 引擎；三个修复方案（节流、MSHR 预留、时间片对抗）在全量上都不如原样 h1，见 [EXPLORATION.md](docs/EXPLORATION.md) EXP-009 第 11 节。
+- **配置与基线**：第 3 批面积配置（取指宽度 8、在飞分支 32、IQ 384→240）→ DRAMsim3 DDR4-3200 + 60 ns 非核心延迟、核心 1 GHz、去掉 AXI 子系统分频（EXP-006，周期基线重做）→ mov 消除（EXP-012）→ **L1D 数据预取器 h1（EXP-009，默认开）**：单条全局步长表项、度 8、距离 2、页内、LLC-only next-line 引擎、无 PC，约 1,460 个触发器 → 分级 LSU + 流水化 BPU（EXP-015）→ issue queue 入队宽度（EXP-017）→ 访存推测与前端快速通路（EXP-019/020/023）→ **已提交 store 的 write buffer（EXP-024，4 项、每项最多 2 个同 line 的 store、排空口 2）**。
+- **性能（最近两次合入，SPEC 全量 580 点、快速预热、对上一次合入的 main）**：EXP-019/020/023 几何平均 IPC **+11.02%**（trace-model，服务器）；EXP-024 **+0.68%**（本机，gcc +4.8%、hmmer +1.5%、gobmk +1.1%，其余基本不变，最差点 −6.25%）；估算分数约 10.53 分/GHz（参考时间没有核对官方表，起点是近似值）。RTL 没有跑过 SPEC。
+- **性能（EXP-009 的 SPEC full，对精确的预取关基线，历史）**：12 个程序几何平均 IPC 加速 **+8.3%**（580 个点），估算分数 8.12 → 约 8.80 分/GHz（libquantum +96%、mcf +11%、gcc +9%、bzip2 +6%；gobmk/hmmer/sjeng −1% 到 −3%）。已知回退：5 个 SPEC 点低于 −10%（最差 omnetpp −41%），原因是 LLC-only 引擎；三个修复方案（节流、MSHR 预留、时间片对抗）在全量上都不如原样 h1，见 [EXPLORATION.md](docs/EXPLORATION.md) EXP-009 第 11 节。
 - **EXP-019 / EXP-020 / EXP-023（2026-11-09 合入本地 main，未推送）**：LSU 访存相关推测（`LSU_MEMSPEC` 默认开：load 越过地址未知的更老 store，PC 哈希等待表 64 × 1 位、每 2000 周期清零，违例重做并在提交时冲刷；模型的值路径 `LSU_MS_DATA` 使模型周期等于 RTL）+ 前端重定向快速通路（`FE_RFAST=15` 写死，`FE_BFAST` 默认关）。**trace-model 的 SPEC 全量 580 点（快速预热，`PMU=1`，对同一服务器上构建的 main）12 个程序几何平均 IPC +11.02%**，估算分数 9.42 → 约 10.46 分/GHz（参考时间未核对官方表，9.42 是 EXP-015 的记录、EXP-016/017 在其后合入，起点是近似值）；最差点 −4.3%。**RTL 没有跑 SPEC**，模型与 RTL 在 68 个程序上周期逐个相等、Linux 13 段 13/13；`front_pred_path` 深度 +6%（超过 5% 判据）、`FE_RFAST` 的 BPU 面积 +19%（和合并综合表不一致，见 MAIN_RECORDS）；`FE_PAIR`、`FE_IPF` 只在模型里（默认关），旧的模型组合 +20.16% 不是 RTL 能得到的数字。
 - **EXP-024（2026-11-09 合入本地 main，未推送）**：已提交 store 的 write buffer（`CFG_LSU_PIPE_WBUF=4` 默认开）：4 个条目、每条目最多 2 个同 cache line 的 store，STQ 内分组，一个条目一个 DCache 请求，排空口 3 → 2。**trace-model SPEC 全量 580 点（快速预热，本机）12 个程序几何平均 IPC +0.68%**（gcc +4.8%、hmmer +1.5%、gobmk +1.1%，其余基本不变，最差点 −6.25%）；RTL 没跑 SPEC；RTL 68 个程序逐条对比 68/68、周期与模型逐个相等、Linux 13/13；`lsu` 深度 125（main 130），`lp_drain` 模块级深度 +17%（超过判据，整体达标，作为例外记录）。香山式独立 SBuffer（提交即释放 STQ 项、字节掩码、按阈值排空）记在 TODO。
 - **EXP-017（2026-11-08 合入）**：issue queue 入队宽度 INT7/LD6/STA4/STD4/BR5（原来全 8，写口 40→26）；SPEC 全量 −0.05%，`isu` 综合单元 −18.8%。
 - **EXP-015（2026-11-08 合入）**：分级 LSU + 流水化 S+R BPU；30 点精确预热 IPC +2.87%，全量 580 点快速预热 −1.20%（已知回退，见 MAIN_RECORDS）。
-- **trace-model**：gate 64/64（预取开，访存推测与 `FE_RFAST` 默认开）；`LSU_MEMSPEC=0 FE_RFAST=0` 对合并前的 main 基线 63/63 逐个相同；Linux 启动到登录；full SPEC 回放（580 个 rv32imab 检查点）。
-- **rtl**：lint 干净（按目录和整芯片）；68 个程序（67 + 定向测试）逐条对比全部通过（默认配置与 `LSU_MEMSPEC=0` 各一遍），周期与 trace-model 逐个相等；Linux 分 13 段（检查点接力）逐条对比 0 不一致（合并后的树上没有从复位连续跑到登录）；有面积代理综合（`rtl/docs/09-synthesis-report.md`）；**还没有工艺库综合和时序（WNS）**，store 数据不在逐条对比范围内。已知风险见 [rtl/docs/08-risk-register.md](rtl/docs/08-risk-register.md)。
+- **trace-model**：gate 63/63（`run_gate.sh`，预取、访存推测、`FE_RFAST`、write buffer 默认开，基线 2026-11-09 重生成）；`LSU_PIPE_WBUF=0 LSU_PIPE_DRAIN=3` 对 EXP-024 之前的 main 基线 63/63 逐个相同（`LSU_MEMSPEC=0 FE_RFAST=0` 对更早的 main 基线也相同）；Linux 启动到登录；full SPEC 回放（580 个 rv32imab 检查点）。
+- **rtl**：lint 干净（按目录和整芯片）；68 个程序（67 + 定向测试）逐条对比全部通过，周期与 trace-model 逐个相等（write buffer 默认开）；Linux 分 13 段（检查点接力）逐条对比 13/13、0 不一致（合并后的树上没有从复位连续跑到登录）；有面积代理综合（`rtl/docs/09-synthesis-report.md`）；**还没有工艺库综合和时序（WNS）**，store 数据不在逐条对比范围内。已知风险见 [rtl/docs/08-risk-register.md](rtl/docs/08-risk-register.md)。
 - **每次合入 main 的数字**以 [docs/MAIN_RECORDS.md](docs/MAIN_RECORDS.md) 为准；在做的实验见 [docs/TODO.md](docs/TODO.md)。
 
 ## 复现
