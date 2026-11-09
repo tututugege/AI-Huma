@@ -4,6 +4,7 @@
 
 | 编号 | 日期 | 题目 | 分支 | 状态 | 一句话结论 |
 |---|---|---|---|---|---|
+| [EXP-024](#exp-024-已提交-store-的-write-bufferstq-内分组) | 2026-11-09 | 已提交 store 的 write buffer：4 个条目、每条目最多 2 个同 line 的 store，STQ 内分组；香山 SBuffer 和 BOOM 的对照 | trace-model/rtl `exp/store-wb`（`55c9f64` / `ef6da65`） | 已合入 main（本地） | 12 个程序最高权重点几何平均 IPC +2.85%（gcc +29.6%）；`fm_gate` 68/68、周期与模型逐个相等、Linux 13/13；`lsu` 深度 125（main 130），`lp_drain` 模块级 +17% |
 | EXP-023 | 2026-11-09 | 前端快速通路：`FE_RFAST`（重定向路径）、`FE_BFAST`（覆盖后同拍发射）、`FE_PAIR`（一拍两块）、`FE_IPF`（I$ 预取）；提交说明里写作 EXP-019 / "fe:" | trace-model `exp/frontend`→`exp/combo`→`exp/fe-refs`（`b02eaf6`）、rtl `exp/fe-rtl`（`71468eb`）；工作区 `trace-model-fe`、`trace-model-ferefs`、`rtl-fe` | `FE_RFAST=15`（RTL 固定）、`FE_BFAST`（默认关）随 `exp/integ` 已合入 main；`FE_PAIR`/`FE_IPF` 只在模型里（默认关） | 25 点精确预热：RFAST=15 +2.61%（`bpu` 深度 151 → 141、面积 +19%）；BFAST +34% 深度换 +1.2~1.8%，所以关；FE_PAIR +2.9%、FE_IPF +1.75%（模型，IPF 不经过真实 LLC/AXI） |
 | EXP-020 | 2026-11-08 | 访存推测的值路径 `LSU_MS_DATA`：旧值、污染传播、RTL 独有的预测错误 | trace-model `exp/ms-data`（`97cca34`，工作区 `trace-model-msdata`） | 已合入 main（2026-11-09，随 `exp/integ`，默认开） | dhrystone 115,896、vm_pagefault_test 19,271 = RTL；68/68 程序模型 = RTL；30 点收益 +5.30% → +5.21% |
 | EXP-019 | 2026-11-09 | LSU 访存相关推测：load 越过地址未知的更老 store，等待表预测，违例重做；模型探索 + RTL 实现；最早的提交说明写作 EXP-018 | trace-model `exp/mem-spec`→`exp/memspec-refs`（`ef02c4c`）、rtl `exp/memspec-rtl`（`598f4f9`）；工作区 `trace-model-msrefs3`、`rtl-memspec` | 已合入 main（2026-11-09，随 `exp/integ`，`LSU_MEMSPEC` 默认开） | 30 点精确预热 +5.35%；等待表优于 store set 和置信计数器；违例代价 28–52 周期；`lsu` 单元 −7.7%、深度 131 → 128 |
@@ -20,6 +21,33 @@
 | [EXP-003](#exp-003-rob-与-prf-扩大到-256) | 2026-11-04 | ROB/PRF 扩大到 192、256 | trace-model `exp/area-explore` | 未提交、未合入 | 都翻倍到 256 只快约 0.8%（coremark 3%），ROB 128 合理 |
 | [EXP-002](#exp-002-全核面积浪费排查) | 2026-11-04 | 全核面积浪费排查：各 IQ、ibuf、front2back、分支资源、ALU/BRU 端口 | trace-model `exp/area-explore` | 未提交、未合入 | IQ 总项数 384→192、BRU 4→2 等组合后无性能损失；BPU 存储需大负载评估（“ROB 是瓶颈”的说法已被 EXP-003 否定） |
 | [EXP-001](#exp-001-面积优化三个方向) | 2026-11-04 | 面积优化：FTQ 合并、LSU 端口、LD/STA IQ 合并 | trace-model `exp/area-explore` | 未提交、未合入 | 三个方向都能省面积，性能代价 0–1% |
+
+---
+
+## EXP-024 已提交 store 的 write buffer（STQ 内分组）
+
+- **日期**：2026-11-09。**分支**：trace-model `exp/store-wb`（`55c9f64`，工作区 `trace-model-stwb`）、rtl `exp/store-wb`（`ef6da65`，工作区 `rtl-stwb`）；已合入本地 main，未推送。
+- **问题**：最新 TMA 里 gcc 的 STQ 满占 45% 的槽。瓶颈是 STQ 容量，还是已提交 store 写 L1D 的带宽。
+- **方法和结论的演变**：
+  1. **容量上限实验**（`CFG_STQ_UNC`，已删除）：gcc sp42 上 STQ 64 → 128 项、已提交 store 不占 dispatch 容量，周期 +0.04%（7,216,215 → 7,218,766）；STQ 在 94% 的时间 ≥120/128 仍然是满的：**瓶颈是排空带宽，不是容量**。base 的 3 个排空口全程饱和（排空请求 21.4M 次 ≈ 3 口 × 7.2M 周期），这个点 10M 条指令里有 7.66M 个 store，每个 store 平均发送约 2.8 次（重放 6.1M 次），原来没有任何合并（`merge_pair` 恒为 0）。
+  2. **同 line 合并的上限模型**（`LSU_PIPE_MERGE`，默认关）：同一周期内同 line 的 store 共用一个排空口。gcc sp42 周期 −22.8%（7,216,215 → 5,567,370），但 gcc 的另外 6 个高权重点平均只有 +0.24%，sp42 是个别极端点（store 占 77%）；12 个程序各取权重最高的点没有回退。L1D 的 bank 按 set 号交错（`bank = set_idx & 15`），同一条 line 在同一个 bank，合并的 store 只占一个 bank。
+  3. **in-drain 配对的 RTL（cD：16B 粒度、每口 2 个、6 个候选、2 口，模型 +7.22%）**：RTL 周期与模型逐个相等，但 `lp_drain` 深度 110（main 83），`lsu` 169（main 130）：配对要等冲突 CAM 的结果，排在关键路径最后；并行化配对反而 154；限制配对范围（`MADJ`）和"先配对后用 CAM 屏蔽"（`MSPEC`）的收益损失太大（+5.4~6.8%、hmmer 变负）。**放弃**。
+  4. **write buffer（本次合入）**：合并发生在 store 进入缓冲区时，不在排空的关键路径上。
+- **最终设计**（开关 `CFG_LSU_PIPE_WBUF=4` 默认开，`WBMAX=2`、`WBINS=4`、`WBSCAN=4`、`DRAIN=2`，运行时 `LSU_PIPE_WBUF` 等；`WBUF=0` 加 `DRAIN=3` 回到合入前的行为）：
+  - 4 个条目，每个条目最多 2 个同一 cache line（`LSU_PIPE_MGRAN=64`）的已提交 store，条目里存两个 STQ 序号和地址、数据副本；**store 仍留在 STQ 里，响应回来才退休**（所以 load 的转发和冲突检查不变，STQ 容量没有释放）。
+  - 排空决策只读寄存器里的缓冲区：条目在等待、其中所有 store 就绪、没有被更老的条目挡住（字节重叠，只在条目之间比），就按年龄顺序占用空闲口（2 个）；一个条目是一个 DCache 请求，第二个 store 走 DCache 的第二字通路，响应由领头 store 的响应带给跟随者。
+  - 插入在决策之后：每周期最多 4 个已提交 store（MMIO 和被取消的只占一个插入名额），合并进最年轻且还在等待、本周期没有被发出的条目，否则新开条目；满了就停；新条目下一个周期才能发；LR/SC 不合并。
+  - 响应：领头 store 命中就释放条目，否则条目回到等待（可以继续合并）；看门狗清掉 `iss` 时条目也回到等待。
+- **负载和结果**（trace-model，精确预热，10M 预热 + 10M 测量，本机）：
+  - 参数扫描用 gcc sp42、h264ref、hmmer、perlbench、gobmk 各 1 个点（对不合并，几何平均 IPC）：4 / 8 / 16 项 +7.35% / +7.34% / +7.34%；2 项 +6.03%；每周期只插入 1 个 −2.50%、2 个 +6.58%、4 个 +7.35%；单口 +7.07%；粒度 32B +7.28%、16B +6.01%；每条目最多 2/3/4 个 +7.26% / +6.47% / +7.39%；每周期看 2 个条目 +6.07%。perlbench 对时序很敏感（+0.2% 到 −4% 随机波动，条目数、口数的小变化都会让它跳）。
+  - 硬件友好的时序（决策只读寄存器、先决策后插入、新条目下一周期才可发、合并只进未发出的最年轻条目）比无时序约束版本低 0.3pt：4 项、每条目 2 个、2 口为 **+6.95%**（cD 的 in-drain 配对是 +7.22%）。
+  - **12 个程序各取权重最高的点，合入前 main 配置 → 新默认值（IPC）**：perlbench +0.22%、bzip2 −0.08%、gcc +29.59%、mcf +0.13%、gobmk +0.65%、hmmer +3.80%、sjeng 0.00%、libquantum +0.11%、h264ref +3.11%、omnetpp −0.13%、astar +0.06%、xalancbmk 0.00%，**几何平均 +2.85%**（最差 −0.13%）。数据 `~/personal/AI-Huma-data/stwb/sw1..sw4`。
+- **RTL**：`lp_wbuf`（决策、请求、响应、插入）、`lp_wbstep`（插入的一步，4 级串联）、`lp_stq` 每项加"已处理"标记、`lp_drain` 只剩 MMIO 路径加缓冲区；DCache 的双字通路（`dcache_s1/arr/bank/mshr/wb/resp`，每个 store 口一个 `st2_t` 第二字）沿用，合并写成每字节一次并行选择（`line_merge_n`），不再是串联的 512 位合并。详见 `rtl/RTL_WBUF_NOTES.md`。
+- **验证**：trace-model gate 63/63（基线重生成，17 个程序周期小幅变化）；RTL `lint.sh`、`lint_chip.sh` 0 警告；`fm_gate.sh` 68/68，周期与 trace-model（`LSU_PIPE_NOWD=1`）逐个相等（0 个不同）；Linux 13 段 13/13，每段检查 690 万到 2420 万条指令，0 不一致。
+- **综合**（yosys 通用门，面积 / 深度，main → 本次）：`lsu` 1,276,574 / 130 → 1,279,658 / **125**；`lp_stq` 158,221 / 72 → 161,937 / 74；`lp_drain` 86,260 / 83 → 68,767 / 97（**模块级深度 +17%，超过 5% 判据**，但包含它的 `lsu` 整体比 main 浅，说明不在 `lsu` 的关键路径上）；`lp_wbuf` 59,014 / 89；DCache：`dcache_s1` 12,970 / 45 → 16,101 / 28，`dcache_mshr` 110,574 / 114 → 83,386 / 101，`dcache_resp` 14,188 / 34 → 17,418 / 22，`dcache_wb` 20,563 / 69 → 26,673 / 57。`dcache_arr` 两边都综合失败，没有数据。
+- **别人怎么做**（查阅，未读到源码）：香山（昆明湖）有独立的 SBuffer：64B 整行条目加字节掩码，StoreQueue 每周期最多送 2 个，按占用阈值排空，load 同时查 StoreQueue、SBuffer、DCache（优先级 StoreQueue > SBuffer > DCache），StoreQueue 项在 store 进入 SBuffer 后释放。BOOM 没有 write buffer：提交后的 store 留在 STQ 里按序发给存储系统，文档没有写合并。本次合入的是"STQ 内分组"，介于两者之间；香山式独立缓冲区记在 TODO。
+- **模型近似和未覆盖**：缓冲区条目是对 STQ 项的分组，没有字节掩码数据，load 的转发仍查 STQ；参数扫描只在 5 个点上做，对单点有 ±1~4% 的波动；服务器连不上，SPEC 30 点和全量没有跑；PMU 的 RTL 事件没有对新缓冲区加事件。第一版 in-drain 配对 RTL 在 Linux `s04` 有 1 处 `sc.w` 判失败（SC 的成功在自己的写回拍按预约状态判定，时序变化可能暴露原有竞争），本版 13/13 通过，**原因没有定位**（TODO）。
+- **复现**：`LSU_PIPE_WBUF=0 LSU_PIPE_DRAIN=3` 是合入前的配置；`scripts/pf/run_point.sh`（gcc sp42 需要 `tm/pf_stubs` 里的 stub，`pmu_spec` 里的 stub 起点不同、结果有差异）。
 
 ---
 

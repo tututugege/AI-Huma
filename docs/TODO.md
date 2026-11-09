@@ -37,6 +37,17 @@
 | `axi_subsys` 的 UNOPTFLAT | `axi_llc.in_w` 经结构体的组合环，`lint.sh` 对它只做规范检查 | 确认是误报还是真环，消除后纳入 `-Wall` |
 | 端口样板由 spec 生成；非压缩数组端口统一 | `axi_llc`/`axi_interconnect`/`axi_subsys`/`mem_axi` 端口仍是非压缩数组 | 生成器覆盖这些模块 |
 
+## 待做：已提交 store 的 write buffer（EXP-024 合入 main 后）
+
+EXP-024 合入的是"STQ 内分组"的简化版 write buffer：4 个条目、每条目最多 2 个同 line 的 store，store 仍留在 STQ 里等响应，load 的转发只查 STQ。香山（昆明湖）和 BOOM 的做法对照见 EXPLORATION EXP-024。
+
+| 事项 | 为什么 | 做完的标准 |
+|---|---|---|
+| **香山式独立 SBuffer**（提交即搬进缓冲区，STQ 项马上释放） | 现在 STQ 项要等响应才释放；香山的 SBuffer 是 64B 整行条目加字节掩码，StoreQueue 每周期最多送 2 个，按阈值排空（积累更多 store 再写），load 同时查 StoreQueue 和 SBuffer（优先级 StoreQueue > SBuffer > DCache） | 模型：条目数据 + 字节掩码、load 对缓冲区的字节级转发和部分命中、fence / 原子 / 同 line 冲突触发的排空、按阈值排空；用同样 5 个点重扫条目数和阈值，收益不低于 EXP-024；再做 RTL 并与模型逐周期对齐 |
+| 阈值式排空是否比"立即排空"更好 | 现在条目一有空口就发，积累的 store 少；香山等占用到阈值才发 | 模型里加阈值参数，比较 gcc/h264ref/hmmer/perlbench |
+| EXP-024 的单点结论 | 只在 gcc、h264ref、hmmer、perlbench、gobmk 的各 1 个点上扫过参数；perlbench 对时序很敏感（±4%） | 30 点或全量 SPEC 上对比开/关缓冲区（服务器恢复后） |
+| Linux `s04` 的 SC 不一致（原因未定位） | 第一版配对 RTL 在 `s04` 有 1 处 `sc.w` 判失败（function-model 判成功），SC 的成功在自己的写回拍按预约状态判定，时序变化可能暴露原有竞争；write buffer 版 13/13 通过，说明在新时序下没有再触发，不等于原因已排除 | 用第一版配对 RTL（rtl `b1e0335`）重现 `s04`，波形看 LR 写回与 SC 判定的先后；确认是原有竞争还是合并逻辑 |
+
 ## 待做：访存推测与前端快速通路的收尾（EXP-019 / 020 / 023，2026-11-09 合入 main 后）
 
 | 事项 | 为什么 | 做完的标准 |
