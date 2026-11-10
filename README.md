@@ -70,7 +70,7 @@ git submodule update --init          # 取出 function-model、trace-model、rtl
 - **EXP-017（2026-11-08 合入）**：issue queue 入队宽度 INT7/LD6/STA4/STD4/BR5（原来全 8，写口 40→26）；SPEC 全量 −0.05%，`isu` 综合单元 −18.8%。
 - **EXP-015（2026-11-08 合入）**：分级 LSU + 流水化 S+R BPU；30 点精确预热 IPC +2.87%，全量 580 点快速预热 −1.20%（已知回退，见 MAIN_RECORDS）。
 - **trace-model**：gate 64/64（`run_gate.sh`，含 `itt-dispatch`；，预取、访存推测、`FE_RFAST`、write buffer 默认开，基线 2026-11-09 重生成）；`LSU_PIPE_WBUF=0 LSU_PIPE_DRAIN=3` 对 EXP-024 之前的 main 基线 63/63 逐个相同（`LSU_MEMSPEC=0 FE_RFAST=0` 对更早的 main 基线也相同）；Linux 启动到登录；full SPEC 回放（580 个 rv32imab 检查点）。
-- **rtl**：lint 干净（按目录和整芯片）；69 个程序（68 + 定向测试）逐条对比全部通过，周期与 trace-model 逐个相等（write buffer 默认开）；Linux 分 13 段（检查点接力）逐条对比 13/13、0 不一致（合并后的树上没有从复位连续跑到登录）；有面积代理综合（`rtl/docs/09-synthesis-report.md`）；**还没有工艺库综合和时序（WNS）**，store 数据不在逐条对比范围内。已知风险见 [rtl/docs/08-risk-register.md](rtl/docs/08-risk-register.md)。
+- **rtl**：lint 干净（按目录和整芯片）；69 个程序（68 + 定向测试）逐条对比全部通过，周期与 trace-model 逐个相等（write buffer 默认开）；Linux 分 13 段（检查点接力）逐条对比 13/13、0 不一致；EXP-025 的树上从复位连续启动到 `rv32 login:` 也通过（0 不一致）；有面积代理综合（`rtl/docs/09-synthesis-report.md`）；**还没有工艺库综合和时序（WNS）**，store 数据不在逐条对比范围内。已知风险见 [rtl/docs/08-risk-register.md](rtl/docs/08-risk-register.md)。
 - **每次合入 main 的数字**以 [docs/MAIN_RECORDS.md](docs/MAIN_RECORDS.md) 为准；在做的实验见 [docs/TODO.md](docs/TODO.md)。
 
 ## 复现

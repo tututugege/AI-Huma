@@ -52,7 +52,6 @@ EXP-024 合入的是"STQ 内分组"的简化版 write buffer：4 个条目、每
 
 | 事项 | 为什么 | 做完的标准 |
 |---|---|---|
-| **合并后的 RTL 树从复位连续跑到 `rv32 login:`**（2026-11-10 在 EXP-025 的树上跑了约 1.5 小时到 `Starting network`，0 不一致，没有等完；合入时以 13 段为准） | 合入时只做了 13 段检查点接力（微架构每段冷启动），推测和前端快速通路都是时序相关的状态 | RTL 测试平台 `SOC_FM=1 SOC_TB_FM=1` 从复位到登录，逐条对比 0 不一致（约 3–4 小时，服务器） |
 | **RTL 上的 SPEC**（逐点周期与 trace-model 相等） | +11.02% 只是 trace-model 的数；模型与 RTL 的相等只在 68 个小程序和 Linux 上验证过 | 抽样的 SPEC 点（至少 12 个程序各 1 个高权重点）RTL 周期 = 模型周期，逐条对比通过 |
 | 小 LLC 检查（模型 + RTL） | 本次合入没跑 | `scripts/llc_small_check.sh` 通过 |
 | `FE_RFAST` 的 BPU 面积和 `front_pred_path` 深度（+6% 超判据） | 前端笔记的 `bpu` +19%（`RFAST=15` vs 关，平衡 ABC）和合并综合表（−9.5%，轻量 ABC）互相矛盾；`front_pred_path` 深度 134 → 142 | 同一综合流程对合并后的树做 `FE_RFAST=0` 与 15 的对比；若深度必须回到 5% 内：用 `spec_r1` 推导 `spec_r2`（省面积、费深度）或拆 `front_pred_path` 的关键链；(`front_pred_path.sv` 的 slang 声明顺序已在 `exp/integ` 里改好，main 上现在合并了，`lint.sh` 能综合它，此项已完成) |
