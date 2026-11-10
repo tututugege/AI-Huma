@@ -23,7 +23,7 @@
 
 | harness | 作用 | 位置 / 命令 |
 |---|---|---|
-| gate | 62 个测试，周期与基线一致 | `scripts/run_gate.sh build/simulator results/gate` |
+| gate | 64 个测试（含 pf-stress、itt-dispatch），周期与基线一致 | `scripts/run_gate.sh build/simulator results/gate` |
 | 大程序 | dhrystone 64 次、coremark 2 次迭代（2026-11-04 起固定为这两个缩短版）、memory-stress、smc-div、smc-addi；当前标准周期见 `trace-model/docs/PROJECT.md` 的 Gate 第 4 条，随配置变化更新 | dhrystone/coremark 在 `rtl/programs/big`，其余在 `trace-model/build/tests`；每次改动后检查 |
 | Linux | 镜像 `~/personal/AI-Huma-data/linux/linux.bin`（`function-model/linux/mkimage.sh`，`MEM=0x10000000`），从复位启动到 `rv32 login:` | 合入 main 前必跑 |
 | small-LLC 检查 | 默认 8 MiB LLC 在小测试里不会换出，用 64 KiB LLC 检查 DDR 写回路径 | `scripts/llc_small_check.sh $PWD <baseline-sim/src 绝对路径>` |

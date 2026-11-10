@@ -4,6 +4,7 @@
 
 | 编号 | 日期 | 题目 | 分支 | 状态 | 一句话结论 |
 |---|---|---|---|---|---|
+| [EXP-025](#exp-025-前端带宽拆分icache-容量与替换间接跳转预测多表-itt) | 2026-11-10 | 前端 PMU 拆分（取指组形状 vs 空拍）、I$ 容量/替换/victim/预取、perlbench 假退化、多表 ITT | trace-model `exp/itt-multi`（`5d8cf66`）、rtl `exp/itt-multi`（`efaa350`）；PMU/I$ 诊断在 `trace-model-fepmu`（`exp/fe-pmu`，未提交） | ITT 部分待合入 main | 多表 ITT（3 张 × 64 项，存储比原来少）SPEC 全量 580 点 12 程序几何平均 IPC **+0.67%**（sjeng +3.8%、perlbench +3.2%、h264ref +0.5%）；RTL fm_gate 69/69、周期与模型逐个相等 |
 | [EXP-024](#exp-024-已提交-store-的-write-bufferstq-内分组) | 2026-11-09 | 已提交 store 的 write buffer：4 个条目、每条目最多 2 个同 line 的 store，STQ 内分组；香山 SBuffer 和 BOOM 的对照 | trace-model/rtl `exp/store-wb`（`55c9f64` / `ef6da65`） | 已合入 main（本地） | SPEC 全量 580 点 12 个程序几何平均 IPC +0.68%（gcc +4.8%、hmmer +1.5%、gobmk +1.1%，其余基本不变）；`fm_gate` 68/68、周期与模型逐个相等、Linux 13/13；`lsu` 深度 125（main 130），`lp_drain` 模块级 +17% |
 | EXP-023 | 2026-11-09 | 前端快速通路：`FE_RFAST`（重定向路径）、`FE_BFAST`（覆盖后同拍发射）、`FE_PAIR`（一拍两块）、`FE_IPF`（I$ 预取）；提交说明里写作 EXP-019 / "fe:" | trace-model `exp/frontend`→`exp/combo`→`exp/fe-refs`（`b02eaf6`）、rtl `exp/fe-rtl`（`71468eb`）；工作区 `trace-model-fe`、`trace-model-ferefs`、`rtl-fe` | `FE_RFAST=15`（RTL 固定）、`FE_BFAST`（默认关）随 `exp/integ` 已合入 main；`FE_PAIR`/`FE_IPF` 只在模型里（默认关） | 25 点精确预热：RFAST=15 +2.61%（`bpu` 深度 151 → 141、面积 +19%）；BFAST +34% 深度换 +1.2~1.8%，所以关；FE_PAIR +2.9%、FE_IPF +1.75%（模型，IPF 不经过真实 LLC/AXI） |
 | EXP-020 | 2026-11-08 | 访存推测的值路径 `LSU_MS_DATA`：旧值、污染传播、RTL 独有的预测错误 | trace-model `exp/ms-data`（`97cca34`，工作区 `trace-model-msdata`） | 已合入 main（2026-11-09，随 `exp/integ`，默认开） | dhrystone 115,896、vm_pagefault_test 19,271 = RTL；68/68 程序模型 = RTL；30 点收益 +5.30% → +5.21% |
@@ -23,6 +24,49 @@
 | [EXP-001](#exp-001-面积优化三个方向) | 2026-11-04 | 面积优化：FTQ 合并、LSU 端口、LD/STA IQ 合并 | trace-model `exp/area-explore` | 未提交、未合入 | 三个方向都能省面积，性能代价 0–1% |
 
 ---
+
+## EXP-025 前端带宽拆分、I$ 容量与替换、间接跳转预测（多表 ITT）
+
+- **日期**：2026-11-10。**分支**：trace-model `exp/itt-multi`（`5d8cf66`，工作区 `trace-model-itt`）、rtl `exp/itt-multi`（`efaa350`，工作区 `rtl-itt`）；PMU 前端拆分、`ICM_DIAG`、`ICACHE_REPL`、`CFG_ICACHE_WAY_NUM` 在 trace-model `exp/fe-pmu`（工作区 `trace-model-fepmu`，基于 main `55c9f64`，**未提交**）。
+- **问题**：TMA 里前端空槽最大（`fBW` 占 FE 的 90% 以上），不知道是"每拍只取一个块"还是延迟。
+- **PMU 前端拆分**（`FEO_*`，model-only，不进 RTL 总线，开关 PMU 周期不变）：在前端到后端的接口按取指组计槽（每拍 8 槽，只算后端能读的拍），短组按结尾原因分（以 taken 分支结尾 / 到 64B 行尾 / 其他），空拍按原因分（重定向重填、I$ 缺失、预译码冲刷、BPU 覆盖气泡、PTAB 停顿、指令 FIFO 空等）。`scripts/pmu/fe_summary.py`。9 个前端受限程序各取最高权重点：
+  - **形状限制**（gcc、xalancbmk、perlbench、libquantum、h264ref）：每拍 0.85~0.99 个组、每组 3.4~5.6 条，丢槽主要是以 taken 结尾（15~37%）和到行尾（gcc 27%、xalancbmk 13%、perlbench/h264ref 10%）；BPU 覆盖气泡、PTAB 停顿、I$ 未就绪几乎为 0。
+  - **空拍多**（gobmk、sjeng、astar、omnetpp）：每拍 0.5~0.7 个组；gobmk I$ 缺失 22.5%，sjeng/astar 指令 FIFO 空 22~25%，重填 3~11%。
+  - `FE_PAIR` 是"2-taken"（一拍跨一个 taken 分支取两块），不是 2-ahead；"到行尾"的丢槽用越过行边界取指就能拿，比 2-taken 便宜（没做）。
+- **I$ 容量与替换（单点，gobmk sp24 为主）**：热代码约 95 KB（1,483 条不同的行），32 KB I$ 反复颠簸：115,320 次缺失中 98.7% 是重复缺失，回填平均 10.4 拍（LLC 命中）。EXP-014 已有同样的容量结论（L1I 64KB +1.3%、gobmk +15%）。
+  | 改动 | gobmk IPC | 缺失 |
+  |---|---|---|
+  | 12 路（48 KB） | +12.0% | 30,508 |
+  | 16 路（64 KB） | +15.25% | 10,753 |
+  | `FE_IPF` 预取 | +7.75% | — |
+  | BIP（真 LRU，1/32 插 MRU） | +5.23% | 74,365 |
+  | BRRIP | +5.46% | — |
+  | SRRIP / 树形 PLRU+BIP | +3.96% / +3.93% | — |
+  | LRU / 随机 | +1.56% / +0.06% | 101,827 / 115,430 |
+  | victim buffer（影子统计，全相联 LRU） | 16 项接住 5.9%、32 项 11.6%、128 项 35.7% | — |
+  - 9 个点几何平均：16 路 +1.93%（几乎全是 gobmk，其余 8 个约 +0.4%）、PLRU+BIP +0.21%、SRRIP +0.25%、`FE_IPF` +0.75%。只为 gobmk 加容量不划算；替换策略几乎不花硬件但全集收益很小（EXP-014 估 SRRIP 全集 +0.30%）。**未做 RTL**。
+- **perlbench 的 ±2% 假退化**：perlbench 在加大 I$（−1.95%）、预取（−2.09%）、PLRU/SRRIP/BRRIP/LRU（−1.45%~−2.16%）下都变差，随机替换却 +1.68%。7 种策略的周期完全跟着已提交 JALR 误预测次数走（7,440~13,550，每次约 17 拍），I$ 缺失只有 600~700 次、条件分支误预测不变；三个不同策略停在完全相同的 13,550。原因：BTB/ITT 的间接目标靠提交时更新队列训练，对取指节奏敏感。**含义：评估前端改动时 perlbench 的单点数不可信，要看 JALR 误预测是否相同。**
+- **多表 ITT**：模型里原来就是 ITTAGE 风格（复用 TAGE 某张表的索引和标签，每 bank 一张 256 项、历史 13 位，RTL 与之对齐）。只有这一张短历史表时 sjeng 20,051、perlbench 9,896、h264ref 4,974 次 JALR 误预测（约占周期 7.1%、6.0%、1.9%）。BPA_ITTH/BPA_ITTN 扫描（3 个 JALR 重的点，相对 1 张 13 位 256 项）：
+  | 配置（每 bank 总项数） | sjeng | perlbench | h264ref | 几何平均 |
+  |---|---|---|---|---|
+  | 关 ITT | −9.6% | −5.6% | −0.1% | −5.2% |
+  | 1 张 32 位 / 119 位 | +3.35% / −1.29% | −2.27% / +0.60% | +1.24% / +1.63% | +0.75% / +0.31% |
+  | 2 张 13+119，每表 256（512） | +5.05% | +11.02% | +1.70% | +5.85% |
+  | 2 张，每表 128（256，存储同现状） | +3.92% | +10.98% | +2.07% | +5.59% |
+  | 3 张 13+32+119，每表 256（768） | +7.20% | +11.02% | +1.69% | +6.57% |
+  | **3 张，每表 64（192）** | +5.67% | +11.02% | +1.70% | +6.06% |
+  - 更早的 `BPU_ACC.md` 4.1 节结论是"一张表就够，两张只多 +0.13pp"：那次是零气泡 BPU、方向历史、有 TC 回落、14 点，与现在的流水化 BPU + taken 路径历史（13 位只覆盖约 4 个 taken 分支）不同，不能沿用。
+  - **选定**：3 张表 × 64 项，TAGE 历史表 1/2/3（13/32/119 位），预测取最长历史的命中，更新沿用单表规则（提供者命中同目标则计数加、不同则减/置换；提供者不对或没命中时向更长的表分配，经过的更长项 useful 清零）。每项 42 位，8 bank 共 64.5 Kb，比原来的 86 Kb 少 21.5 Kb。模型默认 `CFG_ITT_H="1,2,3"`、`CFG_ITT_SIZE=64`（环境变量 `BPA_ITTH`/`BPA_ITTN` 仍可覆盖）。
+- **新增测试** `itt-dispatch`（tests/extra、rtl `programs/directed`）：周期 64 的字节码分派，jalr 调用加 computed goto，模型周期 222,445（3 张表）/ 345,573（原 1 张 256 项）/ 570,723（关），gate 因此是 64 个程序。原来的 63 个程序周期**没有任何变化**（它们覆盖不到多表）。
+- **验证结果**：
+  - trace-model gate 64/64；服务器构建与本机周期一致（旧配置 xalancbmk 点 2,867,154）。
+  - **SPEC 全量 580 点**（快速预热、PF 开、PMU 开，服务器 47.117.141.194，相对 main + write buffer 的全量结果）：12 个程序几何平均 IPC **+0.67%**。sjeng +3.77%、perlbench +3.16%、h264ref +0.53%、gcc +0.38%，其余（bzip2、mcf、gobmk、hmmer、libquantum、omnetpp、astar、xalancbmk）−0.02%~+0.08%。58 个点变化超过 2%，其中 <−2% 的 3 个（perlbench sp13 −4.5%、gcc sp29 −3.8%、xalancbmk sp31 −3.3%）没有查，perlbench 的单点结果见上面的假退化。
+  - **RTL**（`bpu_stage_pkg` 的 `NITT=3`、`ITT_IDX_W=6`、`ITT_TBL='{1,2,3}`；`bpu_btb_bank/upd/sel`、`bpu_main_lane/sel`、`bpu_banks`、`bpu` 共 8 个文件）：`bpu` 目录 lint 0 警告；`fm_gate` 69/69（68 + `itt-dispatch`）、0 个 `[FM]` 不一致、**与模型周期逐个相等（0 个不同）**；`itt-dispatch` RTL 222,445 = 模型；`ref_cycles.txt` 只改了 coremark 283270→283240、dhrystone 114418→114685 并加了 `itt-dispatch`。综合（通用门级数，单元数/深度，对 main 同条件）：`bpu` 237,174→242,631（+2.3%）、141→141；`front_pred_path` 243,614→250,251（+2.7%）、142→144（+1.4%）；`bpu_main_sel` 20,004→23,904、70→69；`bpu_btb_sel` 829→1,128、34→33。深度都在 5% 判据内。**Linux**：13 段（s01–s13 接力，服务器，每提交逐条对比）13/13 通过，每段检查 690 万到 2420 万条指令，0 个 `[FM]` 不一致。**从复位连续启动到 `rv32 login:` 没有等完**：服务器单进程跑了约 1.5 小时到 `Starting network`，期间 0 不一致，之后按用户决定不再等、以 13 段作为 Linux 验证（2026-11-10）。
+- **后续量的两个便宜项（2026-11-10，9 个最高权重点，快速预热，对本次 ITT 默认）**：
+  - **RAS 修复档（`BPA_REPAIR`，默认 3 = 历史从检查点还原、RAS 取已提交状态；1 = RAS 用压缩检查点；2 = 整份 RAS 拷贝，理想上界）**：模式 2 几何平均周期约 −0.2%（gobmk −0.87%、omnetpp −0.84%、sjeng −0.32%，其余基本不变），模式 1 约持平（xalancbmk +0.36% 变慢）；dhrystone 上 ret 误预测 800 → 290/230、周期 −0.9%/−0.4%。结论：能做到的压缩检查点没有收益，**不做**。TODO 里"dhrystone 两条 `ret` 约 100% 误预测"已过时（现在约 1%）。h264ref 的 6,400 次 ret 误预测对修复不敏感，原因未查（疑 RAS 深度）。
+  - **TAGE 参数与循环预测器扫描（IPC 相对默认，9 点几何平均）**：`BPA_HLEN=4,9,20,60` −0.67%、`4,9,20,40` −1.42%、`8,13,32,60` −0.42%（astar −4%~−7%，且连带改了 ITT 用的历史长度），每表 512 项 −0.51%（gobmk −1.9%、sjeng −1.2%），每表 2048 项 +0.35%（gobmk +1.8%、sjeng +0.9%），**`BPO_LOOP=1`（S0 单块循环退出预测，默认关）+0.60%，几乎全来自 xalancbmk +4.79%**（gobmk +0.61%，其余 ±0.1%）。更短的历史在新的 taken 路径历史下不再有收益（旧的零气泡 BPU 上曾 +0.5~0.7%）；加表容量收益小；循环预测器值得单独看（xalancbmk 点单点，需要更多点和 RTL 代价评估，`BPU_pipe.h` 里已有模型）。
+- **没有做**：RTL 上的 SPEC；I$ 替换策略和容量的 RTL（BIP/SRRIP 只在 gobmk 等点上有收益，全集预计零点几个百分点）；越过行边界取指和 `FE_PAIR` 的 RTL；上面三个 −3%~−5% 的退步点；ITT 表的目标压缩。
+- **复现**：`~/personal/AI-Huma-data/fepmu`（`run.sh` 取每个程序最高权重点，快速预热）、`~/personal/AI-Huma-data/itt`（全量脚本 `full.sh`、`res_new_lines.txt`）、`~/personal/AI-Huma-data/itt_rtl`（周期对照表、`gate_itt`、综合日志）。
 
 ## EXP-024 已提交 store 的 write buffer（STQ 内分组）
 

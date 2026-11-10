@@ -52,7 +52,7 @@ EXP-024 合入的是"STQ 内分组"的简化版 write buffer：4 个条目、每
 
 | 事项 | 为什么 | 做完的标准 |
 |---|---|---|
-| **合并后的 RTL 树从复位连续跑到 `rv32 login:`** | 合入时只做了 13 段检查点接力（微架构每段冷启动），推测和前端快速通路都是时序相关的状态 | RTL 测试平台 `SOC_FM=1 SOC_TB_FM=1` 从复位到登录，逐条对比 0 不一致（约 3–4 小时，服务器） |
+| **合并后的 RTL 树从复位连续跑到 `rv32 login:`**（2026-11-10 在 EXP-025 的树上跑了约 1.5 小时到 `Starting network`，0 不一致，没有等完；合入时以 13 段为准） | 合入时只做了 13 段检查点接力（微架构每段冷启动），推测和前端快速通路都是时序相关的状态 | RTL 测试平台 `SOC_FM=1 SOC_TB_FM=1` 从复位到登录，逐条对比 0 不一致（约 3–4 小时，服务器） |
 | **RTL 上的 SPEC**（逐点周期与 trace-model 相等） | +11.02% 只是 trace-model 的数；模型与 RTL 的相等只在 68 个小程序和 Linux 上验证过 | 抽样的 SPEC 点（至少 12 个程序各 1 个高权重点）RTL 周期 = 模型周期，逐条对比通过 |
 | 小 LLC 检查（模型 + RTL） | 本次合入没跑 | `scripts/llc_small_check.sh` 通过 |
 | `FE_RFAST` 的 BPU 面积和 `front_pred_path` 深度（+6% 超判据） | 前端笔记的 `bpu` +19%（`RFAST=15` vs 关，平衡 ABC）和合并综合表（−9.5%，轻量 ABC）互相矛盾；`front_pred_path` 深度 134 → 142 | 同一综合流程对合并后的树做 `FE_RFAST=0` 与 15 的对比；若深度必须回到 5% 内：用 `spec_r1` 推导 `spec_r2`（省面积、费深度）或拆 `front_pred_path` 的关键链；(`front_pred_path.sv` 的 slang 声明顺序已在 `exp/integ` 里改好，main 上现在合并了，`lint.sh` 能综合它，此项已完成) |
@@ -64,11 +64,20 @@ EXP-024 合入的是"STQ 内分组"的简化版 write buffer：4 个条目、每
 | 访存推测的值路径覆盖 | `LSU_MS_DATA` 里旧地址的 load/store、CSR/FP/AMO 消费者没有 RTL 验证 | 找到能触发的程序（或定向测试）并在 RTL 上对比 |
 | 访存推测的面积代价归因 | `lsu` −7.7% 里"推测本身的代价"和"`lp_ovl` 重写的收益"没拆开 | 在同一流程里分别综合：关推测 + 旧重叠判断 / 关推测 + `lp_ovl` / 开推测 |
 
+## 待做：前端与间接跳转的收尾（EXP-025）
+
+| 事项 | 为什么 | 做完的标准 |
+|---|---|---|
+| EXP-025 的前端 PMU（`FEO_*` 事件、`scripts/pmu/fe_summary.py`、I$ 诊断）还没合入 | 在 trace-model `exp/fe-pmu` 工作区，未提交；只在模型里，RTL 没有 | 单独提交并按 PMU 流程合入（不改周期，gate 不变），再写进 [PMU.md](PMU.md) 的事件表 |
+| 多表 ITT 之后 −3% 到 −5% 的点 | perlbench sp13 −4.5%、gcc sp29 −3.8%、xalancbmk sp31 −3.3%，没查原因 | 看是 JALR 误预测变多还是别的；必要时调表数、表大小或分配策略 |
+| **`BPO_LOOP=1` 循环预测器**（模型里已有，默认关） | 9 点几何平均 +0.60%，几乎全来自 xalancbmk +4.79%，gobmk +0.61%（EXPLORATION EXP-025） | 在更多 SPEC 点上量（全量或 30 点）；评估 RTL 代价（S0 单块循环退出判断，在关键路径上）；有净收益再做 |
+| I$ 容量问题（gobmk 热代码约 95 KB） | 替换策略、victim buffer 在全量上收益有限（EXPLORATION EXP-025） | 只有在更大的 I$ 或跨行取指有明确收益时再做；记录结论即可，不预设要做 |
+
 ## 待做：流程与工具
 
 | 事项 | 为什么 | 做完的标准 |
 |---|---|---|
-| 性能计数（PMU）后续（EXP-013 已合入 main：trace-model `PMU=1`、RTL tier 1 事件总线 + 计数器块） | RTL 计数器块还没接 CSR（软件不可见）；RTL 只有 18 个事件；详见 [PMU.md](PMU.md) 第 4 节 | ① 决定软件是否可见（改 function-model / trace-model IDU / RTL CSR 的"这些 CSR 不存在"约定，OpenSBI 会探测，Linux 要重跑）；② 需要时给 icache/rob/lsu 加输出，补二级事件（取指延迟/带宽、Memory/Core）；③ 综合 `pmu`（接上后）；④ 前门恢复 `cycle_base` 未清零（`sim-time` 少报恢复程序的周期，mcf 点 −0.04%，改它会动所有 SPEC 基线）；⑤ dhrystone 两条 `ret` 预测错误率约 100% 的原因 |
+| 性能计数（PMU）后续（EXP-013 已合入 main：trace-model `PMU=1`、RTL tier 1 事件总线 + 计数器块） | RTL 计数器块还没接 CSR（软件不可见）；RTL 只有 18 个事件；详见 [PMU.md](PMU.md) 第 4 节 | ① 决定软件是否可见（改 function-model / trace-model IDU / RTL CSR 的"这些 CSR 不存在"约定，OpenSBI 会探测，Linux 要重跑）；② 需要时给 icache/rob/lsu 加输出，补二级事件（取指延迟/带宽、Memory/Core）；③ 综合 `pmu`（接上后）；④ 前门恢复 `cycle_base` 未清零（`sim-time` 少报恢复程序的周期，mcf 点 −0.04%，改它会动所有 SPEC 基线）（⑤ dhrystone `ret` 预测错误率约 100% 一条已过时：现在约 1%，见 EXPLORATION EXP-025） |
 | 时序综合流程 | MAIN_RECORDS 要求记 WNS，但现在只有 yosys 通用门面积代理，没有工艺库、时序约束和静态时序分析；整机面积推算也只在旧配置下做过（第 3 批只综合了受影响模块） | 选定开源工艺库（如 ASAP7/Nangate45）+ 约束频率，主要模块能出面积和 WNS；整机推算可按需重跑 |
 | SPEC 检查点生成提速 | 生成检查点要把整个程序顺序再跑一遍（sjeng 约 3.7 小时，单线程） | BBV 时顺带存粗粒度检查点，生成 SimPoint 检查点时从最近的粗检查点并行起跑 |
 | `/tmp` 里的其他生成数据 | Linux 特殊检查点 `/tmp/ckpt`、综合中间结果等重启会丢（SPEC 检查点已因此丢过一次） | 挪到 `~/personal/AI-Huma-data/`，文档写明位置和生成命令 |
