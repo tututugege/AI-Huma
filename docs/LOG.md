@@ -10,6 +10,10 @@
 
 | 日期 | 仓库 / 分支 | commit | 做了什么 | 验证 | 结论 |
 |---|---|---|---|---|---|
+| 2026-11-12 | rtl `exp/rv64` | `9071b89` `fb05807` `72f2cd9` `f21cebf` | EXP-029：XLEN_BITS 进配置包、后端 XLEN 数据通路 + `is_word`；LSU / dcache 8 字节数据；Sv39 TLB 和页表遍历；前端 / BPU PC 加宽 | 每一步：整颗芯片 lint（XLEN=32、64）0 警告，XLEN=32 fm_gate 64 / 64、周期与参考表相同 | 未合入 |
+| 2026-11-12 | rtl `exp/rv64` | `cff4afe` `f0bd79d` `9807660` | EXP-029：测试平台 XLEN 化（rv64 启动桩、64 位逐条对比、`SOC_XLEN` / `FMLIB`、`SOC_TB_LOG`）；跑 rv64 程序发现并修的 4 个 RTL bug（dcache 填充转发 / 写回缓冲 4 字节写死、DIV 唤醒倒计时、`lp_ovl` 宽度）；8 字节 MMIO | rv64 53 个 cpu-tests 逐条对比通过，周期与模型 52 / 53 相同；`rv64-sv39`、`mmio64` 通过；XLEN=32 64 / 64、rv32 `memory-stress` 0 不一致；**Linux 从复位到 `rv64 login:`，约 1.05 亿周期，0 不一致** | 未合入 |
+| 2026-11-12 | trace-model `exp/rv64-on-main` | `0764457` … `4b07931`（11 个） | EXP-029：rv64 的 trace-model（接口层、译码、Sv39 MMU、64 位 CSR、PC 加宽、外设 8 字节、乘除延迟、`addiw` 不当 move）；基于 `07d567c`；最后一个提交修 `sstatus` 视图丢 UXL | rv64 53 个程序周期与 RTL 52 / 53 相同；rv32 `add` 1276（与参考表相同） | 未合入（旧 `exp/rv64` 作废） |
+| 2026-11-12 | function-model `exp/rv64` | `7157dc7` … `b388f39`（7 个） | EXP-029：RV64IMAB（`-DXLEN=64`）、Sv39、Spike 对拍、rv64 Linux 镜像、通用快速通路、检查点 v4 / BBV | Spike 52 / 54（2 个已知平台差异）；Sv39 变异 9 / 9；rv64 Linux 在函数模型上启动到登录 | 未合入 |
 | 2026-11-07 | 总仓库 `main` | 本行所在提交 | **合入 main**：trace-model `ee988d0`、`a7960e4`，rtl `b5a299a`、`5829f07`（EXP-013 PMU）；文档 PMU.md、EXPLORATION、MAIN_RECORDS、GUIDE、TODO | 见 MAIN_RECORDS 2026-11-07 PMU 行 | 已合入 |
 | 2026-11-07 | rtl `exp/pmu` | `5829f07` | EXP-013：`pmu_ev_core` 事件总线 tier 1（提交流、重定向、TMA 一级槽事件），dispatch `slot_valid`、back_top 导出，`gen_backtop.py` 重新对齐，测试平台累加 + `pmu_parity.sh` | fm_gate 67/67（预取开、关），lint 0，Linux 13 段 13/13，dhrystone/coremark 18 个事件逐个相等 | 已合入 |
 | 2026-11-07 | rtl `exp/pmu` | `b5a299a` | EXP-013：`rtl/pmu`（计数器块 + HPM CSR、生成的事件包）、`tests/pmu` | 30 万拍随机 0 不一致，变异能被抓到，lint 0 | 已合入（未接 CSR） |

@@ -4,8 +4,10 @@
 
 | 编号 | 日期 | 题目 | 分支 | 状态 | 一句话结论 |
 |---|---|---|---|---|---|
+| [EXP-029](#exp-029-从-rv32imab-迁移到-rv64imab) | 2026-11-11 | 从 rv32imab 迁移到 rv64imab（function-model → trace-model → RTL，Linux 启动到登录） | function-model `exp/rv64`、trace-model `exp/rv64-on-main`、rtl `exp/rv64` | 未合入 main（全部在本地分支） | rv64 在三个层次都跑通：53 个 cpu-tests、Sv39 测试、Linux 从复位到 `rv64 login:`（RTL 约 1.05 亿周期，逐条对比 0 个不一致）；XLEN=32 完全不变 |
 | [EXP-028](#exp-028-rob-压缩加大-rob--prf重命名整组等待) | 2026-11-11 | ROB 压缩 / 加大 ROB、PRF / 重命名整组等待（`REN_AON`），删窗口后在当前 main 上重测（接手 2026-11-10 的未完成实验） | trace-model `merge/rob-compact`（`35b3af4`、`a11b1ca`）、rtl `exp/rob-compact`（`4e954d7`、`a905acd`）；统计 / `REN_AON` 留在 trace-model `exp/rob-compress` | 已合入 main（2026-11-11，默认开） | 30 点（按权重选）：整组等待 +0.59%（hmmer +7.5%），ROB192 不改重命名 −0.29%（hmmer −20.9%），ROB192 + 整组等待 +2.27%，ROB192 + PRF192 +3.06%，PRF160 +0.93%；ROB 行平均填 5.58/8，简单指令压缩比约 1.0–1.5；简单指令压缩不做；**紧凑 ROB（按序分配、前缀提交）+ BPU 训练额度 +2.89%（寄存器版本）**（ROB 仍 128 项，好于 ROB192 + 整组等待）；RTL 已做（fm_gate 69/69 周期与模型逐个相等，Linux 从复位连续启动到登录 0 不一致），`rob` 面积 +11.4%、深度 46 → 53；**SPEC 全量 580 点 +2.74%，分数 11.23 → 11.53 分/GHz**，12 个程序全部提升；已知回退：分支密集的短循环被 BPU 更新带宽卡住（gcc 4 个点 −37%、dhrystone +1.8% 周期） |
 | [EXP-027](#exp-027-最新-tma-分析与-0x87f00000-非缓存窗口删除) | 2026-11-11 | 最新 TMA 分析（12 程序最高权重点，main 配置）；查出 0x87f00000 非缓存窗口让 SPEC 普通数据走 MMIO；删除该窗口；PMU 缺失标记 64 位 bug | trace-model `exp/no-uncwin`（`62e4a8b`、`07d567c`）、rtl `exp/no-uncwin`（`1205bff`、`de8d0aa`） | 已合入 main（2026-11-11）；RTL Linux 13 段 13/13 | 删窗口后 SPEC 全量 580 点 12 程序几何平均 IPC **+10.75%**，直接换算分数 10.06 → 11.14 分/GHz（当前 main 10.13，删窗口后估 11.22；以前连乘的 10.53 偏高）（h264ref +137%、hmmer +35%、perlbench +6.3%，其余 ±0.3%）；0 个点变慢；不是微结构收益，是测量假象被去掉 |
+| [EXP-026](#exp-026-sdipbreadcrumbs-数据流预取器挂在重命名阶段) | 2026-11-10 | sdip（Breadcrumbs）预取器：重命名阶段寄存器标签给 load 步长/类别，64 项 PC 步长表，填回触发的间接预取；对 h1 的替换与叠加 | trace-model `exp/sdip`（`ffdae56`、`e81aef2`，工作区 `trace-model-sdip`），未合入 | 模型完成；SPEC 全量 580 点（快速预热，服务器）`PF_SDIP=2`（sdip 在前、h1 在后）12 程序几何平均 IPC **+1.74%**（点几何平均 +2.41%），`PF_SDIP=1`（sdip 替换 h1）+0.10%（libquantum −11.9%）；RTL 未做 |
 | [EXP-025](#exp-025-前端带宽拆分icache-容量与替换间接跳转预测多表-itt) | 2026-11-10 | 前端 PMU 拆分（取指组形状 vs 空拍）、I$ 容量/替换/victim/预取、perlbench 假退化、多表 ITT | trace-model `exp/itt-multi`（`5d8cf66`）、rtl `exp/itt-multi`（`efaa350`）；PMU/I$ 诊断在 `trace-model-fepmu`（`exp/fe-pmu`，未提交） | ITT 部分待合入 main | 多表 ITT（3 张 × 64 项，存储比原来少）SPEC 全量 580 点 12 程序几何平均 IPC **+0.67%**（sjeng +3.8%、perlbench +3.2%、h264ref +0.5%）；RTL fm_gate 69/69、周期与模型逐个相等 |
 | [EXP-024](#exp-024-已提交-store-的-write-bufferstq-内分组) | 2026-11-09 | 已提交 store 的 write buffer：4 个条目、每条目最多 2 个同 line 的 store，STQ 内分组；香山 SBuffer 和 BOOM 的对照 | trace-model/rtl `exp/store-wb`（`55c9f64` / `ef6da65`） | 已合入 main（本地） | SPEC 全量 580 点 12 个程序几何平均 IPC +0.68%（gcc +4.8%、hmmer +1.5%、gobmk +1.1%，其余基本不变）；`fm_gate` 68/68、周期与模型逐个相等、Linux 13/13；`lsu` 深度 125（main 130），`lp_drain` 模块级 +17% |
 | EXP-023 | 2026-11-09 | 前端快速通路：`FE_RFAST`（重定向路径）、`FE_BFAST`（覆盖后同拍发射）、`FE_PAIR`（一拍两块）、`FE_IPF`（I$ 预取）；提交说明里写作 EXP-019 / "fe:" | trace-model `exp/frontend`→`exp/combo`→`exp/fe-refs`（`b02eaf6`）、rtl `exp/fe-rtl`（`71468eb`）；工作区 `trace-model-fe`、`trace-model-ferefs`、`rtl-fe` | `FE_RFAST=15`（RTL 固定）、`FE_BFAST`（默认关）随 `exp/integ` 已合入 main；`FE_PAIR`/`FE_IPF` 只在模型里（默认关） | 25 点精确预热：RFAST=15 +2.61%（`bpu` 深度 151 → 141、面积 +19%）；BFAST +34% 深度换 +1.2~1.8%，所以关；FE_PAIR +2.9%、FE_IPF +1.75%（模型，IPF 不经过真实 LLC/AXI） |
@@ -26,6 +28,40 @@
 | [EXP-001](#exp-001-面积优化三个方向) | 2026-11-04 | 面积优化：FTQ 合并、LSU 端口、LD/STA IQ 合并 | trace-model `exp/area-explore` | 未提交、未合入 | 三个方向都能省面积，性能代价 0–1% |
 
 ---
+
+## EXP-029 从 rv32imab 迁移到 rv64imab
+
+- **日期**：2026-11-11 至 2026-11-12。**分支**（都未合入 `main`，都没有推送）：function-model `exp/rv64`（7 个提交，基于 `d40c588` 之后的 main）；trace-model **`exp/rv64-on-main`**（11 个提交，基于 `07d567c`，即 RTL 标定所用的模型；旧的 `exp/rv64` 建在更老的 main 上，rv32 `add` 给 1415 周期而参考表是 1276，不要用）；rtl `exp/rv64`（7 个提交，基于 `de8d0aa`，早于 EXP-028 合入的 `a905acd`）。
+- **目标和范围**：先做 rv64imab（Zfinx 去掉，F/D 以后按标准浮点单独加），再 C，最后 G；SPEC 重新生成不在这一轮。顺序：function-model → Spike 对拍 → rv64 Linux 镜像 → 检查点 / BBV → trace-model → RTL。`XLEN` 是编译期参数（`-DXLEN=64`，默认 32），XLEN=32 的行为和周期要保持逐位不变。
+- **function-model**：RV64IM + Zba / Zbb / Zbs，A 扩展带 `.d`，Sv39 页表遍历，`ld` / `sd` / `lwu`、`*W` 指令，`misa` / `mstatus` 的 UXL / SXL（只读），rv64 启动 ROM，基本块快速通路按 XLEN 泛化，检查点格式 v4（`ckpt2stub.py` 的 rv64 版本，前门恢复与后门恢复一致），BBV 只数 U 模式指令。对拍：Spike 52 / 54 通过，另外两个（software-interrupt-vectored、timer-interrupt-mask）是平台差异（中断来自平台，Spike 没有该来源）。Sv39 变异测试 9 / 9 被抓到。rv64 Linux 镜像（Buildroot，主机名 rv64）在函数模型上启动到登录，与 Spike 无不一致。
+- **trace-model**：接口层（facts / 状态 / 检查点）、译码（OP-IMM-32 / OP-32，`is_word`）、MMU Sv39（3 级、8 字节 PTE、保留位与超级页对齐检查、16 位 ASID、规范地址检查，非翻译的 >32 位地址映射到 `0x7fffffff`）、CSR 64 位、前后端 PC 全部加宽（`pc_t` / `fetch_addr_t` / `target_addr_t`，BPU 的哈希取字地址的低 32 位 `pc[33:2]`）、外设模型 8 字节访问（`sd` = 两次字写，`ld` = 两次字读）。乘除延迟：乘 3 周期（32 位保持 2）、除法每周期 2 步所以 64 位 32 周期、`*W` 除法 16 周期（32 位保持 16）。`addiw rd, rs, 0` 不再当 move 消除（它是符号扩展）。
+- **RTL（本次的主要工作）**：
+  - `XLEN_BITS` 进配置包（`ttg_cfg_pkg.sv`；`DST_STRB_W`、`DST_L2_W` 也在生成器里）。后端：PRF / ALU（6 位移位量，`addw` … `rorw`、`add.uw`、`shNadd.uw`、`slli.uw`、`clzw` / `ctzw` / `cpopw`、`packw`，64 位 clmul）/ BRU / AGU / SDU / 乘（2×XLEN 乘积 + `mulw`）/ 除（`divw` 系列半数迭代）/ CSR（掩码、`misa`、`mstatus` 复位 UXL = SXL = 2、`satp` 只接受 Bare 和 Sv39）；新的 uop 位 `is_word` 从译码一路到执行单元；AMO `.w` 的 min / max 只比较低字。
+  - LSU（分级）和 dcache：数据字 XLEN 位，行和 AXI 侧仍是 32 位字；`extract_data` / `store_strb` / `align_store_data` / `mem_width` / `check_addr` 按 XLEN；store 字节掩码 XLEN/8 + 1 位；写缓冲第二个 store 字；转发、SC 返回值。旧的非分级 LSU（`LSU_PIPE=0`）没有扩宽，在 XLEN=64 下不可用。
+  - Sv39 TLB 和页表遍历器：叶子级别 0..2，标签带三级 VPN，PTE 事件 64 位，物理地址仍 32 位（只用 `ppn[19:0]`）。
+  - 前端：取指 / 重取指地址、FTQ、ptab、FIFO、predecode（立即数符号扩展）、BPU（BTB 目标、RAS、uBTB 目标扩到 XLEN，哈希取低 32 位）、ICache / ITLB（虚拟标签 XLEN−12 位）、核心层接线。
+  - 外设：请求 / 响应 / 环境接口数据 XLEN 位（`lw` 符号扩展，`lwu` 零扩展），`ld` / `sd` 仍是一次事务，和模型时序一致。
+  - 测试平台：rv64 启动桩（与函数模型的启动 ROM 同样的字）、64 位的逐条对比器、`SOC_XLEN=64` / `FMLIB`、`SOC_TB_LOG=<n>`（周期 / 提交 / 最近 PC / 速度 / 预计剩余时间）、`SOC_TB_STLOG`（按地址记录提交的 store，调试用）。
+- **用 rv64 程序跑出来的 RTL / 模型 bug**（lint 和 XLEN=32 回归都发现不了，只有真正跑 rv64 才暴露）：
+  1. dcache 的"未命中后同拍把填充行转发给 load / 合并 store"路径用 32 位字下标去取 XLEN 数据字。
+  2. **dcache 写回缓冲合并 store 字节时写死 `b < 4`、`<< 5`**：store 落在正在写回的脏行上时，rv64 的高半个字被丢掉。只有大数组造成大量脏行写回的程序才暴露（`memory-stress` 在第 72 万条指令；rv32 同一个程序不出问题）。
+  3. 发射队列给 `divw` / `remw` 的唤醒倒计时用了 64 位除法的 32 周期，而除法器 16 周期就完成，唤醒槽不够，触发 `isu_alloc_chain` 断言。
+  4. load / store 重叠判断（`lp_ovl`）把 8 字节的宽度编码成 3 位而截成 0。
+  5. 测试平台按位置读 STQ 条目：重排结构体字段会让中断类测试死循环（XLEN=32 回归才发现）。
+  6. trace-model：`csrw sstatus` 之后 `sstatus` 的读视图丢了 UXL（视图掩码用了写掩码），`csr-alias-boundary` 在模型上多执行 2 条指令。
+- **验证**：
+  - lint：整颗芯片 333 个文件，XLEN=32、XLEN=64 都 0 警告。
+  - XLEN=32 不变：`fm_gate` 周期 ≤ 15 万的 64 个程序全部通过，周期与参考表逐个相同；rv32 `memory-stress`（745 万条指令）逐条对比 0 个不一致。**注意**：这 64 个程序的子集不含脏行写回压力大的程序，上面第 2 个 bug 就是因此没有在 rv32 回归里暴露；以后回归要把 rv32 `memory-stress` 放进去。
+  - rv64：53 个 cpu-tests（去掉浮点、`load-store`、`bitmanip-boundary`、`rv64-sv39`）在 RTL 上全部通过逐条对比；**周期与 trace-model（`exp/rv64-on-main`）逐个比较：52 个完全相同**，`memory-stress` 差 24 周期（230 万周期，0.001%；rv32 的同一程序也差 63 周期，是原来就有的微小偏差，和 rv64 无关）。早先看到的 −16% 到 +37% 是用错了模型（`exp/rv64` 在更老的 main 上）。`rv64-sv39` 在 RTL 上 3.6 万条指令通过；新写的 `tests/rv64/mmio64.c`（`sd` / `ld` / `lw` / `lwu` 访问定时器和 `mtimecmp`）通过。
+  - **rv64 Linux 在 RTL 上从复位启动到 `rv64 login:`**：约 1.05 亿周期（与 trace-model 一致），仿真速度约 3.5 万周期 / 秒（约 50 分钟），逐条对比开着 0 个不一致，Verilator 断言 0 个。构建和运行：`SOC_XLEN=64 SOC_FM=1 FMLIB=<XLEN=64 的 librefcpu.a> SOC_VOPT="--threads 4 -DTTG_EBREAK_TRAP" tb/soc/build.sh`；`SOC_TB_LOG=2000000 SOC_TB_SEMIHOST=1 SOC_TB_FM=1 soc_tb AI-Huma-data/linux_rv64/linux.bin 400000000`。
+- **结论**：rv64imab 在函数模型、周期模型、RTL 三个层次都跑通，且 XLEN=32 的行为和周期完全不变；RTL 的周期与模型一致（52 / 53 个程序逐周期相同）。
+- **没做 / 已知问题**：
+  - 浮点（F / D，rv64 下 Zfinx 被关掉，FPU 只接低字；`OP-FP` 按非法指令）、C 扩展、`bitmanip-boundary` 的 rv64 版本、SPEC 的 rv64 流程、FastWarm 的 Sv39 TLB 预热（现在还是 Sv32）。
+  - function-model 的 rv64 MMIO `sd` / `ld`：只按 4 字节读写设备寄存器，`mmio64` 的读回检查在模型上失败（RTL 正确）；Linux 只写 `mtimecmp` 不读回，所以没有影响。
+  - 登录之后的交互（需要给 UART 喂输入）没有验证。
+  - 外设的 AXI 一路（地址不属于本地模型或未缓存内存）仍是一次 32 位字。
+  - **生成文件的债务**：`back_top.sv`、`exu.sv`、`soc_top.sv` 由 `tools/gen_backtop.py`、`gen_soc_top.py` 和 `spec/*.io` 生成，这几步都是手改的位宽，重新生成会改回去；`ttg_cfg_pkg.sv` 里的 `XLEN_BITS` 是手写，合入前要由生成器（用 trace-model 的 `config.h -DXLEN`）输出。
+- **合入 `main` 的注意事项**：三个仓库都要 rebase 到现在的 main：RTL 的基线早于 EXP-028（紧凑 ROB，`rob_core_cpt.sv` 等），要在紧凑 ROB 上再核一遍；trace-model 以 `exp/rv64-on-main` 为基础重放到 `a11b1ca`（EXP-028 之后）；合入前要重跑 XLEN=32 的 fm_gate、rv32 `memory-stress` 和 rv32 Linux，以及 rv64 的 53 个程序和 Linux。
 
 ## EXP-028 ROB 压缩、加大 ROB / PRF、重命名整组等待
 
@@ -136,6 +172,77 @@
 - **复现**：TMA 数据 `~/personal/AI-Huma-data/fepmu/tma_fix`（`run.sh <out> <jobs> 1 <bench>...`，`BPA_ITTH=1,2,3 BPA_ITTN=64`），`scripts/pmu/spec_summary.py`、`fe_summary.py`；`LSU_PIPE_STATS=1` 数据 `fepmu/lsustat`；全量 `~/personal/AI-Huma-data/mmio/full.sh <cfg> <simulator> <jobs>`、对比 `mmio/cmp.py <base> <new>`（权重取自 `spec-rv32imab/sp/<bench>.weights`；`points_full.txt` 第 4 列是旧 IPC 不是权重），结果 `mmio/cmp_result.txt`；Linux `~/personal/AI-Huma-data/linux/uncwin`；RTL `~/personal/AI-Huma-data/uncwin_rtl`。trace-model macOS 构建：`gmake LDFLAGS="-lz" DS3_DIR=../trace-model/third_party/DRAMsim3`。
 
 ---
+
+## EXP-026 sdip（Breadcrumbs）数据流预取器，挂在重命名阶段
+
+- **日期**：2026-11-10。**分支**：trace-model `exp/sdip`（`ffdae56` 模型、`e81aef2` 只预取 DDR 地址；工作区 `trace-model-sdip`，基于 main `e84e53a`），**未合入、未推送**；RTL 没有做。设计与 ChampSim/gem5 上的实验记录在 trace-model `exp/regdataflow`（`docs/experiments/exp022_regdataflow.md` §27、§31、§32、§38）。
+- **问题**：EXP-022 里的 sdip（约 2 KB 状态）在 ChampSim 上对 SPEC 与 Berti 持平、对 GAP/PolyBench 间接访问很强；用户提出它的硬件开销很小、主要补间接访存。它在我们的周期模型里相对默认的 h1（EXP-009）有多少收益，能不能替换 h1。
+- **实现**（`MemSubSystem/include/Sdip.h` 一个头文件，开关 `PF_SDIP=0|1|2`，默认 0：模型逐周期等同 main，gate 63/63；`1` = sdip 替换 h1，`2` = sdip 候选先发、h1 在后）：
+  - **重命名阶段**（`Ren::comb_fire`）：每个物理寄存器一个标签（仿射步长 / 新指针 / 写者 PC / 来自某条 32 位 load 的链及左移量），由指令编码和源寄存器标签算出；16 项栈槽保存/恢复标签；load 带着 dsig（步长或类别）和链信息走到 L1D（LSU 把 PC、VA、dsig 作为旁带传给 L1D 第 2 级）。
+  - **提交阶段**（`BackTop` 在 `on_commit` 之前读 fact）：提交的 32 位 load 记录值（32 项，按实例号），提交的消费者训练关系（生产者 PC → 消费者 PC、移位、c = 地址 − (值 << 移位)，64 项）。
+  - **L1D 第 2 级**：每条 demand load 进入引擎（命中、缺失、预取行第一次使用），按"进入新行才发"（64 项按 PC 的上一行表，`PF_SDIP_LASTLINE=1`）发 stride 预取（距离 `max(4, ⌈8 行/|S|⌉)` 步，步长 ≥ 一行取 16 步）；没有数据流步长的 load 用 64 项 PC 步长表（只由缺失和预取行首次使用训练）；兜底：缺失时预取下一行、新指针缺失时预取后 8 行，受全局准确率门控（每 1024 个一轮，有用比例 < 1/16 就关，保留 1/16 抽样）。
+  - **间接**：只由 L1D 填回触发——生产者 demand 填回、带元素标记的间接预取填回（串多级）、生产者自己的 stride 预取填回（读该行里步长碰到的所有元素）；元素值取自填回行（模型里读功能内存）；目标 `(值 << 移位) + c`，经只读 DTLB 探测翻译，查不到就丢。`PF_SDIP_RES=1`（默认，同 `sdip.h` 的 `res`）：生产者下一行已在 L1D 时直接读它的元素（**需要 L1D 数据阵列读口**）；`PF_SDIP_RES=0`：间接预取只由填回触发，不读 L1D 数据阵列。
+  - 候选进 32 项 FIFO（每周期一个探测口，去重），其余沿用 h1 的 L1D 探测、MSHR 与填回通路；`PF_SDIP_NOIND=1` 去掉间接部分，`PF_SDIP_NOSTRIDE=1` 去掉 stride/兜底，`PF_SDIP_LA`、`PF_SDIP_FBTHR`、`PF_SDIP_FRESH` 等为参数；`[SDIP-STATS]` 在 stderr 里给出各来源计数。
+- **状态（硬件估算，bit）**：重命名标签 128 × 22 = 2,816；栈槽表 16 × 55 = 880；提交值表 32 × 40 = 1,280；关系表 64 × 59 = 3,776；PC 步长表 64 × 64 = 4,096；上一行表 64 × 58 = 3,712；缺失过滤器 256；每个 L1D 行 2 位元数据 2,048；候选 FIFO 32 × 60 = 1,920；合计约 20.8 Kb（≈ 2.6 KB），h1 是 418 bit。
+- **模型里的近似（硬件做不到或需要额外代价）**：① 元素值从功能内存读（硬件是填回数据）；② 标签里的 PC、实例号是全宽（硬件要哈希）；③ 候选翻译用无副作用的 DTLB 探测（硬件：每个候选一次额外 DTLB 查找，查不到丢弃；`xl_fail` 在 mcf 点上占候选的约 25%）；④ 填回触发、FIFO 入队没有速率限制（`peak_push` 每周期最多 8~30 个候选）；⑤ 每周期最多处理 4 个访问事件（= load 口数），上一行表要 4 个读口；⑥ PC 步长表只由缺失和预取行首次使用训练（原版由所有访问训练）；⑦ 没有自适应距离（`PF_SDIP_ADAPT`，EXP-022 §38 中也只是 libquantum 受益）；⑧ 预取只发往 DDR 地址（`pa >= 0x80000000`）。
+- **一个 bug**：第一版没有地址范围过滤，gobmk 两个点（sp10 的 `PF_SDIP=2`、sp46 的 `PF_SDIP=1`）出现 ROB 死锁（预取发往非 RAM 物理地址，MSHR 永远等不到响应）。加过滤后（`e81aef2`）重跑这两个点；其余结果用的是过滤前的二进制（17 点用修复后的二进制重跑，几何平均 +5.31% → +5.35%，没有实质变化）。
+- **结果 1：SPEC 全量 580 点（快速预热、`PMU=1`、服务器，对 main 的 h1，基线是同一台服务器上的 main 全量结果，17 点上逐点验证过 PF_SDIP 关闭时周期逐个相同）**
+
+| 程序 | 点数 | `PF_SDIP=1`（替换 h1） | `PF_SDIP=2`（sdip + h1） |
+|---|---|---|---|
+| mcf | 79 | +8.63% | **+9.38%** |
+| gcc | 55 | +3.97% | **+5.79%** |
+| bzip2 | 76 | +2.51% | **+3.11%** |
+| astar | 35 | +0.87% | +1.32% |
+| xalancbmk | 51 | +0.94% | +0.82% |
+| hmmer | 34 | +0.63% | +0.66% |
+| perlbench | 44 | +0.12% | +0.38% |
+| libquantum | 51 | **−11.85%** | +0.33% |
+| gobmk | 50 | +0.17% | +0.29% |
+| h264ref | 37 | −0.37% | +0.02% |
+| sjeng | 28 | −0.15% | −0.17% |
+| omnetpp | 40 | −2.97% | −0.57% |
+| **12 程序几何平均** | 580 | **+0.10%** | **+1.74%** |
+| 580 点几何平均 | | +0.67% | **+2.41%** |
+
+  `PF_SDIP=2`：118 个点 > +2%，50 个点 < −2%，5 个点 < −5%（xalancbmk sp34 −15.5%：兜底预取 24 万次只有 9% 有用，h1 的 `probe_mshr_full` 11 万；omnetpp sp22 −9.1%、mcf sp20 −6.1%、gcc sp36 −5.9%、astar sp27 −5.2%）；mcf 的最大点 +74%（sp72）。`PF_SDIP=1`：108 个点 > +2%，132 个点 < −2%，43 个点 < −5%（libquantum 的所有点 −19% ~ −25%）。
+- **结果 2：30 点（精确预热，8 个程序：perlbench 2、gcc 3、mcf 8、gobmk 4、hmmer 4、sjeng 4、h264ref 2、astar 3；对 h1）**
+
+| 程序 | `PF_SDIP=1` | `1`, `RES=0` | `PF_SDIP=2` | `2`, `RES=0` |
+|---|---|---|---|---|
+| perlbench | −0.77% | −0.73% | −0.57% | −0.95% |
+| gcc | −0.20% | −0.18% | −0.09% | +0.07% |
+| mcf | +9.16% | +7.55% | +10.44% | +8.67% |
+| gobmk | −0.07% | +0.03% | +0.23% | +0.21% |
+| hmmer | +2.76% | +2.65% | +2.82% | +2.84% |
+| sjeng | −0.24% | −0.11% | −0.20% | −0.10% |
+| h264ref | 0.00% | +0.02% | −0.03% | +0.04% |
+| astar | −0.08% | −0.21% | −0.09% | −0.21% |
+| **几何平均** | **+2.61%** | +2.22% | **+3.01%** | +2.56% |
+
+- **结果 3：17 个点（12 个程序的最高权重点加 mcf sp29/sp51/sp60、omnetpp sp36、xalancbmk sp21/sp46、gcc sp16；快速预热）及消融**
+
+| 点 | `1` | `2` | `1`, `RES=0` | `1`, 无间接 | `2`, 无间接 |
+|---|---|---|---|---|---|
+| mcf sp29 | +50.95% | +50.97% | +42.10% | +29.63% | +28.94% |
+| mcf sp51 | +36.62% | +37.56% | +29.99% | +17.94% | +19.70% |
+| mcf sp60 | −4.95% | −4.66% | −4.93% | −4.91% | −4.54% |
+| bzip2 sp74 | +6.57% | +9.37% | +6.59% | +6.59% | +9.41% |
+| hmmer sp26 | +3.31% | +3.32% | +3.34% | +3.30% | +3.38% |
+| xalancbmk sp21 | +0.49% | +1.40% | **−5.48%** | +0.55% | +1.80% |
+| xalancbmk sp46 | +2.93% | +7.41% | +2.16% | +1.24% | +7.26% |
+| libquantum sp15 | **−20.33%** | −0.11% | −20.40% | −20.43% | −0.05% |
+| omnetpp sp12 / sp36 | −3.32% / −4.59% | −0.16% / −0.65% | −3.12% / −4.78% | −3.49% / −4.98% | −0.77% / −1.09% |
+| 其余 6 个点 | 各 ±0.8% 以内 | 各 ±0.6% 以内 | 同左 | 同左 | 同左 |
+| **17 点几何平均** | +2.90% | **+5.31%** | +1.81% | +0.99% | +3.44% |
+
+  - **mcf 的收益来源**：去掉间接部分（stride + PC 步长表 + 兜底）仍有 sp29 +29.6%、sp51 +17.9%，间接部分再加 +21 个、+19 个百分点（sp29 +51%、sp51 +37%）。bzip2、hmmer、gobmk 的收益全部来自 stride/PC 表（去掉间接不变）；xalancbmk sp46 mode 1 间接 +1.7 个百分点，mode 2 下 stride 已占大头（+7.26% 无间接、+7.41% 有间接）。
+  - **间接部分需要读 L1D 数据阵列吗**：`PF_SDIP=1` 的间接预取里，mcf sp29 有 233K 个（60%）来自"生产者下一行已在 L1D"的读，157K 个来自填回；sp51 16K 对 10K；xalancbmk sp21 8K 对 14K、sp46 6K 对 20K。关掉读（`RES=0`）后：mcf sp29 +51% → +42%、sp51 +37% → +30%（保留约 80%）、xalancbmk sp21 +0.5% → −5.5%、sp46 +2.9% → +2.2%；17 点几何平均 +2.90% → +1.81%（只留 63%），30 点 +2.61% → +2.22%（85%）、`PF_SDIP=2` +3.01% → +2.56%（85%）。**结论：不读 L1D 数据阵列（只由填回触发）能保留 mcf 收益的 80% 左右、30 点收益的 85%，但 xalancbmk 会变负，所以"不需要额外读口"在 SPEC 子集上不是无损的。**
+  - **能不能替换 h1**：不能。`PF_SDIP=1` 在 libquantum 上所有点 −19% ~ −25%（`PF_SDIP_LA=16/32` 变得更差，−28.7% / −31.3%，所以不是前瞻距离不够；原因没有进一步查，疑似 h1 的 LLC-only 下一行引擎和"每次 8 步突发"对 libquantum 这种高带宽流有关），omnetpp −3% ~ −5%，而 `PF_SDIP=2` 保住了这些程序。所以只有"sdip 在前、h1 在后"（`PF_SDIP=2`）成立；`PF_SDIP=1` 的 12 程序几何平均只有 +0.10%。
+- **回退点**：`PF_SDIP=2` 下 xalancbmk sp34（−15.5%）、omnetpp sp22（−9.1%）的兜底预取（下一行、新指针后 8 行）准确率很低（9%、<1%），门控门槛 1/16 太松；没有扫门槛和 8 行的参数，没有进一步查 mcf sp20/sp60、gcc sp36、astar sp27。
+- **RTL 代价估计（没有做）**：① 重命名阶段：每个物理寄存器 22 位标签（128 × 22 位）加一个规则网络（加/移位/shNadd/自增/栈槽，同组内要旁路），每个重命名槽读两个标签、写一个，8 槽/拍；比 `ren` 现有关键路径的深度不详，需要综合；② load 要把 dsig（32 位）和链信息（PC、实例号、移位）带到提交（ROB/LDQ 每项约 +70 位），L1D 第 2 级要多收 PC 和 VA 旁带；③ 提交阶段：32 项值表、64 项关系表训练，按提交宽度（8）的 load 数处理；④ 每个候选一次额外 DTLB 探测（每周期最多 4~8 个，模型未限速）；⑤ `RES=1` 需要 L1D 数据阵列读口（间接部分）；填回触发需要按"填回行的元素"读数据（可从填回缓冲区读，不用阵列口）；⑥ 上一行表每周期 4 读 4 写。状态合计约 2.6 KB，对比 h1 的 418 bit。重命名阶段的标签网络和 DTLB 探测口是主要的实现风险。
+- **可复现**：`PF_SDIP=2 PF_ENABLE=1 FASTWARM=1000000 PMU=1`（运行时环境变量）；服务器 `/root/sdip/res/{full_sd1,full_sd2,ctl,sd1,sd2,sd1r0,sd1_noind,sd2_noind,p30_*}`、`/root/sdip2/res/{sd1,sd2,sd1_la16,sd1_la32}`；构建与批跑见 docs/SERVER.md。`full_sd1r0`（`PF_SDIP=1 PF_SDIP_RES=0` 全量）按用户要求停掉，没有跑完。
+- **没有做**：RTL；全量上的 `RES=0`；自适应距离；兜底门控与 8 行参数的扫描；ROB 死锁之外的失败点分析；对 EXP-014 的缓存替换和 EXP-018 SMS 的对比；GAP/PolyBench 点（我们的标准分数是 SPEC INT）。
 
 ## EXP-025 前端带宽拆分、I$ 容量与替换、间接跳转预测（多表 ITT）
 
