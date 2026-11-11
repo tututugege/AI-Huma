@@ -290,3 +290,6 @@
 | 2026-11-11 | rtl `exp/no-uncwin` | `1205bff`、`de8d0aa` | EXP-027 RTL：`lsu_pkg::is_mmio_addr` 两段、`ttg_cfg_pkg.sv` 重生成、tb 地址表、`ref_cycles.txt` 3 个程序；`tm_cycles.sh` 导出 `ROOT` | lint 0 警告；`fm_gate` 69/69、周期与模型 0 处不同 | 已合入 main |
 | 2026-11-11 | 总仓库 `main` | 本行所在提交 | **合入 main**：trace-model `07d567c`、rtl `de8d0aa`（EXP-027）；MAIN_RECORDS、EXPLORATION、LOG、README、TODO | 见 MAIN_RECORDS 2026-11-11 行 | 未推送 |
 | 2026-11-11 | 总仓库 `main` | 本行所在提交 | EXP-027 合入后补跑：RTL Linux 13 段（s01–s13，本机 13 个并行，每段 1600 万周期，逐提交与函数模型对比）13/13 通过，每段检查 692 万到 2424 万条指令，0 不一致；MAIN_RECORDS、EXPLORATION 更新，TODO 删除该项 | 13/13 | 未推送 |
+| 2026-11-11 | trace-model `merge/rob-compact` | `35b3af4`、`a11b1ca` | EXP-028：紧凑 ROB（`CFG_ROB_COMPACT`，先默认关再默认开）+ 寄存器 BPU 额度；删剩余非缓存窗口与通路、前端 PMU `FEO_*`、删 `altpcpn`/`sc_used`、删 A 组开关；`baseline.csv` 32 个程序、`PROJECT.md` 大程序 | 默认关 gate 64/64 与旧基线相同、大程序不变；默认开 gate 64/64 全部 Success；Linux 到 login；SPEC 全量 +2.74% | 已合入 main |
+| 2026-11-11 | rtl `exp/rob-compact` | `4e954d7`、`a905acd` | EXP-028 RTL：`rob_core_cpt.sv`、分发编号、BPU 占用连线；删非缓存窗口通路、`altpcpn`；`ttg_cfg_pkg.sv` `ROB_COMPACT=1`、`ref_cycles.txt` 37 个程序 | lint 0 警告；`fm_gate` 69/69、周期 0 处不同；Linux 从复位连续到 login，0 不一致 | 已合入 main |
+| 2026-11-11 | 总仓库 `main` | 本行所在提交 | **合入 main**：trace-model `a11b1ca`、rtl `a905acd`（EXP-028）；MAIN_RECORDS、EXPLORATION、LOG、README、TODO | 见 MAIN_RECORDS 2026-11-11 第一行 | 未推送 |

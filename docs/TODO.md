@@ -7,7 +7,6 @@
 
 | 事项 | 状态 | 做完的标准 |
 |---|---|---|
-| rtl `exp/lsu-stwin`（旧 LSU 的 store 侧队列窗口修复，`b94b4f5`，未合入） | DRAMsim3（EXP-006）已合入 main（DRAMsim3 已是子模块），main 的 `lsu_dc_req_st` 已按 `STWIN` 修了提交窗口；这个分支另外修了旧 LSU（`LSU_PIPE=0`）里 `wait_mmu_stq`、`mmu_done_stq` 经通用 `ring_apply` 仍按 load 窗口 20 处理的部分，默认的分级 LSU（`lp_*`）不受影响 | 决定合入还是删除：只对 `LSU_PIPE=0` 的旧路径有意义；合入的话在不分频 + STA 端口 1 的配置下对照修复前后 RTL 与 trace-model 周期（修复后 66/66 相等） |
 | LD/STA IQ 合并、统一 FTQ 的 RTL 试做结果入档 | 两个 RTL 试做都已完成（工作区 `rtl-ldsta`/`trace-model-ldsta`、`rtl-uftq`/`trace-model-uftq`，未提交）：门禁 66/66，66 个程序周期与各自的 trace-model 全部一致 | 在 [EXPLORATION.md](EXPLORATION.md) 记为新实验（含综合数字和未覆盖项）；工作区改动提交到各自的 `exp/` 分支 |
 
 ## 待做：验证
@@ -29,7 +28,6 @@
 | **mov 消除拉长了 `ren` 的关键路径**（EXP-012，已合入 main，默认开启） | 局部 yosys（通用门级数，不是时序）：`ren` 最长组合路径 63 → 130 级；开启后路径是 流水寄存器 → `ren_elim_sel`（33 项 RAT 比较求和）→ `ren_alloc_sel`（8 级串行选择）→ 目的寄存器选择 → RAT 快照 → 分支检查点，消除判定串在分配之前；收益只有 quick SPEC +0.06%、coremark −1.15% 周期，`ren` +12% 单元 | 先做有工艺库的综合量出真实 `ren` 时序（依赖下面“时序综合流程”）；若超标，按下面顺序试：① 判定与分配解耦（所有请求目的寄存器的槽先分配，被消除的槽丢弃分到的寄存器，不让判定进入分配链；会少用空闲寄存器，trace-model 要同步，周期要重新对齐）；② 判定拆成流水一级（用上一拍的 RAT 引用数，上限判定更保守）；③ 放宽到只按“RAT 引用数”不数组内写者；④ 都不行则 `CFG_MOVE_ELIM` 默认改 0（trace-model 与 RTL 一起改，基线、`ref_cycles.txt` 重生成）。每一步 trace-model 先量 quick SPEC，RTL 门禁 66/66 周期对齐 |
 | AMO 改为“特殊 store、在 DCache 里读改写”（BOOM/香山式） | 现在 AMO 和 C910 一样拆成 LOAD + STA + STD（运算在 STD 里，rd=x0 借 32 号寄存器），同时占 LDQ 和 STQ；LD/STA 队列合并后一条 AMO 要在同一拍进 MEM 队列两次，dispatch 为此专留了一条通路（暂时保留这种做法） | trace-model 和 RTL：AMO 只占 STQ（一个地址 uop + STD），在 STQ 头、ROB 已排空时发给 DCache，DCache 流水线内做读改写（AMOALU），旧值经写回口送 rd；dispatch 的 AMO 双写口通路删除；门禁和 Linux 通过。可与 LD/STA 共享 AGU 一起考虑 |
 | 统一 FTQ 的提交读口按块读 | 统一 FTQ 现在每条提交指令一个读口（PC 8 口 + 元数据 8 口，各从 64 项×8 槽里选），是 `ftq_top` 面积的大头。trace-model 统计（2026-11-05，SPEC 6 个最大权重点 + 5 个小程序）：一拍提交跨的 FTQ 块数超过 4 的周期最多 0.06%，超过 3 的在 gcc 上有 9.5% | decode 组队时限制一组最多跨 K 个块（trace-model IDU 与 RTL `pre_idu` 同步，参数 `CFG_DECODE_MAX_BLOCKS`，建议 K=4）；`ftq_top` 提交读口改为从 commit 指针读 K 个连续块整行再按块号/偏移选；quick SPEC 比较 K=3/4；RTL 门禁 66/66、周期与 trace-model 相等；提交读口选择器预计元数据 −44%、PC −50%（K=4） |
-| 删除分开式结构里的 `altpcpn` 存储 | BPU 训练从不读它（EXP-007 补上标准 TAGE 的备选更新也无收益）；现在 PTAB、front2back、后端 FTQ 每个槽都白存 3 位 | trace-model 与 RTL 删掉这份存储和连线，周期不变（门禁 66/66、gate 62/62 逐个相同）；统一 FTQ 若合入则随之消失 |
 | `front_stall` 接回 | core_top 里写死为 0；BPU 更新队列会满时必须接回 | 接回后门禁通过，有触发它的测试 |
 | LLC 旁路写、部分行写 miss | 未实现（断言保留）；随机流量会触发，真实程序不走 | 实现并通过随机流量测试 |
 | RealLsu 手写结构 | 3 个脚本生成的 SSA 展开文件（约 890 行）应改为手写结构 | 改写后门禁通过 |
@@ -67,10 +65,17 @@ EXP-024 合入的是"STQ 内分组"的简化版 write buffer：4 个条目、每
 
 | 事项 | 为什么 | 做完的标准 |
 |---|---|---|
-| EXP-025 的前端 PMU（`FEO_*` 事件、`scripts/pmu/fe_summary.py`、I$ 诊断）还没合入 | 在 trace-model `exp/fe-pmu` 工作区，未提交；只在模型里，RTL 没有 | 单独提交并按 PMU 流程合入（不改周期，gate 不变），再写进 [PMU.md](PMU.md) 的事件表 |
 | 多表 ITT 之后 −3% 到 −5% 的点 | perlbench sp13 −4.5%、gcc sp29 −3.8%、xalancbmk sp31 −3.3%，没查原因 | 看是 JALR 误预测变多还是别的；必要时调表数、表大小或分配策略 |
 | **`BPO_LOOP=1` 循环预测器**（模型里已有，默认关） | 9 点几何平均 +0.60%，几乎全来自 xalancbmk +4.79%，gobmk +0.61%（EXPLORATION EXP-025） | 在更多 SPEC 点上量（全量或 30 点）；评估 RTL 代价（S0 单块循环退出判断，在关键路径上）；有净收益再做 |
 | I$ 容量问题（gobmk 热代码约 95 KB） | 替换策略、victim buffer 在全量上收益有限（EXPLORATION EXP-025） | 只有在更大的 I$ 或跨行取指有明确收益时再做；记录结论即可，不预设要做 |
+
+## 待做：紧凑 ROB 的收尾（EXP-028，2026-11-11 合入 main 后）
+
+| 事项 | 为什么 | 做完的标准 |
+|---|---|---|
+| 分支密集短循环被 BPU 更新带宽卡住 | 紧凑 ROB 的额度不让提交冲爆 BPU 更新队列，但队列每拍只能写回不到 1 条：gcc sp48/sp21/sp12/sp2 慢约 37%、sp5 −26%，dhrystone 周期 +1.8%、coremark +0.6%；行式 ROB 时这些更新 89% 被丢掉，预测照样好 | 额度不够时不挡提交、只丢预测正确且计数器饱和的分支的更新（或其他办法）；这几个点回到行式 ROB 的水平，SPEC 全量不低于 +2.74%，模型、RTL 同步 |
+| PMU：分发被 ROB 空闲项数挡住时记成 `SLOT_BE_SERIAL` | 紧凑模式下 `rob2dis.ready` 仍为 1，分发由 `free_cnt` 限制，`Dispatch::pmu_slots` 落到兜底的 SERIAL；gcc sp48 有 609 万个槽被错记 | 这种情况记成 `SLOT_BE_ROB_FULL`，gate 周期不变 |
+| `rob` 深度 53（行式 46） | 最长路径：读出 → 旋转 → 指令分类与额度比较 → 前缀 → 新队头选择 | 把"完成 / 冲刷类 / 分支 / 块结束"在项里算好存下，深度回到行式 +5% 以内，或说明不做的理由 |
 
 ## 待做：流程与工具
 
