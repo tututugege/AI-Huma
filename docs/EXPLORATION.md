@@ -4,6 +4,7 @@
 
 | 编号 | 日期 | 题目 | 分支 | 状态 | 一句话结论 |
 |---|---|---|---|---|---|
+| [EXP-027](#exp-027-最新-tma-分析与-0x87f00000-非缓存窗口删除) | 2026-11-11 | 最新 TMA 分析（12 程序最高权重点，main 配置）；查出 0x87f00000 非缓存窗口让 SPEC 普通数据走 MMIO；删除该窗口；PMU 缺失标记 64 位 bug | trace-model `exp/no-uncwin`（`62e4a8b`、`07d567c`）、rtl `exp/no-uncwin`（`1205bff`、`de8d0aa`） | 已合入 main（2026-11-11）；RTL Linux 未跑 | 删窗口后 SPEC 全量 580 点 12 程序几何平均 IPC **+10.75%**，直接换算分数 10.06 → 11.14 分/GHz（当前 main 10.13，删窗口后估 11.22；以前连乘的 10.53 偏高）（h264ref +137%、hmmer +35%、perlbench +6.3%，其余 ±0.3%）；0 个点变慢；不是微结构收益，是测量假象被去掉 |
 | [EXP-025](#exp-025-前端带宽拆分icache-容量与替换间接跳转预测多表-itt) | 2026-11-10 | 前端 PMU 拆分（取指组形状 vs 空拍）、I$ 容量/替换/victim/预取、perlbench 假退化、多表 ITT | trace-model `exp/itt-multi`（`5d8cf66`）、rtl `exp/itt-multi`（`efaa350`）；PMU/I$ 诊断在 `trace-model-fepmu`（`exp/fe-pmu`，未提交） | ITT 部分待合入 main | 多表 ITT（3 张 × 64 项，存储比原来少）SPEC 全量 580 点 12 程序几何平均 IPC **+0.67%**（sjeng +3.8%、perlbench +3.2%、h264ref +0.5%）；RTL fm_gate 69/69、周期与模型逐个相等 |
 | [EXP-024](#exp-024-已提交-store-的-write-bufferstq-内分组) | 2026-11-09 | 已提交 store 的 write buffer：4 个条目、每条目最多 2 个同 line 的 store，STQ 内分组；香山 SBuffer 和 BOOM 的对照 | trace-model/rtl `exp/store-wb`（`55c9f64` / `ef6da65`） | 已合入 main（本地） | SPEC 全量 580 点 12 个程序几何平均 IPC +0.68%（gcc +4.8%、hmmer +1.5%、gobmk +1.1%，其余基本不变）；`fm_gate` 68/68、周期与模型逐个相等、Linux 13/13；`lsu` 深度 125（main 130），`lp_drain` 模块级 +17% |
 | EXP-023 | 2026-11-09 | 前端快速通路：`FE_RFAST`（重定向路径）、`FE_BFAST`（覆盖后同拍发射）、`FE_PAIR`（一拍两块）、`FE_IPF`（I$ 预取）；提交说明里写作 EXP-019 / "fe:" | trace-model `exp/frontend`→`exp/combo`→`exp/fe-refs`（`b02eaf6`）、rtl `exp/fe-rtl`（`71468eb`）；工作区 `trace-model-fe`、`trace-model-ferefs`、`rtl-fe` | `FE_RFAST=15`（RTL 固定）、`FE_BFAST`（默认关）随 `exp/integ` 已合入 main；`FE_PAIR`/`FE_IPF` 只在模型里（默认关） | 25 点精确预热：RFAST=15 +2.61%（`bpu` 深度 151 → 141、面积 +19%）；BFAST +34% 深度换 +1.2~1.8%，所以关；FE_PAIR +2.9%、FE_IPF +1.75%（模型，IPF 不经过真实 LLC/AXI） |
@@ -22,6 +23,31 @@
 | [EXP-003](#exp-003-rob-与-prf-扩大到-256) | 2026-11-04 | ROB/PRF 扩大到 192、256 | trace-model `exp/area-explore` | 未提交、未合入 | 都翻倍到 256 只快约 0.8%（coremark 3%），ROB 128 合理 |
 | [EXP-002](#exp-002-全核面积浪费排查) | 2026-11-04 | 全核面积浪费排查：各 IQ、ibuf、front2back、分支资源、ALU/BRU 端口 | trace-model `exp/area-explore` | 未提交、未合入 | IQ 总项数 384→192、BRU 4→2 等组合后无性能损失；BPU 存储需大负载评估（“ROB 是瓶颈”的说法已被 EXP-003 否定） |
 | [EXP-001](#exp-001-面积优化三个方向) | 2026-11-04 | 面积优化：FTQ 合并、LSU 端口、LD/STA IQ 合并 | trace-model `exp/area-explore` | 未提交、未合入 | 三个方向都能省面积，性能代价 0–1% |
+
+---
+
+## EXP-027 最新 TMA 分析与 0x87f00000 非缓存窗口删除
+
+- **日期**：2026-11-11。**分支**：trace-model `exp/no-uncwin`（工作区 `trace-model-uncwin`，基于 main `e84e53a`）、rtl `exp/no-uncwin`（工作区 `rtl-uncwin`，基于 main `1c0d110`）；**2026-11-11 已合入 main**（trace-model `62e4a8b` 删窗口、`07d567c` PMU 缺失标记；rtl `1205bff` 删窗口、`de8d0aa` `tm_cycles.sh`）。诊断用的 `ICM_DIAG` 等仍在 `trace-model-fepmu`（`exp/fe-pmu`，未提交）。
+- **问题**：用最新 PMU/TMA 数据决定下一步优化方向。服务器（47.117.141.194）关机，EXP-025/026 全量的逐点 TMA 拿不到，改为本机跑 12 个程序各自权重最高的 SimPoint（快速预热 100 万条、预取开、`PMU=1`，配置 = main：write buffer + 3×64 多表 ITT，`BPA_ITTH=1,2,3 BPA_ITTN=64`）。
+- **PMU bug**：默认的流水线 LSU 在 `RealLsuPipe.cpp` `comb_lsu2rob_p` 里用 `uint64_t m |= 1ULL << rob_idx` 做 TMA 缺失标记，ROB 有 128 项，`rob_idx` ≥ 64 的缺失标记丢失（EXP-013 在旧 LSU 里修过同一个 bug）。改为 `std::bitset<ROB_NUM>` 后 12 个点周期逐个相同，但"ROB 头是访存且 L1D 缺失 / 未缺失"的划分大变：libquantum 22.9/22.3 → 43.6/1.7、omnetpp 21.1/26.7 → 41.8/6.1、mcf 20.4/45.9 → 39.2/27.1、bzip2 12.3/21.9 → 24.0/10.2。**此前所有 SPEC TMA 里 "Mem 未缺失" 都偏高**。已随本次合入 main（trace-model `07d567c`）。
+- **TMA 一级（修正后，槽位 %，12 点平均）**：Retiring 32.5、BadSpec 6.5、Frontend 26.0、Backend 35.0。要点：
+  - 前端：取指组遇到 taken 分支截断是最普遍的损失（占 FEO 槽：libquantum 37%、perlbench 32%、xalancbmk 31%、gcc 28%、astar 23%、mcf 22%、omnetpp 21%）；gcc 另有 27% 是行尾截断；每组平均 3.4–6 条（满宽 8）、每拍约 1 组。gobmk I$ 缺失 23%，sjeng/astar/omnetpp ififo 空 17–26%。
+  - 后端：L1D 缺失在 ROB 头占 mcf 39%、libquantum 44%、omnetpp 42%、bzip2 24%；gcc STQ 满 32.6%、ROB 头是 store 14%（0x2df39c 起 6 条连续 store）；DCache bank 冲突重放很多（libquantum 3.3M 个 load 里 1.2M、mcf 1.9M、h264ref 0.66M）。
+  - h264ref 34% 槽是"ROB 头是 load 但没缺失"，`LSU_PIPE_STATS` 显示 `mmio_ld=305,749`（其他 11 个点 ≤7K）。
+- **根因**：h264ref 的用户数据物理页在 0x87f3a000–0x87f4e000，落在 `SIM_UNCACHE_DDR_RESERVED`（0x87f00000–0x87ffffff，`SD_DMA_POOL`）里，被 `simulator_is_mmio_addr` 当成 MMIO：每个 load 等到 ROB 头、经非缓存单元访存。Linux 设备树 `memory@80000000` 是完整 256 MB，没有 reserved-memory，所以内核把这段当普通内存分给用户。用户确认这段窗口是早先为 SoC 上 DMA 与 CPU cache 一致性问题留下的，后来按 MMIO 访问，可以删除。`LSU_PIPE.md` 第 12 节之前"SPEC 检查点 MMIO load 太多"的疑问即此；那次的"MMIO 豁免"（h264ref −4.9%）优化的是这个假象。
+- **改动**：
+  - trace-model：`config.h` 删 `SIM_UNCACHE_DDR_RESERVED_*`、`SD_DMA_POOL_*`，可缓存窗口合为 0x40000000–0x4fefffff 与 0x80000000–0xffefffff（删 `SIM_CACHE_ADDR_3_*`）；`mmio_address_map.h` 两处同步；`PeripheralAxi.cpp` 注释。
+  - rtl：`ttg_cfg_pkg.sv` 重新生成；`lsu_pkg::is_mmio_addr` 改两段；`tb/soc/platform/include/{config.h,mmio_address_map.h}` 同步；`scripts/ref_cycles.txt` 3 个程序；`scripts/tm_cycles.sh` 修原有 bug（没有导出 `ROOT`，`directed/*` 程序路径为空、挂住）。
+- **验证**：
+  - trace-model gate 64/64 全部 difftest Success；3 个程序周期变化：fence-i-self-modify 1405 → 1407、recursion 2876 → 2878、vm_pagefault_test 19060 → 19212（栈/页表在 0x88000000 以下），`baseline.csv` 待更新。大程序 8 个与 PROJECT.md 标准周期逐个相同（dhrystone 114,685、coremark 283,240、memory-stress 2,358,268、smc-div 10,875、smc-addi 10,315、memory-stress-small 329,424、pf-stress 630,916、itt-dispatch 222,445）。Linux 从复位到 `rv32 login:`，0 不一致（网络 FAIL 与旧版相同）。
+  - rtl：`lint.sh`、`lint_chip.sh` 0 警告；`fm_gate` 69/69，0 个函数模型不一致，周期与新的 `ref_cycles.txt`（`LSU_PIPE_NOWD=1`）**0 处不同**。RTL Linux 未跑。
+- **SPEC 全量 580 点**（快速预热、预取开、`PMU=1`、本机 12 并行；构建 = `exp/fe-pmu` + 窗口改为可缓存，不设 ITT 环境变量即 main + write buffer；基线 `AI-Huma-data/stwb/full/new` 同口径，抽查 gcc sp0、h264ref sp17 两点用不改窗口的同一构建周期逐个相同）：580/580 完成，0 不一致；**12 程序几何平均 IPC +10.75%**；78 个点变化 > 1%，**全部变快**。
+  - h264ref 1.465 → 3.480（**+137.5%**，35/37 点 > 1%，单点最高 +270%）；hmmer 3.629 → 4.889（**+34.7%**，26/34，最高 +158%）；perlbench 2.501 → 2.658（**+6.3%**，12/44）；xalancbmk +0.25%；gcc +0.04%；omnetpp −0.16%；其余 6 个 ±0.02% 以内。
+  - hmmer、perlbench 权重最高的点没踩到这段地址，所以单点分析看不出；之前所有 SPEC 基线里这三个程序的数字都被压低。
+- **分数重新核对（直接换算，不再连乘）**：参考时间与 spec.org 官方结果 `cpu2006-20060513-00042.txt` 逐个核对，12 个都与以前用的相同（perlbench 9770、bzip2 9650、gcc 8050、mcf 9120、gobmk 10490、hmmer 9330、sjeng 12100、libquantum 20720、h264ref 22130、omnetpp 6250、astar 7020、xalancbmk 6900）；分数 = 参考时间 × IPC × 1 GHz / 总指令数，总指令数 = BBV 区间数 × 1000 万（`spec-rv32imab/status/<bench>.txt`），用旧表反推的指令数与它相差 ≤0.1%，说明以前的换算方法本身是对的。程序 IPC = 1/Σ(w·CPI)（SimPoint 权重）。脚本 `~/personal/AI-Huma-data/mmio/score.py`。结果（分/GHz，12 个比值的几何平均）：main + write buffer（EXP-024）**10.06**；当前 main（+ 多表 ITT，`AI-Huma-data/itt/res_new_lines.txt`）**10.13**；main + write buffer 删窗口 **11.14**；当前 main 删窗口（按程序把删窗口的 IPC 比值乘到 ITT 结果上，估算）**约 11.22**。**此前文档里连乘得到的 10.46 / 10.53 偏高约 4.7%**：起点 9.42 是近似值，中间还换过基线，以后都用 `score.py` 直接算。
+- **下一步优化的排序（基于修正后的 TMA）**：① 合入删窗口 + PMU 修正，重建 SPEC 基线；② 前端取指带宽（`FE_PAIR` 一拍两块，EXP-023 25 点 +2.88%，加 `FE_IPF` +5.22%，RTL 代价大；或先做一拍跨行取指解决 gcc 行尾截断）；③ L1D 缺失（sdip `PF_SDIP=2`，EXP-026 +1.74%，RTL 未做）；④ gcc 连续 store 的写回带宽；⑤ DCache bank 冲突重放；⑥ BadSpec（gobmk、mcf、sjeng、astar）与 gobmk I$ 容量。
+- **复现**：TMA 数据 `~/personal/AI-Huma-data/fepmu/tma_fix`（`run.sh <out> <jobs> 1 <bench>...`，`BPA_ITTH=1,2,3 BPA_ITTN=64`），`scripts/pmu/spec_summary.py`、`fe_summary.py`；`LSU_PIPE_STATS=1` 数据 `fepmu/lsustat`；全量 `~/personal/AI-Huma-data/mmio/full.sh <cfg> <simulator> <jobs>`、对比 `mmio/cmp.py <base> <new>`（权重取自 `spec-rv32imab/sp/<bench>.weights`；`points_full.txt` 第 4 列是旧 IPC 不是权重），结果 `mmio/cmp_result.txt`；Linux `~/personal/AI-Huma-data/linux/uncwin`；RTL `~/personal/AI-Huma-data/uncwin_rtl`。trace-model macOS 构建：`gmake LDFLAGS="-lz" DS3_DIR=../trace-model/third_party/DRAMsim3`。
 
 ---
 

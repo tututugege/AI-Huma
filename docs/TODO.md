@@ -7,6 +7,7 @@
 
 | 事项 | 状态 | 做完的标准 |
 |---|---|---|
+| EXP-027 合入后的补跑（删除 0x87f00000 非缓存窗口，2026-11-11 已合入 main） | 合入时服务器关机：RTL 的 Linux 没跑；SPEC 全量是在 main + write buffer（无 ITT）上量的，当前 main 的分数 11.22 是按程序比值估算 | 服务器上 RTL Linux 13 段（或从复位连续）逐条对比到 `rv32 login:`；当前 main 跑 SPEC 全量 580 点（`PMU=1`），作为以后所有对比的新基线，用 `AI-Huma-data/mmio/score.py` 算分数并写进 MAIN_RECORDS |
 | rtl `exp/lsu-stwin`（旧 LSU 的 store 侧队列窗口修复，`b94b4f5`，未合入） | DRAMsim3（EXP-006）已合入 main（DRAMsim3 已是子模块），main 的 `lsu_dc_req_st` 已按 `STWIN` 修了提交窗口；这个分支另外修了旧 LSU（`LSU_PIPE=0`）里 `wait_mmu_stq`、`mmu_done_stq` 经通用 `ring_apply` 仍按 load 窗口 20 处理的部分，默认的分级 LSU（`lp_*`）不受影响 | 决定合入还是删除：只对 `LSU_PIPE=0` 的旧路径有意义；合入的话在不分频 + STA 端口 1 的配置下对照修复前后 RTL 与 trace-model 周期（修复后 66/66 相等） |
 | LD/STA IQ 合并、统一 FTQ 的 RTL 试做结果入档 | 两个 RTL 试做都已完成（工作区 `rtl-ldsta`/`trace-model-ldsta`、`rtl-uftq`/`trace-model-uftq`，未提交）：门禁 66/66，66 个程序周期与各自的 trace-model 全部一致 | 在 [EXPLORATION.md](EXPLORATION.md) 记为新实验（含综合数字和未覆盖项）；工作区改动提交到各自的 `exp/` 分支 |
 

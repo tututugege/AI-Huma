@@ -286,3 +286,6 @@
 | 2026-11-10 | trace-model `exp/itt-multi` | `5d8cf66`、`e84e53a` | EXP-025：ITT 默认 3 张 × 64 项（`CFG_ITT_H`、`CFG_ITT_SIZE`），`itt-dispatch` 测试进 gate，`PROJECT.md` 大程序标准周期更新 | gate 64/64；SPEC 全量 580 点 +0.67% | 已合入 main |
 | 2026-11-10 | rtl `exp/itt-multi` | `6bc0508`、`efaa350`、`1c0d110` | EXP-025 RTL：`NITT=3`、`ITT_TBL`、`bpu_btb_bank/upd/sel`、`bpu_main_lane/sel`、`bpu_banks`、`bpu`；`itt-dispatch` 定向程序；`ref_cycles.txt` 重生成；文档程序数 69 | `fm_gate` 69/69、周期与模型相等；Linux 13/13；综合深度在 5% 内 | 已合入 main |
 | 2026-11-10 | 总仓库 `main` | 本行所在提交 | **合入 main**：trace-model `e84e53a`、rtl `1c0d110`（EXP-025 多表 ITT）；MAIN_RECORDS、EXPLORATION（EXP-025）、LOG、README、TODO、SERVER、WORKFLOW | 见 MAIN_RECORDS 2026-11-10 行 | 推送见下 |
+| 2026-11-11 | trace-model `exp/no-uncwin` | `62e4a8b`、`07d567c` | EXP-027：删除 0x87f00000 非缓存窗口（`config.h`、`mmio_address_map.h`、`baseline.csv` 3 个程序）；PMU TMA 缺失标记改为 `bitset<ROB_NUM>` | gate 64/64、大程序不变、Linux 到 login；SPEC 全量 +10.75% | 已合入 main |
+| 2026-11-11 | rtl `exp/no-uncwin` | `1205bff`、`de8d0aa` | EXP-027 RTL：`lsu_pkg::is_mmio_addr` 两段、`ttg_cfg_pkg.sv` 重生成、tb 地址表、`ref_cycles.txt` 3 个程序；`tm_cycles.sh` 导出 `ROOT` | lint 0 警告；`fm_gate` 69/69、周期与模型 0 处不同 | 已合入 main |
+| 2026-11-11 | 总仓库 `main` | 本行所在提交 | **合入 main**：trace-model `07d567c`、rtl `de8d0aa`（EXP-027）；MAIN_RECORDS、EXPLORATION、LOG、README、TODO | 见 MAIN_RECORDS 2026-11-11 行 | 未推送 |
