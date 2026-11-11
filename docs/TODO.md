@@ -77,6 +77,13 @@ EXP-024 合入的是"STQ 内分组"的简化版 write buffer：4 个条目、每
 | PMU：分发被 ROB 空闲项数挡住时记成 `SLOT_BE_SERIAL` | 紧凑模式下 `rob2dis.ready` 仍为 1，分发由 `free_cnt` 限制，`Dispatch::pmu_slots` 落到兜底的 SERIAL；gcc sp48 有 609 万个槽被错记 | 这种情况记成 `SLOT_BE_ROB_FULL`，gate 周期不变 |
 | `rob` 深度 53（行式 46） | 最长路径：读出 → 旋转 → 指令分类与额度比较 → 前缀 → 新队头选择 | 把"完成 / 冲刷类 / 分支 / 块结束"在项里算好存下，深度回到行式 +5% 以内，或说明不做的理由 |
 
+## 待做：rv64 的收尾（EXP-029，2026-11-12 合入 main 后）
+
+- 生成文件欠债：`back_top.sv` / `exu.sv` / `soc_top.sv` 是手改的，`tools/gen_backtop.py`、`gen_soc_top.py`、`spec/*.io` 和 `gen_cfg_pkg.py`（`XLEN_BITS`）要同步，否则重新生成会丢 rv64 位宽。
+- 查 rv64 上 `crc32`（RTL 2306 vs 模型 2259）和 `memory-stress`（−180 周期）的周期差，疑为紧凑 ROB × rv64。
+- 把 rv32 `memory-stress` 加进回归（rv32 子集 ≤15 万周期测不出大数组写回 bug）。
+- rv64 的 F/D、C、bitmanip 边界测试、SPEC rv64 检查点流程、FastWarm 的 Sv39、function-model rv64 的 MMIO `sd`/`ld` 回读、交互式登录测试。
+
 ## 待做：流程与工具
 
 | 事项 | 为什么 | 做完的标准 |
