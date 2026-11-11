@@ -289,3 +289,4 @@
 | 2026-11-11 | trace-model `exp/no-uncwin` | `62e4a8b`、`07d567c` | EXP-027：删除 0x87f00000 非缓存窗口（`config.h`、`mmio_address_map.h`、`baseline.csv` 3 个程序）；PMU TMA 缺失标记改为 `bitset<ROB_NUM>` | gate 64/64、大程序不变、Linux 到 login；SPEC 全量 +10.75% | 已合入 main |
 | 2026-11-11 | rtl `exp/no-uncwin` | `1205bff`、`de8d0aa` | EXP-027 RTL：`lsu_pkg::is_mmio_addr` 两段、`ttg_cfg_pkg.sv` 重生成、tb 地址表、`ref_cycles.txt` 3 个程序；`tm_cycles.sh` 导出 `ROOT` | lint 0 警告；`fm_gate` 69/69、周期与模型 0 处不同 | 已合入 main |
 | 2026-11-11 | 总仓库 `main` | 本行所在提交 | **合入 main**：trace-model `07d567c`、rtl `de8d0aa`（EXP-027）；MAIN_RECORDS、EXPLORATION、LOG、README、TODO | 见 MAIN_RECORDS 2026-11-11 行 | 未推送 |
+| 2026-11-11 | 总仓库 `main` | 本行所在提交 | EXP-027 合入后补跑：RTL Linux 13 段（s01–s13，本机 13 个并行，每段 1600 万周期，逐提交与函数模型对比）13/13 通过，每段检查 692 万到 2424 万条指令，0 不一致；MAIN_RECORDS、EXPLORATION 更新，TODO 删除该项 | 13/13 | 未推送 |
