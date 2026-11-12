@@ -311,3 +311,4 @@
 | 2026-11-12 | 总仓库 `main` | 本行所在提交 | TODO 新增「乘除法器的物理实现优化」：乘法器目前单周期纯组合（`a * b`，`mul_pipe` 只是结果延迟线）、除法器每周期两级 64 位减法；计划乘法器真流水化（Booth + 压缩树）、面积优化、除法器 radix-4 / SRT 与延迟评估 | 仅文档 | 已推送 |
 | 2026-11-12 | 四个仓库 `main` | function-model `607229e`、trace-model `4cf9b6b`、rtl `3ca4677`、总仓库 | **推送本轮**：EXP-029 rv64 合入、死宏与环境变量清理、`ENV_VARS.md`、四仓库文档整理、非 SPEC 流水线入库、rv64 综合代理对比、乘除法器 TODO；全部为 fast-forward，先推三个子模块再推总仓库 | 推送前各 `main` 与指针一致、均领先 `origin/main`、落后 0 | 已推送 |
 | 2026-11-12 | function-model `exp/fd` / 总仓库 | function-model `a5674d9`、总仓库本行所在提交 | **EXP-030 rv64 F/D 第一步（function-model）**：`FP=1` 编译开关（浮点寄存器堆、fcsr、mstatus.FS/SD、OP-FP、融合乘加、flw/fld/fsw/fsd、检查点版本 5、前门恢复），Spike 逐条对拍：约 35 万条指令的定向测试、FS/保留编码测试、编译器生成的浮点代码全部一致；顺带修 `csrrwi csr,0` 不写 CSR 的老 bug。未合入 main，trace-model / RTL 未开始 |
+| 2026-11-12 | function-model `main` / 总仓库 | function-model `e0078bc`、总仓库本行所在提交 | **EXP-030 function-model 合入 main**（快进，未推送）：`FP=1` F/D、官方 rv64uf/ud 23/23；MAIN_RECORDS 加一行，总仓库子模块指针更新 |

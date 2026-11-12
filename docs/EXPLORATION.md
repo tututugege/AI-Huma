@@ -6,7 +6,7 @@
 
 | 编号 | 日期 | 题目 | 分支 | 状态 | 一句话结论 |
 |---|---|---|---|---|---|
-| [EXP-030](#exp-030-rv64-的-fd-浮点扩展) | 2026-11-12 | rv64 的 F/D 浮点扩展（function-model 第一步，之后 trace-model、RTL） | function-model `exp/fd` | **function-model 完成，未合入**（trace-model、RTL 未开始） | `FP=1` 编译开关；directed 测试 + 编译器生成的浮点代码与 Spike 逐条一致；检查点版本 5；`FP=0` 的构建不变 |
+| [EXP-030](#exp-030-rv64-的-fd-浮点扩展) | 2026-11-12 | rv64 的 F/D 浮点扩展（function-model 第一步，之后 trace-model、RTL） | function-model `exp/fd` | **function-model 已合入 main（2026-11-12，未推送）**：`e0078bc`；trace-model、RTL 未开始 | `FP=1` 编译开关；directed 测试 + 编译器生成的浮点代码与 Spike 逐条一致；检查点版本 5；`FP=0` 的构建不变 |
 | [EXP-029](#exp-029-从-rv32imab-迁移到-rv64imab) | 2026-11-11 | 从 rv32imab 迁移到 rv64imab（function-model → trace-model → RTL，Linux 启动到登录） | function-model `exp/rv64`、trace-model `exp/rv64-on-main`、rtl `exp/rv64` | **已合入 main（2026-11-12，已推送）**：function-model `b388f39`、trace-model `ccc2d0c`、rtl `8dbb7cd` | rv64 在三个层次都跑通：53 个 cpu-tests、Sv39 测试、Linux 从复位到 `rv64 login:`（RTL 约 1.05 亿周期，逐条对比 0 个不一致）；XLEN=32 完全不变 |
 | [EXP-028](#exp-028-rob-压缩加大-rob--prf重命名整组等待) | 2026-11-11 | ROB 压缩 / 加大 ROB、PRF / 重命名整组等待（`REN_AON`），删窗口后在当前 main 上重测（接手 2026-11-10 的未完成实验） | trace-model `merge/rob-compact`（`35b3af4`、`a11b1ca`）、rtl `exp/rob-compact`（`4e954d7`、`a905acd`）；统计 / `REN_AON` 留在 trace-model `exp/rob-compress` | 已合入 main（2026-11-11，默认开） | 30 点（按权重选）：整组等待 +0.59%（hmmer +7.5%），ROB192 不改重命名 −0.29%（hmmer −20.9%），ROB192 + 整组等待 +2.27%，ROB192 + PRF192 +3.06%，PRF160 +0.93%；ROB 行平均填 5.58/8，简单指令压缩比约 1.0–1.5；简单指令压缩不做；**紧凑 ROB（按序分配、前缀提交）+ BPU 训练额度 +2.89%（寄存器版本）**（ROB 仍 128 项，好于 ROB192 + 整组等待）；RTL 已做（fm_gate 69/69 周期与模型逐个相等，Linux 从复位连续启动到登录 0 不一致），`rob` 面积 +11.4%、深度 46 → 53；**SPEC 全量 580 点 +2.74%，分数 11.23 → 11.53 分/GHz**，12 个程序全部提升；已知回退：分支密集的短循环被 BPU 更新带宽卡住（gcc 4 个点 −37%、dhrystone +1.8% 周期） |
 | [EXP-027](#exp-027-最新-tma-分析与-0x87f00000-非缓存窗口删除) | 2026-11-11 | 最新 TMA 分析（12 程序最高权重点，main 配置）；查出 0x87f00000 非缓存窗口让 SPEC 普通数据走 MMIO；删除该窗口；PMU 缺失标记 64 位 bug | trace-model `exp/no-uncwin`（`62e4a8b`、`07d567c`）、rtl `exp/no-uncwin`（`1205bff`、`de8d0aa`） | 已合入 main（2026-11-11）；RTL Linux 13 段 13/13 | 删窗口后 SPEC 全量 580 点 12 程序几何平均 IPC **+10.75%**，直接换算分数 10.06 → 11.14 分/GHz（当前 main 10.13，删窗口后估 11.22；以前连乘的 10.53 偏高）（h264ref +137%、hmmer +35%、perlbench +6.3%，其余 ±0.3%）；0 个点变慢；不是微结构收益，是测量假象被去掉 |
@@ -37,7 +37,7 @@
 
 ## EXP-030 rv64 的 F/D 浮点扩展
 
-- **状态：function-model 一步完成，在分支 `exp/fd` 上，未合入 main、未推送。trace-model 和 RTL 还没开始。**
+- **状态：function-model 一步完成，2026-11-12 已合入 function-model `main`（`e0078bc`，未推送）。trace-model 和 RTL 还没开始。**
 - **日期**：2026-11-12。**目标**：补标准 F/D（rv64），这样 SPECfp 和标准工具链的 `lp64d` ABI 才能跑；顺序是 function-model（Spike 对拍）→ trace-model（周期模型）→ RTL。F/D 先于 C，原因：F/D 是加法（新寄存器堆和浮点单元，整数路径不动），C 改的是前端（PC 2 字节对齐、取指跨行、预译码、BPU/I$/ITT），会让所有前端基线失效，要作为单独的实验。
 - **做法**：编译开关 `FP=1`（只能和 `XLEN=64` 一起用，默认 0，`FP=0` 的 rv32 / rv64 构建行为不变）；rv32 仍是 Zfinx。
   - 状态：`CPU_state.fpr[32]`（64 位，单精度做 NaN-boxing，没有 box 好的读成规范 NaN `0x7fc00000`）、`fcsr`（`fflags`/`frm`）、`mstatus.FS`（Off 时所有浮点指令和 `fflags/frm/fcsr` 访问都是非法指令）和 `SD`（FS=Dirty 时置位，读 `mstatus/sstatus` 可见）；任何浮点寄存器写入或 `fflags` 变化把 FS 置 Dirty；`misa` 多了 F、D。
