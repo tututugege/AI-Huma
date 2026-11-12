@@ -304,3 +304,4 @@
 
 
 说明：trace-model 早期的补丁队列（patches 0001–0061）记在旧仓库 `~/personal/tututugege-trace` 的 `docs/` 里。
+| 2026-11-12 | 总仓库 `main` | 本行所在提交 | 四个仓库文档整理后更新子模块指针：function-model `d129f0e`、trace-model、rtl `543f817`（各仓库 README / 入口文档重写、rv64 与紧凑 ROB 的模块文档补注、已删宏与环境变量清理、链接检查）；顺手改 3 处过时注释（`agu.sv`、`llc_small_check.sh`、`BPU_pipe.h`） | 各仓库 lint / 编译不受影响（仅文档与注释） | 未推送 |
