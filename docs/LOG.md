@@ -308,3 +308,4 @@
 | 2026-11-12 | trace-model `main` | 见总仓库提交 | 删除 `baremetal/x0-bypass-test`（`host-test` 引用已删的 `RealLsuPerf.cpp` 和不存在的 `LsuState` 成员，早已不能构建；需要时从 git 历史恢复）；README 同步 | 仅删除 | 未推送 |
 | 2026-11-12 | function-model `main` | 见总仓库提交 | 提交非 SPEC 负载流水线 `scripts/wl/`（`mk_wl.sh`、`run_bbv.sh`、`pipeline.sh`）并补 README（EXP-022 的 GAP / PolyBench / Ligra 数据用它，只支持 rv32imab）；删除 9 个空的 `ol_*` 目录、失败状态文件 `ol_voronoi.txt` 和指向自身的 `function-model` 软链接；EXPLORATION EXP-026 一节加指向 | 仅文档和脚本入库，脚本没有重跑 | 未推送 |
 | 2026-11-12 | rtl `main` / 总仓库 | 见总仓库提交 | EXP-029 rv64 综合代理对比：24 个模块在 `XLEN_BITS=32` / `64` 下各跑 yosys 通用门面积 + 深度代理，写进 `rtl/docs/09-synthesis-report.md` 第 10 节和 MAIN_RECORDS；`synth_depth.sh` 修 macOS xargs 命令行过长 | 18 个互不重叠模块合计 +31% 单元；`dcache_bank` rv64 超内存未出数；仍无工艺库 / 时序 | 未推送 |
+| 2026-11-12 | 总仓库 `main` | 本行所在提交 | TODO 新增「乘除法器的物理实现优化」：乘法器目前单周期纯组合（`a * b`，`mul_pipe` 只是结果延迟线）、除法器每周期两级 64 位减法；计划乘法器真流水化（Booth + 压缩树）、面积优化、除法器 radix-4 / SRT 与延迟评估 | 仅文档 | 未推送 |
