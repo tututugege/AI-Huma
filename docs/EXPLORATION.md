@@ -6,6 +6,7 @@
 
 | 编号 | 日期 | 题目 | 分支 | 状态 | 一句话结论 |
 |---|---|---|---|---|---|
+| [EXP-031](#exp-031-删除-zfinx全面改用标准-fd含-rv32) | 2026-11-12 | 删除 Zfinx，rv32 也改用标准 F/D（三个仓库） | function-model `exp/fd-all`、trace-model `exp/fd-all`、rtl `exp/no-zfinx` | **三个分支完成，未合入** | F/D 成为默认配置（`FP=1`，rv32 和 rv64），Zfinx 全部删除；rv32 gate 周期不变（64/64，基线只换了 Zfinx 测试），RTL 删掉 Zfinx 的 FPU 后 soc_smoke 56/56 |
 | [EXP-030](#exp-030-rv64-的-fd-浮点扩展) | 2026-11-12 | rv64 的 F/D 浮点扩展（function-model 第一步，之后 trace-model、RTL） | function-model `exp/fd` | **function-model（`cdcb74d`）和 trace-model（`2c1d166`）已合入各自的 `main`（2026-11-12，未推送）**；RTL 未开始 | `FP=1` 编译开关；directed 测试 + 编译器生成的浮点代码与 Spike 逐条一致；检查点版本 5；`FP=0` 的构建不变 |
 | [EXP-029](#exp-029-从-rv32imab-迁移到-rv64imab) | 2026-11-11 | 从 rv32imab 迁移到 rv64imab（function-model → trace-model → RTL，Linux 启动到登录） | function-model `exp/rv64`、trace-model `exp/rv64-on-main`、rtl `exp/rv64` | **已合入 main（2026-11-12，已推送）**：function-model `b388f39`、trace-model `ccc2d0c`、rtl `8dbb7cd` | rv64 在三个层次都跑通：53 个 cpu-tests、Sv39 测试、Linux 从复位到 `rv64 login:`（RTL 约 1.05 亿周期，逐条对比 0 个不一致）；XLEN=32 完全不变 |
 | [EXP-028](#exp-028-rob-压缩加大-rob--prf重命名整组等待) | 2026-11-11 | ROB 压缩 / 加大 ROB、PRF / 重命名整组等待（`REN_AON`），删窗口后在当前 main 上重测（接手 2026-11-10 的未完成实验） | trace-model `merge/rob-compact`（`35b3af4`、`a11b1ca`）、rtl `exp/rob-compact`（`4e954d7`、`a905acd`）；统计 / `REN_AON` 留在 trace-model `exp/rob-compress` | 已合入 main（2026-11-11，默认开） | 30 点（按权重选）：整组等待 +0.59%（hmmer +7.5%），ROB192 不改重命名 −0.29%（hmmer −20.9%），ROB192 + 整组等待 +2.27%，ROB192 + PRF192 +3.06%，PRF160 +0.93%；ROB 行平均填 5.58/8，简单指令压缩比约 1.0–1.5；简单指令压缩不做；**紧凑 ROB（按序分配、前缀提交）+ BPU 训练额度 +2.89%（寄存器版本）**（ROB 仍 128 项，好于 ROB192 + 整组等待）；RTL 已做（fm_gate 69/69 周期与模型逐个相等，Linux 从复位连续启动到登录 0 不一致），`rob` 面积 +11.4%、深度 46 → 53；**SPEC 全量 580 点 +2.74%，分数 11.23 → 11.53 分/GHz**，12 个程序全部提升；已知回退：分支密集的短循环被 BPU 更新带宽卡住（gcc 4 个点 −37%、dhrystone +1.8% 周期） |
@@ -34,6 +35,19 @@
 | [EXP-001](#exp-001-面积优化三个方向) | 2026-11-04 | 面积优化：FTQ 合并、LSU 端口、LD/STA IQ 合并 | trace-model `exp/area-explore` | 未提交、未合入 | 三个方向都能省面积，性能代价 0–1% |
 
 ---
+
+## EXP-031 删除 Zfinx，全面改用标准 F/D（含 rv32）
+
+- **状态：2026-11-12 三个分支完成，未合入、未推送**：function-model `exp/fd-all`（`eca7c83`）、trace-model `exp/fd-all`（`8017ffb`）、rtl `exp/no-zfinx`（`3ff0253`）。
+- **目标**：rv32 原来的浮点是 Zfinx（浮点放在整数寄存器里，只有单精度），rv64 有 EXP-030 的标准 F/D。统一成一套：F/D 是默认配置（`FP=1`），Zfinx 删掉；`FP=0` 是没有任何浮点的核。
+- **function-model**：rv32 F/D（FLEN 仍是 64）：`fld/fsd` 是 8 字节访问（两个字），rv32 没有 `fmv.x.d/fmv.d.x` 和 `fcvt.l/lu`（当作非法指令）；`mstatus.SD` 是第 31 位且只读；`misa` 带 F/D；检查点版本 6；`FP` 默认 1；删除 `RV32Zfinx`。前门恢复在 rv32 上只能还原 NaN-boxed 的单精度浮点寄存器。
+- **trace-model**：删除 `UOP_FP`、Zfinx 的 `FuKind::FPU`、`OP_MASK_FP`、Zfinx 译码和唤醒；rv32 的 LSU 宽度辅助函数对 `fld/fsd` 返回 8 字节；`FP` 默认 1；rv32 的 `mstatus.SD`/`misa`；检查点版本 6；5 个 Zfinx 测试（`zfinx*`、`matmul_fpu`）换成 F/D 版本 `tests/extra/fd-*`（同样的运算，操作数仍是 `uint32_t` 位型，经浮点寄存器运算），`build_tests.sh` 对 `fd-*` 用 `imafd` + 双精度 ABI；`results/baseline/*.csv` 去掉 Zfinx 行、加入 `fd-*` 行。
+- **RTL**：删除 `rtl/backend/fpu`、`tests/fpu`、`spec/fpu.io`、`tools/fp`；译码去掉 OP-FP（`CLS_FP*`，立即数选择从 7 位改 6 位）、派发去掉 `INST_FP`/`UOP_FP`、ISU 去掉 FP 的延迟唤醒源和 FP 发射能力、exu_ctrl 的 FU 编号 5 之后整体前移一位（mc 序 `{MUL(0), DIV(3), MUL(5), DIV(7)}`）、`exu.sv`/`gen_backtop.py` 去掉 `u_fpu`；`ttg_cfg_pkg.sv` 用 `-DFP=0` 重新生成（RTL 目前没有浮点，和模型的 `FP=0` 一致）；`scripts/` 里的程序列表去掉 Zfinx 程序。
+- **验证**：
+  - function-model：rv32 的 21 个官方 `rv32uf/ud`、`rv32-fp`（约 16 万行汇编）、`rv32-fp-trap`、`fp-kernels` 与 Spike 逐条一致；rv32 整数程序 50/53（3 个是改动前就有的差异）；rv64 整套 52/54（2 个已知平台差异）加 F/D 3/3。
+  - trace-model：rv32 gate 64/64（所有原有程序周期与基线逐个相同，只有 Zfinx 行换成 `fd-*` 行）；55 个 rv64 整数程序周期与改动前逐个相同；`scripts/fp_check.sh`（`XLEN=32` 24/24，`XLEN=64` 26/26，微基准延迟不变）。
+  - RTL：`lint.sh` 0 警告、`lint_chip.sh` 0、`soc_smoke.sh` 56/56、dhrystone 116,774 和 coremark 284,902 与模型逐周期相同。
+- **没做的**：RTL 的标准 F/D（见 [EXP-030-trace-model-plan.md](EXP-030-trace-model-plan.md) 之后的 RTL 讨论）；rv32 F/D 的 SPEC / Linux 用户态验证；半精度；rv32 前门恢复的双精度寄存器。
 
 ## EXP-030 rv64 的 F/D 浮点扩展
 
