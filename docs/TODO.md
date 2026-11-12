@@ -1,7 +1,7 @@
 # 待办事项
 
 全项目唯一的待办清单（2026-11-05 起，原 rtl `docs/07-roadmap.md`、README “下一步” 中仍有效的条目已并入）。
-每条写清为什么、做到什么算完；做完删掉，在 [LOG.md](LOG.md) 里留一行。（2026-11-10 清理：删除已完成的“快速 warmup”，DRAMsim3 一条收窄为只剩 `exp/lsu-stwin`。）风险（验证缺口、变异存活）记在 [rtl/docs/08-risk-register.md](../rtl/docs/08-risk-register.md)，不在这里重复。
+每条写清为什么、做到什么算完；做完删掉，在 [LOG.md](LOG.md) 里留一行。（2026-11-12 文档审查：删除已完成或已过时的条目，补上 rv64 之后的收尾和未合入实验。）风险（验证缺口、变异存活）记在 [rtl/docs/08-risk-register.md](../rtl/docs/08-risk-register.md)，不在这里重复。
 
 ## 进行中
 
@@ -15,7 +15,7 @@
 |---|---|---|
 | **逐条对比加上 store 比较**（rtl V-12） | 现在只比提交 PC 和目的寄存器。第 1 批的 MMIO store 数据错误（串口乱码、中断不来）逐条对比没报，是靠比串口输出发现的；之后还要动 LSU 端口和 LD/STA 合并 | `tb/soc/fm_check.h` 在每条 store 提交时比较物理地址、数据、字节使能（MMIO 和可缓存都比）；门禁重跑通过；再考虑 CSR 写值 |
 | RTL 断言 | RTL 里几乎没有 assert；统一 FTQ、LD/STA 合并新加的断言因为测试平台不带 `--assert` 从未执行过 | 测试平台默认带 `--assert`，断言失败算门禁失败；模块笔记里的“假设/不可达”都有对应断言 |
-| 闭环补跑 `memory-stress`、`float_test`；扩大 gate | 现在的 gate 程序都很小（最长 23 万周期） | 两个程序在 RTL 逐条对比通过；gate 加入更长的定向程序 |
+| 闭环补跑 `float_test`；扩大 gate（rv32 `memory-stress` 已在 EXP-029 合入时跑过：230.8 万周期、745 万条指令逐条对比 0 不一致，但还没进回归，见 rv64 收尾） | 现在的 gate 程序都很小（最长 23 万周期） | `float_test` 在 RTL 逐条对比通过；gate / 回归加入更长的定向程序 |
 | 去复位存储器的随机初值验证 | 测试平台用 `--x-initial 0`，会掩盖对初值的依赖 | `--x-initial unique` + 运行时随机，门禁通过 |
 | 定向短测试补已知覆盖缺口 | front_top：RET 判定 `imm≠0`、SFENCE.VMA 后取指、冲刷与存储侧请求同拍；peripheral AXI 路径、PTW 超级页与 PTE 故障、MSHR_HIT/FULL 路由响应，真实程序基本不走 | 每个缺口一个短程序，进门禁 |
 | 覆盖率 | 没有覆盖数据，不知道哪些逻辑从未被测到 | Verilator toggle 覆盖（line 覆盖对 assign 风格无意义），每模块出报告，汇总数字入库 |
@@ -52,7 +52,7 @@ EXP-024 合入的是"STQ 内分组"的简化版 write buffer：4 个条目、每
 |---|---|---|
 | **RTL 上的 SPEC**（逐点周期与 trace-model 相等） | +11.02% 只是 trace-model 的数；模型与 RTL 的相等只在 68 个小程序和 Linux 上验证过 | 抽样的 SPEC 点（至少 12 个程序各 1 个高权重点）RTL 周期 = 模型周期，逐条对比通过 |
 | 小 LLC 检查（模型 + RTL） | 本次合入没跑 | `scripts/llc_small_check.sh` 通过 |
-| `FE_RFAST` 的 BPU 面积和 `front_pred_path` 深度（+6% 超判据） | 前端笔记的 `bpu` +19%（`RFAST=15` vs 关，平衡 ABC）和合并综合表（−9.5%，轻量 ABC）互相矛盾；`front_pred_path` 深度 134 → 142 | 同一综合流程对合并后的树做 `FE_RFAST=0` 与 15 的对比；若深度必须回到 5% 内：用 `spec_r1` 推导 `spec_r2`（省面积、费深度）或拆 `front_pred_path` 的关键链；(`front_pred_path.sv` 的 slang 声明顺序已在 `exp/integ` 里改好，main 上现在合并了，`lint.sh` 能综合它，此项已完成) |
+| `FE_RFAST` 的 BPU 面积和 `front_pred_path` 深度（+6% 超判据） | 前端笔记的 `bpu` +19%（`RFAST=15` vs 关，平衡 ABC）和合并综合表（−9.5%，轻量 ABC）互相矛盾；`front_pred_path` 深度 134 → 142 | 同一综合流程对合并后的树做 `FE_RFAST=0` 与 15 的对比；若深度必须回到 5% 内：用 `spec_r1` 推导 `spec_r2`（省面积、费深度）或拆 `front_pred_path` 的关键链 |
 | `FE_BFAST` 的深度（+34%） | 收益 +1.2~1.8%（RFAST 之上约 +2.4%），关着；是否值得取决于时钟目标 | 有时序库流程后量 `bpu` 关键路径；只有当时钟周期被更深的路径决定才开 bit1（+1.8%） |
 | `FE_PAIR`（一拍两块）的 RTL | 模型 +2.9%（RFAST+BFAST 之上）；RTL 要改写 BPU 前端（第二次 uBTB 读、第二套历史/RAS/TAGE 索引、主阵列第二读口、PTAB 项 +50%），估计 3–4 周，前端面积 +30% 以上，S0 双查在当前深度放不进一个周期 | 先用模型量"第二块放到 S1 用寄存的首块猜测查"的变体（稳态两块、重定向后一个气泡）；再决定是否做 RTL，见 EXPLORATION EXP-023 |
 | `FE_IPF`（I$ 预取）走真实内存通路 | 模型的预取不经过 LLC/AXI/DRAM（只对此前被需求 miss 填过的行预取，固定 12 周期，无带宽建模），+1.75% 是上界 | 模型里让预取走真实 LLC/AXI/DRAM 路径后重测；RTL 需要新通路，量收益再决定 |
@@ -84,6 +84,13 @@ EXP-024 合入的是"STQ 内分组"的简化版 write buffer：4 个条目、每
 - 把 rv32 `memory-stress` 加进回归（rv32 子集 ≤15 万周期测不出大数组写回 bug）。
 - rv64 的 F/D、C、bitmanip 边界测试、SPEC rv64 检查点流程、FastWarm 的 Sv39、function-model rv64 的 MMIO `sd`/`ld` 回读、交互式登录测试。
 
+## 待做：未合入的实验
+
+| 事项 | 为什么 | 做完的标准 |
+|---|---|---|
+| sdip（Breadcrumbs）预取器（EXP-026，`exp/sdip`）是否合入 | 模型完成：SPEC 全量 580 点 `PF_SDIP=2`（sdip 在前、h1 在后）几何平均 IPC +1.74%，`PF_SDIP=1`（替换 h1）只有 +0.10%（libquantum −11.9%）；RTL 没做 | 决定是否做 RTL；需要时先在最新 main 上重测（合入 EXP-027/028 后基线已变） |
+| 旧的串联脚本 `scripts/gate_all.sh` | 头注释还写 trace-model gate 62 个测试，还在 `/tmp` 写日志，没有 XLEN=64 一档；最近几次合入的记录里都没有用到它（合入流程按 WORKFLOW 第 6 节的步骤） | 更新成当前的 gate（64 / `fm_gate.sh` 69）或删掉 |
+
 ## 待做：流程与工具
 
 | 事项 | 为什么 | 做完的标准 |
@@ -91,7 +98,7 @@ EXP-024 合入的是"STQ 内分组"的简化版 write buffer：4 个条目、每
 | 性能计数（PMU）后续（EXP-013 已合入 main：trace-model `PMU=1`、RTL tier 1 事件总线 + 计数器块） | RTL 计数器块还没接 CSR（软件不可见）；RTL 只有 18 个事件；详见 [PMU.md](PMU.md) 第 4 节 | ① 决定软件是否可见（改 function-model / trace-model IDU / RTL CSR 的"这些 CSR 不存在"约定，OpenSBI 会探测，Linux 要重跑）；② 需要时给 icache/rob/lsu 加输出，补二级事件（取指延迟/带宽、Memory/Core）；③ 综合 `pmu`（接上后）；④ 前门恢复 `cycle_base` 未清零（`sim-time` 少报恢复程序的周期，mcf 点 −0.04%，改它会动所有 SPEC 基线）（⑤ dhrystone `ret` 预测错误率约 100% 一条已过时：现在约 1%，见 EXPLORATION EXP-025） |
 | 时序综合流程 | MAIN_RECORDS 要求记 WNS，但现在只有 yosys 通用门面积代理，没有工艺库、时序约束和静态时序分析；整机面积推算也只在旧配置下做过（第 3 批只综合了受影响模块） | 选定开源工艺库（如 ASAP7/Nangate45）+ 约束频率，主要模块能出面积和 WNS；整机推算可按需重跑 |
 | SPEC 检查点生成提速 | 生成检查点要把整个程序顺序再跑一遍（sjeng 约 3.7 小时，单线程） | BBV 时顺带存粗粒度检查点，生成 SimPoint 检查点时从最近的粗检查点并行起跑 |
-| `/tmp` 里的其他生成数据 | Linux 特殊检查点 `/tmp/ckpt`、综合中间结果等重启会丢（SPEC 检查点已因此丢过一次） | 挪到 `~/personal/AI-Huma-data/`，文档写明位置和生成命令 |
-| 远程仓库 | 子模块 URL 还是本地相对路径 | 配好总仓库和三个子仓库的远程地址，改子模块 URL；推送由用户决定 |
+| `/tmp` 里的其他生成数据 | `/tmp/ckpt` 已不存在，Linux 检查点现在在 `~/personal/AI-Huma-data/linux/`（`ck_s01_13`、`ckpt`）；综合中间结果等放在 `/tmp` 的东西重启会丢（SPEC 检查点已因此丢过一次） | 确认没有数据还只在 `/tmp`；文档写明 Linux 检查点位置和生成命令 |
+| 推送 EXP-029 及之后的提交 | 远程已配好（`.gitmodules` 指向 `tututugege/AI-Huma-{func,trace,rtl}`），main 已推到 EXP-028；EXP-029 的合入、之后的宏/环境变量清理和文档审查只在本地 main（2026-11-12：总仓库领先 origin 7 个提交，trace-model 16、rtl 9、function-model 7） | 推送由用户决定；推送前总仓库子模块指针要指向各子仓库已推送的 commit |
 | trace-model 剩余小优化 | 每项不到 3%；状态标志整理 | 逐项做，gate 周期不变 |
 | EXP-015 的已知回退 | 全量 −1.20%：bzip2 −10.2%、libquantum −5.6%、hmmer −5.3%、h264ref −5.1% | 先用精确预热确认是不是快速预热对新 BPU 的偏差；真实回退看 TMA（前端空槽）；推测唤醒（模型 +2.9pp，硬件代价未测）；DCW 看门狗事件根因；SPEC 开 `PMU=1` 补 TMA |

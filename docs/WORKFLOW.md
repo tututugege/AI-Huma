@@ -13,9 +13,11 @@
 
 ## 2. 正确性标准
 
-- **trace-model**：周期数与原模型完全一致，是唯一的正确性标准。开关默认关闭的实验，关闭时也必须保持完全一致。
+- **trace-model**：正确性 = 每个 gate 程序以 difftest Success 结束（与 function-model 提供的“事实”一致）；回归标准是 gate 周期等于 `results/baseline/baseline.csv`。开关默认关闭的实验，关闭时周期必须与基线逐个相同；改默认值时重生成基线（第 6 节第 2 步）。原模型的周期已不再是标准（2026-11-04 起）。
 - **rtl**（2026-11-04 起，见 `rtl/docs/06-equivalence-policy.md`）：正确性 = 整核测试平台逐条提交与 function-model 一致（提交 PC + 目的寄存器值）。周期数是性能指标；**合入 main 时**要求同一配置下 RTL 与 trace-model 整程序周期逐个相等（第 1 节第 3 条）。逐条对比不比较 store 数据和内存，访存/外设路径有改动时还要对比串口输出。
-- **function-model**：提交序列与参考模型一致。
+- **function-model**：提交序列与参考模型（Spike）一致。
+- **位宽（XLEN）**：默认 `XLEN=32`（rv32imab），行为和周期是回归标准；`XLEN=64`（rv64imab + Sv39，EXP-029）是可选配置（RTL `XLEN_BITS=64`，模型和 function-model `-DXLEN=64`），改动到位宽相关的代码（数据通路、LSU、dcache、MMU、CSR、PC 宽度）时两种配置都要验：整芯片 lint 两种都 0 警告，rv32 门禁周期不变，rv64 的 cpu-tests 逐条对比通过（构建方法见 [../rtl/scripts/README.md](../rtl/scripts/README.md)）。F/D、C、SPEC rv64 检查点尚未做。
+- **对 RTL 比周期时模型必须设 `LSU_PIPE_NOWD=1`**：RTL 没有 LDQ/STQ 的 63 周期看门狗，不设时模型会在 load/store 停住 63 周期后重发，`crc32`、`memory-stress` 等程序会差几十周期（见 [../trace-model/docs/ENV_VARS.md](../trace-model/docs/ENV_VARS.md)）。`ref_cycles.txt` 是在这个设置下标定的。
 
 ## 3. 必须具备的 harness
 
@@ -23,20 +25,20 @@
 
 | harness | 作用 | 位置 / 命令 |
 |---|---|---|
-| gate | 64 个测试（含 pf-stress、itt-dispatch），周期与基线一致 | `scripts/run_gate.sh build/simulator results/gate` |
+| gate | 64 个测试（含 pf-stress、itt-dispatch；`memory-stress`、`load-store`、`smc-*` 不在 gate 里），周期与基线一致 | `scripts/run_gate.sh build/simulator results/gate` |
 | 大程序 | dhrystone 64 次、coremark 2 次迭代（2026-11-04 起固定为这两个缩短版）、memory-stress、smc-div、smc-addi；当前标准周期见 `trace-model/docs/PROJECT.md` 的 Gate 第 4 条，随配置变化更新 | dhrystone/coremark 在 `rtl/programs/big`，其余在 `trace-model/build/tests`；每次改动后检查 |
 | Linux | 镜像 `~/personal/AI-Huma-data/linux/linux.bin`（`function-model/linux/mkimage.sh`，`MEM=0x10000000`），从复位启动到 `rv32 login:` | 合入 main 前必跑 |
 | small-LLC 检查 | 默认 8 MiB LLC 在小测试里不会换出，用 64 KiB LLC 检查 DDR 写回路径 | `scripts/llc_small_check.sh $PWD <baseline-sim/src 绝对路径>` |
-| lockstep 影子 | 把冻结的原模块和重写的模块在同一模拟里并行跑，每个阶段比较输出和状态摘要，不一致退出码 2 | `scripts/*_shadow.sh`，参考副本在 `tests/*_ref` |
-| 随机差分 | 随机激励下比较重写模块和冻结原版：`bpu_diff`、`csr_diff`、`idu_diff`、`pre_diff`、`ddr_diff`；闭环 `llc_diff`、`ic_diff` | `scripts/*_diff.sh` |
-| 不变量检查 | 实验特性自带的每周期检查，例如移动消除的 `ME_CHECK=1`（引用计数一致、无物理寄存器泄漏） | 环境变量开启 |
+| lockstep 影子 | 把冻结的原模块和重写的模块在同一模拟里并行跑，每个阶段比较输出和状态摘要，不一致退出码 2 | 现只剩 `scripts/lsu_shadow.sh`，参考副本在 `tests/*_ref` |
+| 随机差分 | 随机激励下比较重写模块和冻结原版：`bpu_diff`、`ddr_diff`；闭环 `llc_diff`、`ic_diff` | `scripts/bpu_diff.sh`、`ddr_diff.sh`、`llc_diff.sh`、`ic_diff.sh`（`csr_diff`/`idu_diff`/`pre_diff` 只剩 `tests/` 里的源码，没有脚本） |
+| 不变量检查 | 实验特性自带的每周期检查，例如移动消除的 `ME_CHECK=1`（引用计数一致、无物理寄存器泄漏） | 环境变量开启（全部环境变量见 [../trace-model/docs/ENV_VARS.md](../trace-model/docs/ENV_VARS.md)） |
 
 ### 3.2 rtl
 
 | harness | 作用 |
 |---|---|
 | lint | `scripts/lint.sh`（按目录、规范 + `-Wall`）和 `scripts/lint_chip.sh`（以 `soc_top` 为顶的整芯片 `-Wall`）都要 0 警告；改参数前用 `CFG=<配置包> scripts/lint_chip.sh` 预查写死的位宽 |
-| 逐条对比门禁 | `scripts/fm_gate.sh`：`ref_cycles.txt` 里 66 个程序（gate + vm + dhrystone + coremark）在整核测试平台上逐条对比 function-model，全部通过；同时报告与 trace-model 周期（`ref_cycles.txt`）不同的个数 |
+| 逐条对比门禁 | `scripts/fm_gate.sh`：`ref_cycles.txt` 里 69 个程序（gate + vm + 定向测试 + dhrystone + coremark）在整核测试平台上逐条对比 function-model，全部通过；同时报告与 trace-model 周期（`ref_cycles.txt`）不同的个数 |
 | Linux | 整核测试平台（`SOC_FM=1`、`SOC_VOPT="--threads 4 -DTTG_EBREAK_TRAP"`），`SOC_TB_FM=1 SOC_TB_SEMIHOST=1` 从复位启动到 `rv32 login:`，全程逐条对比（数小时） |
 | 综合对比 | `scripts/synth_cfg.sh`：受影响模块在改动前后各综合一遍（面积代理，见 `rtl/docs/09-synthesis-report.md`） |
 | 已退役（2026-11-04） | 模块边界 trace 回放、整程序实时锁步、随机 trace：随旧参考模型退役，脚本在 rtl 标签 `legacy-reference` |
@@ -97,11 +99,26 @@
 2. **trace-model 分两步提交**：先加开关、默认值保持原设计（gate 与基线逐个相同、大程序周期不变）；再单独提交新的默认值，同时更新 `results/baseline/baseline.csv`（每个 gate 程序都以 difftest Success 结束、无不一致）和 `docs/PROJECT.md` 的大程序标准周期。
 3. **rtl 跟着 trace-model 的默认值走**：`make cfg` 不带 `-D`，生成的 `ttg_cfg_pkg.sv` 必须与实验时用的配置包逐字节相同；`scripts/ref_cycles.txt` 换成新周期，并与 trace-model 的 `baseline.csv` 交叉核对。写死的位宽、维度改成从配置推出，和改参数分开提交。
 4. **在提交后的代码上复验**（不能拿实验时的结果代替）：
-   - trace-model：gate 62/62，大程序，Linux 从复位启动到 `rv32 login:`；
-   - rtl：`lint.sh`、`lint_chip.sh` 0 警告；`fm_gate.sh` 66/66，周期与 trace-model 逐个相等；串口输出与上一版一致（打印计时器的 `timer-mmio` 除外）；Linux 从复位启动到 `rv32 login:`，全程逐条对比；
+   - trace-model：gate 全部通过（64/64，周期等于基线），大程序，Linux 从复位启动到 `rv32 login:`；
+   - rtl：`lint.sh`、`lint_chip.sh` 0 警告；`fm_gate.sh` 69/69（以 `ref_cycles.txt` 的个数为准），周期与 trace-model（`LSU_PIPE_NOWD=1`）逐个相等；串口输出与上一版一致（打印计时器的 `timer-mmio` 除外）；Linux 从复位启动到 `rv32 login:`，全程逐条对比；
+   - 动到位宽相关代码时再验 XLEN=64（第 2 节“位宽”）；
    - 原配置参数下的回归：改动若声称“原配置下不变”，用原配置包再跑一遍门禁确认周期逐个相同。
 5. **性能和面积**：固定负载（第 5.2 节）+ quick SPEC（`trace-model/scripts/spec/replay.sh quick`）；受影响模块的综合前后对比。
    - **旧配置（main）的 SPEC 数字先查记录，不要重跑**：先看 `trace-model/results/baseline/baseline.csv`、`MAIN_RECORDS.md`、`LOG.md`（例如 `deb15b4` 已记录合并后全量 580/580）。记录里有同一预热方式、同一检查点的结果就直接引用；只有记录缺失，或 main 自那次记录之后周期有变化（改了模型默认值），才重跑，且只重跑缺的点或抽样核对。SPEC 一律上服务器，用法、命令、现成的 main 结果见 [SERVER.md](SERVER.md)；新配置才需要全量跑。
    - **SPEC 默认开 `PMU=1`**：每次跑 SPEC（quick、30 点、全量）都带 `PMU=1`，结果里要有 TMA 一级（retiring / bad-spec / frontend / backend）。PMU 不改周期，开了没有代价；没开的结果事后补不回来。性能对比表里 TMA 一级新旧差异和周期一起给。
 6. **记录**：`MAIN_RECORDS.md` 一行 + “变化”一节；`LOG.md` 每个 commit 一行；`EXPLORATION.md` 对应实验的状态改成“已合入”；`TODO.md` 删除已完成项。
 7. **合入**：各子仓库把分支快进合入 `main`，总仓库更新子模块指针并提交。提交作者用 `tututugege <903306512@qq.com>`。没有明确要求不推送。
+
+### 6.1 文档整理
+
+文档和代码一样会过时（已合入的工作还写着“未合入”、已删的开关还在文档里、命令早已跑不通），所以整理文档是合入流程的一部分，不是事后补。
+
+- **(a) 每次合入 main，同一个提交里**检查并更新：总仓库 `README.md`、`MAIN_RECORDS.md`、`EXPLORATION.md`（对应实验的状态和索引行）、`TODO.md`（做完的删掉、新发现的补上）、`LOG.md`，以及受影响模块的文档（子仓库 README、`docs/`、rtl `docs/modules/`、`ENV_VARS.md`）里的过时说法。
+- **(b) 定期全面审查四个仓库（总仓库、function-model、trace-model、rtl）的全部文档**：每月一次，另外在大改动之后（例如新的 XLEN / ISA 一步）加做一次。清单：
+  1. 过时的分支、状态词（“未合入”“未提交”“待合入”“未推送”）；
+  2. 已删除的宏、开关、环境变量（对照 `include/config.h` 和 `trace-model/docs/ENV_VARS.md`）；
+  3. 失效的路径和链接（所有相对链接必须能打开）；
+  4. 命令还能不能跑（脚本存在、参数正确、示例的程序个数和路径对得上）；
+  5. 文档之间数字不一致（README、MAIN_RECORDS、EXPLORATION、TODO、LOG、子仓库文档）；
+  6. 已有功能没有文档（新环境变量、新脚本、新配置参数）。
+- **(c) 审查结果记在 [LOG.md](LOG.md)：每个仓库一行**（审查了什么、改了什么、没能核实的留给谁）。历史实验记录（EXPLORATION.md）只追加，只改状态列和索引里已经不对的字段，过时内容加“已过时”说明而不是改写历史。

@@ -7,7 +7,7 @@
 | **硬件 PMU** | rtl `rtl/pmu/`（计数器块 + HPM CSR），事件由核内已有信号产生 | 每个事件是“某个信号每拍加几”；64 位计数器；软件能读；顶层 TMA 一、二级只靠这些计数器就能算 | 看不到“是哪条指令”；计数器个数有限（8 个可编程 + cycle/instret） |
 | **trace-model 分析层** | trace-model `back-end/Pmu*.cpp`、`scripts/pmu/pmu_report.py` | 同样的计数器（全部同时计）+ 谁堵住了提交的逐 PC 画像、直方图（每拍提交数、ROB/LDQ/STQ 占用、未完成缺失数）、按时间的相位曲线 | 不是硬件，不能随 RTL 上芯片 |
 
-事件表 [trace-model `include/pmu_events.def`](../trace-model/include/pmu_events.def) 是**唯一来源**：trace-model 的事件向量、RTL 的 `pmu_ev_pkg.sv`（`rtl/scripts/gen_pmu_pkg.py` 生成）、分析脚本都读它，事件号在三处含义相同。
+事件表 [trace-model `include/pmu_events.def`](../trace-model/include/pmu_events.def)（2026-11-12：85 个事件，其中 19 个标 `// model-only`，RTL 生成器跳过，所以 RTL 事件总线 `PMU_NUM_EV` = 66；本文最初写的 52 个事件已过时）是**唯一来源**：trace-model 的事件向量、RTL 的 `pmu_ev_pkg.sv`（`rtl/scripts/gen_pmu_pkg.py` 生成）、分析脚本都读它，事件号在三处含义相同。
 
 ## 1. 事件与 TMA
 
@@ -28,16 +28,16 @@ slots = SLOT_FIRE + SLOT_KILLED + SLOT_FE_EMPTY + SLOT_BE   （SLOT_BE = 下面�
 ## 2. 硬件 PMU（rtl `rtl/pmu/pmu.sv`）
 
 ```
-事件总线 ev_inc[52][8] ──► mcycle  ┐  +ev[CYCLES]
+事件总线 ev_inc[66][8] ──► mcycle  ┐  +ev[CYCLES]
                           minstret │  +ev[INSTRET]
-                          HPM 3..10│  各自 mhpmevent 选一路（52:1 × 8 位）+ 64 位加法器
+                          HPM 3..10│  各自 mhpmevent 选一路（66:1 × 8 位）+ 64 位加法器
 CSR 口 (addr, wen, wdata, prv) ◄──►  mcountinhibit / mcounteren / mhpmeventN / 计数器高低半 / user 影子
 ```
 
 - 总线：每个事件一条 `PMU_INC_W`（8）位的通道，值 = 这拍的增量；事件号 = 通道号；`mhpmevent[7:0] = 事件号 + 1`（0 = 不计数，RISC-V 惯例）。
 - 标准 CSR 地址：`mcycle/minstret/mhpmcounter3..10`（0xB00/B02/B03..，高半 0xB80..）、`mhpmevent3..10`（0x323..）、`mcountinhibit`（0x320，位 0 CY、位 2 IR、位 3+k HPM k）、`mcounteren`（0x306）、user 只读影子 `cycle/instret/hpmcounter`（0xC00..，非 M 态由 mcounteren 放行）。写和同拍增量冲突时写赢；写 mcountinhibit 之后计数立刻停。
 - 没有溢出中断（64 位，用不着）。没有 `time`。
-- 面积：每个 HPM 约 64 个触发器 + 8 个事件选择位 + 一个 52:1 的 8 位选择器 + 64 位加法器；整个 PMU（8 个 HPM）约 750 个触发器。**还没综合**，数字是估计。
+- 面积：每个 HPM 约 64 个触发器 + 8 个事件选择位 + 一个 66:1 的 8 位选择器 + 64 位加法器；整个 PMU（8 个 HPM）约 750 个触发器。**还没综合**，数字是估计。
 - 验证：`tests/pmu/run.sh`——对 C++ 模型做 30 万拍随机（随机事件增量、随机 CSR 读写、M/非 M 特权、跨 32 位进位），逐拍比较 hit/illegal/rdata，最后比较全部计数器；`PMU_TB_MUTATE=1` 故意改坏模型，必须报错（已确认能抓到）。lint 干净。
 
 ### 状态

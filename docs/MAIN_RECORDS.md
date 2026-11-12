@@ -28,6 +28,21 @@
 
 ## 变化
 
+### 2026-11-12 rv64imab 迁移（EXP-029）
+
+- **配置变化**：
+
+| 参数 | 旧值 | 新值 |
+|---|---|---|
+| 位宽 | 只有 rv32imab | `XLEN` 是构建参数，**默认 32（行为和周期不变）**；RTL `XLEN_BITS`（配置包 `ttg_cfg_pkg.sv`）、模型和 function-model 的 `-DXLEN` 取 64 即 rv64imab + Sv39 |
+| 乘除延迟（XLEN=64） | — | `MUL_MAX_LATENCY` 3、`DIV_MAX_LATENCY` 32（XLEN=32 仍是 2 / 16） |
+| RTL `rob_pkg` 位宽常量 | `XLEN` | `ROB_XLEN`（与 `-DXLEN` 重名，`DEBUG=1` 的 rv64 测试平台因此编不过；2026-11-12 同日清理） |
+
+- **设计改动**：function-model RV64IMAB、Sv39、Spike 对拍、rv64 Linux 镜像、检查点 v4 / BBV；trace-model 接口层、译码、Sv39 MMU、64 位 CSR、PC 加宽、外设 8 字节；RTL 后端 XLEN 数据通路、LSU / dcache 8 字节数据、Sv39 TLB 与页表遍历、前端 / BPU PC 加宽、测试平台 XLEN 化（`SOC_XLEN`、`FMLIB`、`SOC_TB_LOG`）；跑 rv64 程序发现并修了 4 个 RTL bug（dcache 填充转发 / 写回缓冲写死 4 字节、DIV 唤醒倒计时、`lp_ovl` 宽度）和 1 个模型 bug（`sstatus` 视图丢 UXL）。同日清理：模型删 5 个无引用宏和 DDR 延迟推算链、6 个调试环境变量，其余环境变量写进 [trace-model/docs/ENV_VARS.md](../trace-model/docs/ENV_VARS.md)。
+- **验证范围**：见上表最上一行（XLEN=32 全套回归 + rv64 的 53 个 cpu-tests、Linux 到 `rv64 login:`）。没跑：F/D、C、SPEC rv64、rv64 的综合和面积；RTL 的 rv64 配置只作为 `XLEN_BITS=64` 副本验证，`back_top.sv` / `exu.sv` / `soc_top.sv` 的生成器没同步（见 TODO）。
+- **已知问题**：对 RTL 比周期必须给模型设 `LSU_PIPE_NOWD=1`（否则 63 周期看门狗让 store 重发，`crc32` 等差几十周期，不是 RTL 偏差）；function-model 的 rv64 MMIO `sd` / `ld` 只按 4 字节读写设备寄存器（Linux 不受影响）。
+- **对应记录**：EXPLORATION.md EXP-029；总仓库、function-model `b388f39`、trace-model `ccc2d0c`、rtl `8dbb7cd`；数据 `~/personal/AI-Huma-data/linux_rv64`。
+
 ### 2026-11-11 紧凑 ROB + 寄存器 BPU 额度，同批清理（EXP-028）
 
 - **配置变化**：

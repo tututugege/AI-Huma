@@ -36,7 +36,7 @@ RTL_SRC=/Users/ruyaoh/personal/AI-Huma/<你的 trace-model worktree> RTL_DST=/ro
 
 - 要点：`third_party`、`softfloat.a` 不在 git 里，从 `/root/lsuipc/tm` 拷；`points_*.txt` 被 `*.txt` 忽略，从 `/root/AI-Huma/trace-model/scripts/pf/` 拷；`-march=native` 要改成 `x86-64-v3`（服务器不是同一种 CPU）。
 - **编译期宏**（`CFG_*`，`#ifndef` 保护的）用 `make EXTRA_CXXFLAGS='-DCFG_XXX=8 ...' BUILD_DIR=build_w8` 另建构建目录，不同宏各用各的目录。**运行时开关**（环境变量，如 `LSU_PIPE`、`BPU_PIPE`）直接在起任务时用 `env` 传。
-- 编译后先校验：`build/simulator /root/AI-Huma/trace-model/validate/dhrystone.bin`，周期应与本地相同。
+- 编译后先校验：`build/simulator /root/AI-Huma/rtl/programs/big/dhrystone.bin`（`trace-model/validate/` 已不存在），周期应与本地同一提交相同（当前 main 为 116,774，见 MAIN_RECORDS 最新行；模型对 RTL 比周期要加 `LSU_PIPE_NOWD=1`，对服务器上的 SPEC 周期比较不需要）。
 
 ## 3. 起 SPEC 任务
 
@@ -60,6 +60,8 @@ RTL_SRC=/Users/ruyaoh/personal/AI-Huma/<你的 trace-model worktree> RTL_DST=/ro
 - 拉回本地：`./fleet.sh pull`（默认进 `pfexp_cloud`），或在 `all` 里 `tar czf` 后 rsync 取。
 
 ## 5. 服务器上现成的 main 结果（不要重跑）
+
+> **已过时的部分**：下表是 EXP-015 时期的 main（2026-11-08）。之后 main 又变了多次（EXP-019/020/023/024/025/027/028），最近一次合入（EXP-028 紧凑 ROB，2026-11-11）的 SPEC 全量 580 点数字和分数见 [MAIN_RECORDS.md](MAIN_RECORDS.md)，原始结果在本机 `~/personal/AI-Huma-data/robc/full/`（含 `score2.py`），服务器上的目录是否还在未核实；比较新实验时先用这些，不要用下表。
 
 | 内容 | 位置 | 说明 |
 |---|---|---|

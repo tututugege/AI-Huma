@@ -8,7 +8,7 @@ AI-Huma/                     总仓库：全项目文档（本目录）
 ├── function-model/          功能模型：架构行为的标准；SPEC BBV/SimPoint/检查点
 ├── trace-model/             时序模型：周期的标准；核参数的唯一来源（include/config.h）；架构探索
 └── rtl/                     SystemVerilog 实现 + 整核测试平台
-~/personal/AI-Huma-data/     生成的数据（不进仓库）：spec-rv32imab/、linux/、tools/
+~/personal/AI-Huma-data/     生成的数据（不进仓库）：spec-rv32imab/、linux/、linux_rv64/、tools/ 等
 ```
 
 ## 1. 我要……看哪份
@@ -21,7 +21,10 @@ AI-Huma/                     总仓库：全项目文档（本目录）
 | 查接下来要做什么 | [TODO.md](TODO.md) | — |
 | 查某次改动做了什么、怎么验证的 | [LOG.md](LOG.md) | 对应仓库的 git log |
 | 做一次架构/性能探索 | [WORKFLOW.md](WORKFLOW.md) 第 4、5.1 节 | [EXPLORATION.md](EXPLORATION.md)（先看有没有人做过） |
-| 把探索结论合入 main | [WORKFLOW.md](WORKFLOW.md) 第 6 节（步骤清单） | [MAIN_RECORDS.md](MAIN_RECORDS.md) 的格式 |
+| 把探索结论合入 main | [WORKFLOW.md](WORKFLOW.md) 第 6 节（步骤清单，含 6.1 文档整理） | [MAIN_RECORDS.md](MAIN_RECORDS.md) 的格式 |
+| 查某个环境变量（运行时开关）的含义和默认值 | trace-model [docs/ENV_VARS.md](../trace-model/docs/ENV_VARS.md)（全部 103 个） | trace-model [docs/PROJECT.md](../trace-model/docs/PROJECT.md) |
+| 构建 / 运行 rv64（`XLEN=64`） | [../README.md](../README.md) “复现”的 rv64 段 | rtl [scripts/README.md](../rtl/scripts/README.md)、[EXPLORATION.md](EXPLORATION.md) EXP-029 |
+| 在云服务器上跑 SPEC | [SERVER.md](SERVER.md) | [PMU.md](PMU.md)（TMA 口径） |
 | 构建、跑 trace-model 和它的 gate | trace-model [README.md](../trace-model/README.md) | trace-model [docs/PROJECT.md](../trace-model/docs/PROJECT.md)（架构、gate、参数开关） |
 | 改核参数（IQ 大小、端口数……） | trace-model [docs/PROJECT.md](../trace-model/docs/PROJECT.md) “Configuration knobs” | rtl [scripts/README.md](../rtl/scripts/README.md)（`make cfg`、`lint_chip.sh`） |
 | 写或改 RTL | rtl [docs/README.md](../rtl/docs/README.md) | [01 编码规范](../rtl/docs/01-rtl-coding-standard.md)、[modules/](../rtl/docs/modules/) 里该模块的笔记 |
@@ -38,10 +41,11 @@ AI-Huma/                     总仓库：全项目文档（本目录）
 | 文档 | 管什么 | 什么时候写 |
 |---|---|---|
 | [GUIDE.md](GUIDE.md) | 本导航 | 增删文档时 |
-| [WORKFLOW.md](WORKFLOW.md) | 全项目的规则和流程：分支与提交、正确性标准、harness、实验流程、记录要求、合入 main 的步骤 | 规则变化时 |
-| [TODO.md](TODO.md) | **唯一的**待办清单（进行中 / 待做：验证、RTL 实现、流程与工具） | 随时；做完删除并在 LOG 留一行 |
+| [WORKFLOW.md](WORKFLOW.md) | 全项目的规则和流程：分支与提交、正确性标准（含 XLEN）、harness、实验流程、记录要求、合入 main 的步骤、文档整理（合入时检查 + 每月全面审查） | 规则变化时 |
+| [TODO.md](TODO.md) | **唯一的**待办清单（进行中 / 待做：验证、RTL 实现、各次合入后的收尾、流程与工具） | 随时；做完删除并在 LOG 留一行 |
 | [LOG.md](LOG.md) | 每个 commit 一行：做了什么、怎么验证、结论 | 每次提交 |
 | [EXPLORATION.md](EXPLORATION.md) | 每次架构/性能探索一节（EXP-编号）：问题、方法、模型近似、结果、结论；不论是否合入 | 每次探索 |
+| [SERVER.md](SERVER.md) | 云服务器怎么用：`fleet.sh`、发源码、起 SPEC 任务、取结果、现成的 main 结果 | 换服务器或流程变化时 |
 | [PMU.md](PMU.md) | 性能监控单元：事件表、TMA 口径、硬件计数器块、trace-model 分析层、接进 RTL 的计划 | PMU 设计变化时 |
 | [MAIN_RECORDS.md](MAIN_RECORDS.md) | 每次合入 main 一行（版本、正确性、性能、RTL 周期、综合）+ 一节“变化”；**当前数字的权威来源** | 每次合入 main |
 
@@ -54,7 +58,7 @@ AI-Huma/                     总仓库：全项目文档（本目录）
 | [docs/SPIKE_DIFFTEST.md](../function-model/docs/SPIKE_DIFFTEST.md) | 与 Spike 的对比 |
 | [docs/FRONTDOOR_RESTORE.md](../function-model/docs/FRONTDOOR_RESTORE.md) | 前门检查点恢复（`ckpt2stub`） |
 | [docs/SIMPOINT_SPECINT2006.md](../function-model/docs/SIMPOINT_SPECINT2006.md) | SimPoint 原理；现行流程与上游流程的对照 |
-| [scripts/spec/README.md](../function-model/scripts/spec/README.md) | 现行 SPEC 检查点流程（rv32imab、Linux 镜像、ref 输入、参数、耗时） |
+| [scripts/spec/README.md](../function-model/scripts/spec/README.md) | 现行 SPEC 检查点流程（rv32imab、Linux 镜像、ref 输入、参数、耗时；rv64 的 SPEC 流程还没做） |
 | [linux/README.md](../function-model/linux/README.md) | Linux 镜像（OpenSBI + 内核 + initramfs）的生成 |
 
 ### trace-model（英文）
@@ -63,6 +67,8 @@ AI-Huma/                     总仓库：全项目文档（本目录）
 |---|---|
 | [README.md](../trace-model/README.md) | 是什么、构建、gate |
 | [docs/PROJECT.md](../trace-model/docs/PROJECT.md) | 架构、来历、gate 和大程序标准周期、参数开关（`CFG_*`）、验证手段 |
+| [docs/ENV_VARS.md](../trace-model/docs/ENV_VARS.md) | 运行时读取的全部环境变量（103 个），按用途分组，含默认值；比周期必须设 `LSU_PIPE_NOWD=1` |
+| [docs/LSU_PIPE.md](../trace-model/docs/LSU_PIPE.md)、`docs/LSU_PIPE_IPC.md` | 分级 LSU 的设计和 IPC 修复记录 |
 | `front-end/*.md` | 上游带来的前端写法规范和训练函数清单（前端代码的参考） |
 | `docs/history/` | 蒸馏计划 `PLAN.md` 和各阶段记录（P0–P3），已完成 |
 
@@ -100,6 +106,7 @@ AI-Huma/                     总仓库：全项目文档（本目录）
 ## 4. 维护约定
 
 - 新增或挪动文档时更新本导航；挪动后检查相对链接（所有仓库都不应有坏链接）。
+- 文档整理的规则（每次合入 main 时检查、每月全面审查及清单）见 [WORKFLOW.md](WORKFLOW.md) 第 6.1 节。
 - 退役的文档不删，挪进本仓库的 `docs/history/`，并在索引里注明。
 - 新写的文档用中文；trace-model 已有的英文文档暂不翻译。
 - 子 agent 交回的设计文档（如 `LDSTA_MERGE.md`、`UNIFIED_FTQ.md`）跟着它所在的实验分支提交，结论摘要写进 [EXPLORATION.md](EXPLORATION.md)。
