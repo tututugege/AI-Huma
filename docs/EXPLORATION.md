@@ -48,6 +48,7 @@
   - `tests/rv64/gen_fp.py`：约 13 万行汇编、35 万条指令，F/D 每条指令 × 5 种舍入模式 × 27 个特殊操作数（±0、1、次正规数、最大有限数、∞、qNaN/sNaN、整数转换的边界），含 NaN-boxing 违规、动态舍入、`fcsr` 访问和 `flw/fld/fsw/fsd`。
   - `tests/rv64/gen_fp_trap.py`：FS 取 Off / Initial / Clean / Dirty 时每类指令和 CSR 的行为、`mstatus/sstatus` 的 FS/SD、近 900 个保留编码（保留舍入模式、半精度/四精度格式、未用 funct7、保留的 load/store 宽度）、动态 rm 取保留值。
   - `tests/rv64/fp-kernels.c`：编译器（clang，`-march=rv64imafd -mabi=lp64d`）生成的矩阵乘、Horner、牛顿迭代、整数 ↔ 浮点转换、fma、比较。
+  - 官方 riscv-tests `rv64uf`（11 个）+ `rv64ud`（12 个）：自检通过且与 Spike 逐条一致，23/23（`tests/rv64/riscv-tests-fp.sh`；用例来自 `~/personal/simulator/baremetal/riscv-tests`，该检出的 `riscv_test.h` 是适配过的，用 `ebreak` 报告结果，脚本另加了一个头文件打开 FS）。
   - 前门 / 后门恢复：两个在 `fp-kernels` 中段（浮点寄存器非平凡）生成的检查点，各 3000 条指令、30 个状态摘要（含 32 个浮点寄存器）完全相同。
   - 回归：rv64 的 54 个整数程序仍是 52 个一致（2 个已知平台差异）；rv32 的对拍结果和改动前一致（`load-store`、`software-interrupt-vectored`、`timer-interrupt-mask` 三个在改动前就不一致）。
 - **顺带修的老 bug**：`csrrwi csr, 0`（`csrwi` 立即数为 0）原来不写 CSR（`we = funct3 == 1 || rs1 != 0` 漏了 `funct3 == 5`），Spike 会写；现在 `csrrw/csrrwi` 总是写。影响：rv32 / rv64 默认构建里 `csrwi x, 0` 的行为变对了，周期模型和 RTL 不受影响（它们不执行这条路径的差别）。
