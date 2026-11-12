@@ -182,6 +182,7 @@
 ## EXP-026 sdip（Breadcrumbs）数据流预取器，挂在重命名阶段
 
 - **日期**：2026-11-10。**分支**：trace-model `exp/sdip`（`ffdae56` 模型、`e81aef2` 只预取 DDR 地址；工作区 `trace-model-sdip`，基于 main `e84e53a`），**未合入、未推送**；RTL 没有做。设计与 ChampSim/gem5 上的实验记录在 trace-model `exp/regdataflow`（`docs/experiments/exp022_regdataflow.md` §27、§31、§32、§38）。
+- **非 SPEC 负载的流程**（EXP-022 的 GAP / PolyBench / Ligra / Olden 数据）：镜像、BBV、SimPoint、检查点见 `function-model/scripts/wl/README.md`（只支持 rv32imab，数据目录 `~/personal/AI-Huma-data/wl-rv32imab`）；trace-model 的 `scripts/pf/run_point.sh` 设 `SPEC=$WLDATA` 即可回放。
 - **问题**：EXP-022 里的 sdip（约 2 KB 状态）在 ChampSim 上对 SPEC 与 Berti 持平、对 GAP/PolyBench 间接访问很强；用户提出它的硬件开销很小、主要补间接访存。它在我们的周期模型里相对默认的 h1（EXP-009）有多少收益，能不能替换 h1。
 - **实现**（`MemSubSystem/include/Sdip.h` 一个头文件，开关 `PF_SDIP=0|1|2`，默认 0：模型逐周期等同 main，gate 63/63；`1` = sdip 替换 h1，`2` = sdip 候选先发、h1 在后）：
   - **重命名阶段**（`Ren::comb_fire`）：每个物理寄存器一个标签（仿射步长 / 新指针 / 写者 PC / 来自某条 32 位 load 的链及左移量），由指令编码和源寄存器标签算出；16 项栈槽保存/恢复标签；load 带着 dsig（步长或类别）和链信息走到 L1D（LSU 把 PC、VA、dsig 作为旁带传给 L1D 第 2 级）。

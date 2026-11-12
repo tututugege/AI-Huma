@@ -306,3 +306,4 @@
 说明：trace-model 早期的补丁队列（patches 0001–0061）记在旧仓库 `~/personal/tututugege-trace` 的 `docs/` 里。
 | 2026-11-12 | 总仓库 `main` | 本行所在提交 | 四个仓库文档整理后更新子模块指针：function-model `d129f0e`、trace-model、rtl `543f817`（各仓库 README / 入口文档重写、rv64 与紧凑 ROB 的模块文档补注、已删宏与环境变量清理、链接检查）；顺手改 3 处过时注释（`agu.sv`、`llc_small_check.sh`、`BPU_pipe.h`） | 各仓库 lint / 编译不受影响（仅文档与注释） | 未推送 |
 | 2026-11-12 | trace-model `main` | 见总仓库提交 | 删除 `baremetal/x0-bypass-test`（`host-test` 引用已删的 `RealLsuPerf.cpp` 和不存在的 `LsuState` 成员，早已不能构建；需要时从 git 历史恢复）；README 同步 | 仅删除 | 未推送 |
+| 2026-11-12 | function-model `main` | 见总仓库提交 | 提交非 SPEC 负载流水线 `scripts/wl/`（`mk_wl.sh`、`run_bbv.sh`、`pipeline.sh`）并补 README（EXP-022 的 GAP / PolyBench / Ligra 数据用它，只支持 rv32imab）；删除 9 个空的 `ol_*` 目录、失败状态文件 `ol_voronoi.txt` 和指向自身的 `function-model` 软链接；EXPLORATION EXP-026 一节加指向 | 仅文档和脚本入库，脚本没有重跑 | 未推送 |
