@@ -6,6 +6,7 @@
 
 | 编号 | 日期 | 题目 | 分支 | 状态 | 一句话结论 |
 |---|---|---|---|---|---|
+| [EXP-030](#exp-030-rv64-的-fd-浮点扩展) | 2026-11-12 | rv64 的 F/D 浮点扩展（function-model 第一步，之后 trace-model、RTL） | function-model `exp/fd` | **function-model 完成，未合入**（trace-model、RTL 未开始） | `FP=1` 编译开关；directed 测试 + 编译器生成的浮点代码与 Spike 逐条一致；检查点版本 5；`FP=0` 的构建不变 |
 | [EXP-029](#exp-029-从-rv32imab-迁移到-rv64imab) | 2026-11-11 | 从 rv32imab 迁移到 rv64imab（function-model → trace-model → RTL，Linux 启动到登录） | function-model `exp/rv64`、trace-model `exp/rv64-on-main`、rtl `exp/rv64` | **已合入 main（2026-11-12，已推送）**：function-model `b388f39`、trace-model `ccc2d0c`、rtl `8dbb7cd` | rv64 在三个层次都跑通：53 个 cpu-tests、Sv39 测试、Linux 从复位到 `rv64 login:`（RTL 约 1.05 亿周期，逐条对比 0 个不一致）；XLEN=32 完全不变 |
 | [EXP-028](#exp-028-rob-压缩加大-rob--prf重命名整组等待) | 2026-11-11 | ROB 压缩 / 加大 ROB、PRF / 重命名整组等待（`REN_AON`），删窗口后在当前 main 上重测（接手 2026-11-10 的未完成实验） | trace-model `merge/rob-compact`（`35b3af4`、`a11b1ca`）、rtl `exp/rob-compact`（`4e954d7`、`a905acd`）；统计 / `REN_AON` 留在 trace-model `exp/rob-compress` | 已合入 main（2026-11-11，默认开） | 30 点（按权重选）：整组等待 +0.59%（hmmer +7.5%），ROB192 不改重命名 −0.29%（hmmer −20.9%），ROB192 + 整组等待 +2.27%，ROB192 + PRF192 +3.06%，PRF160 +0.93%；ROB 行平均填 5.58/8，简单指令压缩比约 1.0–1.5；简单指令压缩不做；**紧凑 ROB（按序分配、前缀提交）+ BPU 训练额度 +2.89%（寄存器版本）**（ROB 仍 128 项，好于 ROB192 + 整组等待）；RTL 已做（fm_gate 69/69 周期与模型逐个相等，Linux 从复位连续启动到登录 0 不一致），`rob` 面积 +11.4%、深度 46 → 53；**SPEC 全量 580 点 +2.74%，分数 11.23 → 11.53 分/GHz**，12 个程序全部提升；已知回退：分支密集的短循环被 BPU 更新带宽卡住（gcc 4 个点 −37%、dhrystone +1.8% 周期） |
 | [EXP-027](#exp-027-最新-tma-分析与-0x87f00000-非缓存窗口删除) | 2026-11-11 | 最新 TMA 分析（12 程序最高权重点，main 配置）；查出 0x87f00000 非缓存窗口让 SPEC 普通数据走 MMIO；删除该窗口；PMU 缺失标记 64 位 bug | trace-model `exp/no-uncwin`（`62e4a8b`、`07d567c`）、rtl `exp/no-uncwin`（`1205bff`、`de8d0aa`） | 已合入 main（2026-11-11）；RTL Linux 13 段 13/13 | 删窗口后 SPEC 全量 580 点 12 程序几何平均 IPC **+10.75%**，直接换算分数 10.06 → 11.14 分/GHz（当前 main 10.13，删窗口后估 11.22；以前连乘的 10.53 偏高）（h264ref +137%、hmmer +35%、perlbench +6.3%，其余 ±0.3%）；0 个点变慢；不是微结构收益，是测量假象被去掉 |
@@ -33,6 +34,24 @@
 | [EXP-001](#exp-001-面积优化三个方向) | 2026-11-04 | 面积优化：FTQ 合并、LSU 端口、LD/STA IQ 合并 | trace-model `exp/area-explore` | 未提交、未合入 | 三个方向都能省面积，性能代价 0–1% |
 
 ---
+
+## EXP-030 rv64 的 F/D 浮点扩展
+
+- **状态：function-model 一步完成，在分支 `exp/fd` 上，未合入 main、未推送。trace-model 和 RTL 还没开始。**
+- **日期**：2026-11-12。**目标**：补标准 F/D（rv64），这样 SPECfp 和标准工具链的 `lp64d` ABI 才能跑；顺序是 function-model（Spike 对拍）→ trace-model（周期模型）→ RTL。F/D 先于 C，原因：F/D 是加法（新寄存器堆和浮点单元，整数路径不动），C 改的是前端（PC 2 字节对齐、取指跨行、预译码、BPU/I$/ITT），会让所有前端基线失效，要作为单独的实验。
+- **做法**：编译开关 `FP=1`（只能和 `XLEN=64` 一起用，默认 0，`FP=0` 的 rv32 / rv64 构建行为不变）；rv32 仍是 Zfinx。
+  - 状态：`CPU_state.fpr[32]`（64 位，单精度做 NaN-boxing，没有 box 好的读成规范 NaN `0x7fc00000`）、`fcsr`（`fflags`/`frm`）、`mstatus.FS`（Off 时所有浮点指令和 `fflags/frm/fcsr` 访问都是非法指令）和 `SD`（FS=Dirty 时置位，读 `mstatus/sstatus` 可见）；任何浮点寄存器写入或 `fflags` 变化把 FS 置 Dirty；`misa` 多了 F、D。
+  - 指令：`RVFD()` 处理 OP-FP（`fadd/fsub/fmul/fdiv/fsqrt`、`fsgnj*`、`fmin/fmax`、`fcvt.s.d/d.s`、`feq/flt/fle`、`fcvt.w/wu/l/lu` 两个方向、`fmv.x.w/d`、`fmv.w/d.x`、`fclass`）和四个融合乘加；`flw/fld/fsw/fsd` 并进 `RV32IM()` 的 load/store 代码（同一套地址翻译、缺页、MMIO、store 路径，只换寄存器堆）；运算都用仓库里的 softfloat，舍入模式、保留编码、`fcvt` 的 rm 检查、NaN 处理按 Spike 的行为。
+  - 检查点：格式版本 5（`CPU_state` 带 `fpr`，其后一个 `fcsr`）；`tools/ckpt2stub.py` 能读，前门恢复程序用 `fmv.d.x` / `csrw fcsr` 还原浮点状态，状态摘要里加入了浮点寄存器。
+  - Spike 对拍：ISA 串 `rv64imafdb_zbc_zbkb_zbkx`，逐条比较增加 f 寄存器；`scripts/build_spike.sh` 认 `FP=1`。
+- **验证**（全部是 Spike 逐条比对 x/f 寄存器和 CSR）：
+  - `tests/rv64/gen_fp.py`：约 13 万行汇编、35 万条指令，F/D 每条指令 × 5 种舍入模式 × 27 个特殊操作数（±0、1、次正规数、最大有限数、∞、qNaN/sNaN、整数转换的边界），含 NaN-boxing 违规、动态舍入、`fcsr` 访问和 `flw/fld/fsw/fsd`。
+  - `tests/rv64/gen_fp_trap.py`：FS 取 Off / Initial / Clean / Dirty 时每类指令和 CSR 的行为、`mstatus/sstatus` 的 FS/SD、近 900 个保留编码（保留舍入模式、半精度/四精度格式、未用 funct7、保留的 load/store 宽度）、动态 rm 取保留值。
+  - `tests/rv64/fp-kernels.c`：编译器（clang，`-march=rv64imafd -mabi=lp64d`）生成的矩阵乘、Horner、牛顿迭代、整数 ↔ 浮点转换、fma、比较。
+  - 前门 / 后门恢复：两个在 `fp-kernels` 中段（浮点寄存器非平凡）生成的检查点，各 3000 条指令、30 个状态摘要（含 32 个浮点寄存器）完全相同。
+  - 回归：rv64 的 54 个整数程序仍是 52 个一致（2 个已知平台差异）；rv32 的对拍结果和改动前一致（`load-store`、`software-interrupt-vectored`、`timer-interrupt-mask` 三个在改动前就不一致）。
+- **顺带修的老 bug**：`csrrwi csr, 0`（`csrwi` 立即数为 0）原来不写 CSR（`we = funct3 == 1 || rs1 != 0` 漏了 `funct3 == 5`），Spike 会写；现在 `csrrw/csrrwi` 总是写。影响：rv32 / rv64 默认构建里 `csrwi x, 0` 的行为变对了，周期模型和 RTL 不受影响（它们不执行这条路径的差别）。
+- **没做的**：半精度 Zfh；`RefCpuState`（`refcpu_api.h`）和 trace-model 的接口里没有浮点寄存器；trace-model 的浮点执行（发射队列、FMA 流水、`fdiv/fsqrt` 非流水延迟）和 RTL 的浮点单元；`mstatus` 写掩码里 WPRI 位 0、4 和 XS 与 Spike 不同（只有写全 1 才看得见）；F/D 的 SPEC 和 Linux 用户态验证。
 
 ## EXP-029 从 rv32imab 迁移到 rv64imab
 
