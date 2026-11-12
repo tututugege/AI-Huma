@@ -80,7 +80,7 @@ EXP-024 合入的是"STQ 内分组"的简化版 write buffer：4 个条目、每
 ## 待做：rv64 的收尾（EXP-029，2026-11-12 合入 main 后）
 
 - 生成文件欠债：`back_top.sv` / `exu.sv` / `soc_top.sv` 是手改的，`tools/gen_backtop.py`、`gen_soc_top.py`、`spec/*.io` 和 `gen_cfg_pkg.py`（`XLEN_BITS`）要同步，否则重新生成会丢 rv64 位宽。
-- 查 rv64 上 `crc32`（RTL 2306 vs 模型 2259）和 `memory-stress`（−180 周期）的周期差，疑为紧凑 ROB × rv64。
+- 对周期必须用 `LSU_PIPE_NOWD=1` 跑模型（否则 63 周期看门狗会让 store 重发，`crc32` 等程序差几十周期）；考虑把它设成 trace-model 默认或在 `cyc*.sh` 里写死。
 - 把 rv32 `memory-stress` 加进回归（rv32 子集 ≤15 万周期测不出大数组写回 bug）。
 - rv64 的 F/D、C、bitmanip 边界测试、SPEC rv64 检查点流程、FastWarm 的 Sv39、function-model rv64 的 MMIO `sd`/`ld` 回读、交互式登录测试。
 
