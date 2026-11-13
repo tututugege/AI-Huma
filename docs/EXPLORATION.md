@@ -74,7 +74,12 @@
   - **EXP-036 的回归**：trace-model 跑 rv32 Linux 时内核在 `kdevtmpfs` 里 NULL 解引用（预 C 的 `195dad4` 也一样）。二分到 `067f02e`（拷贝优化）：`Bridge::find` 的二分查找假定链按 uid 有序，重做 / 重放之后并不总是有序，丢了事实；`BRIDGE_FIND_CHECK` 报 “线性找到、二分没找到”。修法：二分没找到时用线性扫描确认。教训：EXP-034…036 合入时只跑了 gate 和大程序，没有跑 trace-model 的 Linux（`WORKFLOW.md` 要求合入前必跑）。
   - **`lastHalf` 的一个遗漏**：C 内核在 `pc=c00044b4`（`auipc` 的中间）报非法指令。原因：一个预译码 flush 的修正目标正好是本组的块尾（顺序继续）时，我把 `lastHalf` 清掉了，重取的组就从跨界指令的后半条开始解码。修法：顺序继续的预译码 flush 保留 `lastHalf`，flush 之后的重取周期不清。
   - **结果**：rv32 Linux 从复位到 `rv32 login:`（2 亿周期上限内）：不带 C 的镜像在 `RVC=0` 和 `RVC=1` 上、内核和 OpenSBI 带 C 的镜像在 `RVC=1` 上，都 0 个 oops；`RVC=0` gate 64/64、C gate 62/62 不变。`misa.C` 在 trace-model 的 CSR 文件里也补上了。
-  - **rv64**：`RVC=1` 的 rv64 构建能编译，rv64 的 C 和不带 C 的 cpu-tests、`gen_rvc.py` 的 rv64 压力测试（含 Sv39 第二半字缺页 `rvc-sv39`）0 不一致；rv64 内核虚拟地址（高于 2^32）让 BPU 的块边界和 uBTB 目标按 32 位算，已修（pc_t 宽度，目标高位取块地址）；但 **rv64 Linux 在 trace-model 上无论带不带 C 都在 OpenSBI 横幅之后停住**（33M 条指令后没有内核输出），属于已有的问题，没有查。
+  - **rv64**：`RVC=1` 的 rv64 构建，rv64 的 C 和不带 C 的 cpu-tests、`gen_rvc.py` 的 rv64 压力测试（含 Sv39 第二半字缺页 `rvc-sv39`）0 不一致。rv64 Linux 在 trace-model 上原来起不来，现在 rv64g（不带 C）和 rv64gc（内核和 OpenSBI 带 C）都到了 `rv64 login:`，`fptest: PASS`，0 个 oops（`cb66f96`）。查到并修掉的 32 位残留：
+    1. BPU 的块边界用 32 位算、uBTB 的目标只存低 32 位（内核虚拟地址高于 2^32，块 bank 端口检查报错退出）；
+    2. 分级 LSU 的 LDQ / STQ 里 `vaddr` 是 32 位：内核访问高地址时地址被截断，一个 store 页错误反复触发（约 83 万次）；MMIO 读结果 `result` 也改成 `XLEN` 宽；
+    3. `LSU_MS_DATA` 的旧值模型整个按 32 位值计算，对 rv64 不成立：rv64 上关掉（rv32 不变）——这是 OpenSBI 之后内核几乎不运行、`rdtime` 模拟占 99% 时间的原因；
+    4. `ftq_slot_pc` 返回 `uint32_t`（BPU 误预测修复的块内位置比较对高地址永远不成立）、预译码检查器里 `PdInfo` 的 `pc` 是 `uint32_t`（RAS 压栈值和历史符号被截断）。
+    复查后还剩的 32 位字段：LSU 里按字（32 位）做的 store-to-load 转发（`LSU_MS_DATA`，rv64 已关）、DCache 写数据 `wdata`（物理侧字宽接口，rv64 的 `sd` 拆成两个字）、预测器索引用的 `st_pc` / `ldq_pc`（只影响哈希）、`FastWarm` 的 Sv32 页表遍历（只在快速预热模式用，rv64 不支持）；这些目前不影响功能，没有改。
   - **工作负载（带 C 对不带 C）**：同源 dhrystone（64 次）、coremark（2 次迭代），代码大小 −20% 到 −27%，指令数相同，周期：coremark 282,616 → 272,509（−3.6%）、dhrystone `-O0` 116,401 → 113,719（−2.3%）、`-O2` 35,869 → 34,387（−4.1%）；不带 C 的程序在 `RVC=1` 前端上与 `RVC=0` 相差 ±0.5%。
   - **前端统计**（`[RVC_FE]`）：coremark 带 C 时 43.5% 的指令是 16 位、每组 8.2 条指令；`lastHalf` 被用到的组约占 14%（24005 / 169948）。`FE_IPF`、`FE_BFAST` / `FE_RFAST` 与 `RVC=1` 一起跑 C 编译的 cpu-tests：60 个程序 0 个不一致。
 - **没做的**：S4 的两级预测校验（与 C 无关，是更一般的前端改动，没做）、RTL；S3 复核结论：`PreIduQueue` 已经是按指令的环形缓冲（64 项，每拍进最多 16 条、出 8 条），不用改；跨 cache line 的 32 位指令取指没有额外延迟（后半条按功能读取，乐观）；预译码检查器的两级、RAS 返回地址按长度（`pc+4` 仍在 BPU 的 RAS 压栈和 BTB 未命中目标里）；`FE_PAIR` 在 `RVC=1` 下没测；`RVC=1` 的 rv64 构建和 rv64gc Linux 没在 trace-model 上跑。

@@ -119,5 +119,4 @@ EXP-024 合入的是"STQ 内分组"的简化版 write buffer：4 个条目、每
 | trace-model 剩余小优化 | 每项不到 3%；状态标志整理 | 逐项做，gate 周期不变 |
 | EXP-015 的已知回退 | 全量 −1.20%：bzip2 −10.2%、libquantum −5.6%、hmmer −5.3%、h264ref −5.1% | 先用精确预热确认是不是快速预热对新 BPU 的偏差；真实回退看 TMA（前端空槽）；推测唤醒（模型 +2.9pp，硬件代价未测）；DCW 看门狗事件根因；SPEC 开 `PMU=1` 补 TMA |
 
-- trace-model 的 rv64 Linux：无论带不带 C 都在 OpenSBI 横幅之后停住（33M 条指令后没有内核输出）；rv32 Linux 已经正常。查明原因（先用 function-model 的状态摘要和 trace-model 的提交序列对比）。
-- 合入 main 之前必须跑 trace-model 的 Linux（`WORKFLOW.md`）；EXP-034…036 合入时漏了，造成 `Bridge::find` 的回归，把 Linux 检查做成脚本放进 gate 流程。
+- 合入 main 之前必须跑 trace-model 的 Linux（`WORKFLOW.md`）；EXP-034…036 合入时漏了，造成 `Bridge::find` 的回归。脚本已有：`scripts/linux_check.sh <模拟器> <镜像>`（登录提示出现且没有 oops）；还没做的是把它接进 `WORKFLOW.md` 的合入检查清单和 CI。
