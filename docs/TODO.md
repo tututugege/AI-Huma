@@ -118,3 +118,6 @@ EXP-024 合入的是"STQ 内分组"的简化版 write buffer：4 个条目、每
 | 推送 EXP-029 及之后的提交 | 远程已配好（`.gitmodules` 指向 `tututugege/AI-Huma-{func,trace,rtl}`），main 已推到 EXP-028；EXP-029 的合入、之后的宏/环境变量清理和文档审查只在本地 main（2026-11-12：总仓库领先 origin 7 个提交，trace-model 16、rtl 9、function-model 7） | 推送由用户决定；推送前总仓库子模块指针要指向各子仓库已推送的 commit |
 | trace-model 剩余小优化 | 每项不到 3%；状态标志整理 | 逐项做，gate 周期不变 |
 | EXP-015 的已知回退 | 全量 −1.20%：bzip2 −10.2%、libquantum −5.6%、hmmer −5.3%、h264ref −5.1% | 先用精确预热确认是不是快速预热对新 BPU 的偏差；真实回退看 TMA（前端空槽）；推测唤醒（模型 +2.9pp，硬件代价未测）；DCW 看门狗事件根因；SPEC 开 `PMU=1` 补 TMA |
+
+- trace-model 的 rv64 Linux：无论带不带 C 都在 OpenSBI 横幅之后停住（33M 条指令后没有内核输出）；rv32 Linux 已经正常。查明原因（先用 function-model 的状态摘要和 trace-model 的提交序列对比）。
+- 合入 main 之前必须跑 trace-model 的 Linux（`WORKFLOW.md`）；EXP-034…036 合入时漏了，造成 `Bridge::find` 的回归，把 Linux 检查做成脚本放进 gate 流程。

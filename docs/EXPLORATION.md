@@ -70,7 +70,14 @@
   - 修法：训练输入带每条提交指令的长度（`update_is_rvc`、`rf_is_rvc`），跟踪器、RAS、修复都按长度；类型预测器和 uBTB 项记住 call 是不是 16 位指令（预测时 RAS 压栈 `pc+2`）；预热回放也传长度。
   - 还有一处：一条 4 字节指令跨块尾时，跟踪器把下一块的起点记成指令末尾（`nxt`），而取指侧下一块从块尾开始（`lastHalf` 把块头半个字作废），uBTB 的项按错误的块起点存，`memory-stress-small` 里一个内层循环的 S0 一直不命中（override 2 万次，+8.6%）；改成跟踪器的块起点取块尾、期望的下一条指令地址仍是 `nxt`。
   - 结果：几何平均 0.975 → 0.920（C 编译 + `RVC=1` 比不带 C + `RVC=0` 少 8% 周期）；最慢的是 `pascal` 1.16（3141 条指令、2134 周期，冷启动占大头：同一个循环从 `0x5e` 和 `0x60` 两个块起点进入，各自单独学习）、`memory-stress-small` 1.03。`RVC=0` gate 64/64 不变；5 个定向压力测试仍 0 不一致。
-- **没做的**：S3–S5（RAS 带长度的一部分已在上面做了）；跨 cache line 的 32 位指令取指没有额外延迟（后半条按功能读取，乐观）；预译码检查器的两级、RAS 返回地址按长度（`pc+4` 仍在 BPU 的 RAS 压栈和 BTB 未命中目标里）；`FE_PAIR` 在 `RVC=1` 下没测；`RVC=1` 的 rv64 构建和 rv64gc Linux 没在 trace-model 上跑。
+- **Linux 与回归**（2026-11-13，已合入 trace-model `main` `538a0b1`）：
+  - **EXP-036 的回归**：trace-model 跑 rv32 Linux 时内核在 `kdevtmpfs` 里 NULL 解引用（预 C 的 `195dad4` 也一样）。二分到 `067f02e`（拷贝优化）：`Bridge::find` 的二分查找假定链按 uid 有序，重做 / 重放之后并不总是有序，丢了事实；`BRIDGE_FIND_CHECK` 报 “线性找到、二分没找到”。修法：二分没找到时用线性扫描确认。教训：EXP-034…036 合入时只跑了 gate 和大程序，没有跑 trace-model 的 Linux（`WORKFLOW.md` 要求合入前必跑）。
+  - **`lastHalf` 的一个遗漏**：C 内核在 `pc=c00044b4`（`auipc` 的中间）报非法指令。原因：一个预译码 flush 的修正目标正好是本组的块尾（顺序继续）时，我把 `lastHalf` 清掉了，重取的组就从跨界指令的后半条开始解码。修法：顺序继续的预译码 flush 保留 `lastHalf`，flush 之后的重取周期不清。
+  - **结果**：rv32 Linux 从复位到 `rv32 login:`（2 亿周期上限内）：不带 C 的镜像在 `RVC=0` 和 `RVC=1` 上、内核和 OpenSBI 带 C 的镜像在 `RVC=1` 上，都 0 个 oops；`RVC=0` gate 64/64、C gate 62/62 不变。`misa.C` 在 trace-model 的 CSR 文件里也补上了。
+  - **rv64**：`RVC=1` 的 rv64 构建能编译，rv64 的 C 和不带 C 的 cpu-tests、`gen_rvc.py` 的 rv64 压力测试（含 Sv39 第二半字缺页 `rvc-sv39`）0 不一致；rv64 内核虚拟地址（高于 2^32）让 BPU 的块边界和 uBTB 目标按 32 位算，已修（pc_t 宽度，目标高位取块地址）；但 **rv64 Linux 在 trace-model 上无论带不带 C 都在 OpenSBI 横幅之后停住**（33M 条指令后没有内核输出），属于已有的问题，没有查。
+  - **工作负载（带 C 对不带 C）**：同源 dhrystone（64 次）、coremark（2 次迭代），代码大小 −20% 到 −27%，指令数相同，周期：coremark 282,616 → 272,509（−3.6%）、dhrystone `-O0` 116,401 → 113,719（−2.3%）、`-O2` 35,869 → 34,387（−4.1%）；不带 C 的程序在 `RVC=1` 前端上与 `RVC=0` 相差 ±0.5%。
+  - **前端统计**（`[RVC_FE]`）：coremark 带 C 时 43.5% 的指令是 16 位、每组 8.2 条指令；`lastHalf` 被用到的组约占 14%（24005 / 169948）。`FE_IPF`、`FE_BFAST` / `FE_RFAST` 与 `RVC=1` 一起跑 C 编译的 cpu-tests：60 个程序 0 个不一致。
+- **没做的**：S4 的两级预测校验（与 C 无关，是更一般的前端改动，没做）、RTL；S3 复核结论：`PreIduQueue` 已经是按指令的环形缓冲（64 项，每拍进最多 16 条、出 8 条），不用改；跨 cache line 的 32 位指令取指没有额外延迟（后半条按功能读取，乐观）；预译码检查器的两级、RAS 返回地址按长度（`pc+4` 仍在 BPU 的 RAS 压栈和 BTB 未命中目标里）；`FE_PAIR` 在 `RVC=1` 下没测；`RVC=1` 的 rv64 构建和 rv64gc Linux 没在 trace-model 上跑。
 - **（S1 遗留）`pc+4` 在前端的残留**（RAS 压栈 `pc+4`、预译码检查器的 `+4`、`seq_next_pc` 的 `+4`、BTB 未命中目标 `pc+4`）等 S2 / S4 带上每个 slot 的长度后再改。
 
 ## EXP-037 C 扩展（压缩指令）：function-model 第一步
