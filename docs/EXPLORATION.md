@@ -6,7 +6,7 @@
 
 | 编号 | 日期 | 题目 | 分支 | 状态 | 一句话结论 |
 |---|---|---|---|---|---|
-| [EXP-037](#exp-037-c-扩展压缩指令function-model-第一步) | 2026-11-13 | C 扩展（压缩指令）：function-model 第一步，之后 trace-model（前端按半字）、RTL | function-model `exp/rvc` | **function-model 完成，未合入**；trace-model / RTL 未开始 | `RVC=1` 开关（rv32 / rv64，默认关）；16 位编码逐个与 Spike 一致，带 C 的 Linux（内核 + OpenSBI）从复位到 `rv64 login:` 前 2.5 亿条指令与 Spike 逐条一致 |
+| [EXP-037](#exp-037-c-扩展压缩指令function-model-第一步) | 2026-11-13 | C 扩展（压缩指令）：function-model 第一步，之后 trace-model（前端按半字）、RTL | function-model `exp/rvc`、`exp/rvc-fast` | **function-model 完成（含快速路径），未合入**；trace-model / RTL 未开始 | `RVC=1` 开关（rv32 / rv64，默认关）；16 位编码逐个与 Spike 一致，带 C 的 Linux（内核 + OpenSBI）从复位到 `rv64 login:` 前 2.5 亿条指令与 Spike 逐条一致 |
 | [EXP-036](#exp-036-trace-model-仿真速度去掉每周期的状态拷贝) | 2026-11-13 | trace-model 仿真速度：去掉每周期的状态拷贝（BPU、LSU、Bridge、IQ） | trace-model `exp/fcsr`（`067f02e`…`195dad4`） | **已合入 main（2026-11-13，已推送）** | 周期逐个不变（gate 64/64），耗时累计下降约 24%（各步提交里的计时） |
 | [EXP-035](#exp-035-写回口按完成周期在发射时预约) | 2026-11-12 | 每个写回口每周期只能完成一条：发射时按完成周期预约，撞车的留在 IQ | trace-model `exp/fcsr`（`4a1d9df`）、rtl `exp/fd-rtl`（`f61e821`、`b976975`） | **已合入 main（2026-11-13，已推送）** | 撞车从 coremark 12247 次降到 0；coremark −0.80%、dhrystone −0.32% 周期；RTL 与模型逐周期相同 |
 | [EXP-034](#exp-034-exu-改成按单元的状态去掉-execution-driven-遗留结构) | 2026-11-12 | Exu 改成按单元的状态（去掉 Fu 对象和输入输出拷贝） | trace-model `exp/fcsr`（`a50b64b`） | **已合入 main（2026-11-13，已推送）** | 与冻结的旧 Exu 逐周期同步比较 0 不同（gate 64/64、fp_check 32/64 为基线内），约快 6% |
@@ -50,14 +50,14 @@
   - 取指单位是半字，一条 32 位指令可以从任意半字开始；第二个半字在下一页时单独翻译，缺页的 `mtval` 是 `pc+2`。
   - 16 位指令在取指时展开成 32 位（`include/rvc.h`，纯函数），执行部分不变；`ilen` 用于 `pc+ilen`、链接值（`jal`/`jalr`/`c.jal`）、`ebreak`/`ecall` 之后；非法或保留编码的 `mtval` 是 16 位原编码。
   - `misa.C`；`jalr` 只清第 0 位；`mepc`/`sepc` 只清第 0 位；`medeleg[0]` 只读 0；`RefCpuStepInfo.inst_len` 给上层。
-  - 快速路径（基本块缓存）暂不处理压缩指令：遇到就交给 `RISCV()` 单步（Linux 启动约 50 MIPS）。
+  - 快速路径（基本块缓存）也支持压缩指令（分支 `exp/rvc-fast`，在 `exp/rvc` 之上）：每条指令记字节偏移和长度；带 C 的 Linux 15 亿条指令 30 s → 4.6 s；与单步路径的状态摘要（含 CSR）在 Linux 前 1 亿条指令和 58 个测试程序上逐块一致。
 - **验证**（每条指令与 Spike 比较）：
   - 定向测试（`tests/rv64/gen_rvc.py`，`tests/rv64/rvc.sh`）：全部 16 位编码里非访存非跳转的 18368 个（rv32：16320）在随机寄存器值上执行，非法 / 保留 / HINT 都包括；全部 24576 个访存编码（带读回整块缓冲区的校验和，FS 开 / 关的浮点各一份）；`c.j`/`c.jal`/`c.beqz`/`c.bnez` 前后向多种偏移（taken / not taken，2 字节和 4 字节对齐），`c.jr`/`c.jalr` 每个寄存器（含目标第 0 位为 1）；32 位指令跨 cache line、跨页；Sv39 下第二个半字的页无效 / 不可执行 / 用户页 / A=0 的缺页（`mtval = pc+2`）。rv32 和 rv64 都通过。
   - 注入 3 个展开错误（`c.addi16sp` 立即数位、`c.beqz` 偏移位、`c.fsdsp` 偏移）：第 3 个最初没被发现（测试没有读回 store 写入的数据），补上校验和后 3 个都被抓到。
   - 官方 `riscv-tests` `rv32uc`/`rv64uc`（含跨页取 4 字节指令）通过；trace-model 的 cpu-tests 带 C 编译：rv64 47/52、rv32 46/51，不通过的 5 个都是测试源码假定 4 字节指令（`interrupt-vectored`、`supervisor-external-interrupt-vectored` 的向量表 4 字节槽位，`trap-precise-store` 用 `+8` 跳过 `ecall; sw`）或不带 C 时就有的平台差异（`software-interrupt-vectored`、`timer-interrupt-mask`）。
   - Linux：内核和 OpenSBI 带 C（`CONFIG_RISCV_ISA_C=y`、`PLATFORM_RISCV_ISA=rv64imafdc_zicsr_zifencei`），用户态仍是 rv64g；`ttg64gc.dts`；到 `rv64 login:` 且 `fptest: PASS`，Spike 逐条对拍前 2.5 亿条指令 0 不一致（过程中发现并修了 `medeleg[0]`）。
   - `RVC=0` 回归：`tests/rv32/run.sh`、`tests/rv64/run.sh` 与改动前一致（rv32 53/56、rv64 52/54，不通过的是已知平台差异；F/D 和官方 rv32uf/ud 全过）。
-- **没做的**：快速路径支持压缩指令（SPEC 检查点生成需要）；48 位以上指令；`misa.C` 可写；Zc*；用户态也带 C 的 Linux（需要重编 Buildroot 工具链）；trace-model 前端按半字取指、BPU / FTQ 半字粒度、RTL 预译码和边界。
+- **没做的**：48 位以上指令；`misa.C` 可写；Zc*；用户态也带 C 的 Linux（需要重编 Buildroot 工具链）；trace-model 前端按半字取指、BPU / FTQ 半字粒度、RTL 预译码和边界。
 
 ## EXP-036 trace-model 仿真速度：去掉每周期的状态拷贝
 
