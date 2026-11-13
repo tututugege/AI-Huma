@@ -65,8 +65,12 @@
   - 有效 slot 允许有空洞：非起点的 slot 变成 `NON_BRANCH`，BPU 在非起点位置预测 taken 会被预译码检查器当成需要 flush 的错误；`is_rvc` 经 front2back FIFO 到后端；I$ 每行 slot 数、单字取指（MMIO）当作两个 slot；uBTB 的 slot / 目标字段宽度随 slot 宽度。
   - 诊断开关（只打印，不影响周期）：`RVC_DBG`（预译码 flush 的原因）、`BPU_OVR_DBG`（S0 与主预测目标不同的情形）。
 - **S2 验证**：`RVC=0` gate 64/64 周期不变；`RVC=1`：64 个不带 C 的程序都跑完，0 个 TB_CHECK 不一致，周期与 `RVC=0` 相差约 ±5%（最大 +9.7%：`trap-precise-store`，来自 C 的语义）；cpu-tests 带 C 编译（`rv32imac`）62 个里 58 个通过，不通过的 4 个是测试源码假定 4 字节指令（`interrupt-vectored`、`software-interrupt-vectored`、`supervisor-external-interrupt-vectored`、`trap-precise-store`）；function-model 的 `gen_rvc.py` 生成的测试（`rvc-alu` 589,886 条、`rvc-mem`、`fd-rvc-mem` 各约 300 万条、`rvc-flow`、`rvc-straddle` 跨行跨页）全部通过、0 不一致。过程中查出两个遗漏并修了：I$ 每行 slot 数还按 4 字节算、uBTB 的目标字段只有 30 位（目标取到 31 位后高位丢失，造成 S0 与主预测目标不同的大量 override）。
-- **初步观察**（52 个同源程序，C 编译 + `RVC=1` 对 不带 C + `RVC=0`）：周期几何平均 0.975；个别明显变慢：`itt-dispatch` 1.72、`pascal` 1.62、`recursion` 1.38，原因没查，可能是跨界 taken 分支、同位置分支预测或 C 代码布局，留到 S4 / S5。
-- **没做的**：S3–S5；跨 cache line 的 32 位指令取指没有额外延迟（后半条按功能读取，乐观）；预译码检查器的两级、RAS 返回地址按长度（`pc+4` 仍在 BPU 的 RAS 压栈和 BTB 未命中目标里）；`FE_PAIR` 在 `RVC=1` 下没测；`RVC=1` 的 rv64 构建和 rv64gc Linux 没在 trace-model 上跑。
+- **变慢的程序**（52 个同源程序，C 编译 + `RVC=1` 对 不带 C + `RVC=0`，周期比）：第一版几何平均 0.975，个别明显变慢：`itt-dispatch` 1.72、`pascal` 1.62、`recursion` 1.38。查到的原因（`exp/rvc` 的后续提交）：
+  - BPU 的训练和 RAS 路径还在用 `pc+4`：uBTB 的块跟踪器用 `pc+4` 当下一条指令的地址，压缩指令一出现跟踪器每条都重置，S0（uBTB）一次都没命中（`s0_hit=0`），每个 taken 分支都要等主预测器 override；架构 RAS 和推测 RAS 压栈、分支误预测后的修复也用 `pc+4`，压缩的 call 的返回地址错，`recursion` 变慢。
+  - 修法：训练输入带每条提交指令的长度（`update_is_rvc`、`rf_is_rvc`），跟踪器、RAS、修复都按长度；类型预测器和 uBTB 项记住 call 是不是 16 位指令（预测时 RAS 压栈 `pc+2`）；预热回放也传长度。
+  - 还有一处：一条 4 字节指令跨块尾时，跟踪器把下一块的起点记成指令末尾（`nxt`），而取指侧下一块从块尾开始（`lastHalf` 把块头半个字作废），uBTB 的项按错误的块起点存，`memory-stress-small` 里一个内层循环的 S0 一直不命中（override 2 万次，+8.6%）；改成跟踪器的块起点取块尾、期望的下一条指令地址仍是 `nxt`。
+  - 结果：几何平均 0.975 → 0.920（C 编译 + `RVC=1` 比不带 C + `RVC=0` 少 8% 周期）；最慢的是 `pascal` 1.16（3141 条指令、2134 周期，冷启动占大头：同一个循环从 `0x5e` 和 `0x60` 两个块起点进入，各自单独学习）、`memory-stress-small` 1.03。`RVC=0` gate 64/64 不变；5 个定向压力测试仍 0 不一致。
+- **没做的**：S3–S5（RAS 带长度的一部分已在上面做了）；跨 cache line 的 32 位指令取指没有额外延迟（后半条按功能读取，乐观）；预译码检查器的两级、RAS 返回地址按长度（`pc+4` 仍在 BPU 的 RAS 压栈和 BTB 未命中目标里）；`FE_PAIR` 在 `RVC=1` 下没测；`RVC=1` 的 rv64 构建和 rv64gc Linux 没在 trace-model 上跑。
 - **（S1 遗留）`pc+4` 在前端的残留**（RAS 压栈 `pc+4`、预译码检查器的 `+4`、`seq_next_pc` 的 `+4`、BTB 未命中目标 `pc+4`）等 S2 / S4 带上每个 slot 的长度后再改。
 
 ## EXP-037 C 扩展（压缩指令）：function-model 第一步
