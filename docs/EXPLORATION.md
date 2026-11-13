@@ -90,6 +90,13 @@
     - 发现 simulator 不看 `main` 的返回值，`check()` 失败也打印 `Success!!!!`（负对照：返回 1、或把期望和改错，仍然 `Success`）。这两个测试自己在 UART 上打 `RVC_TEST_PASS` / `RVC_TEST_FAIL`，`run_gate_c.sh` 检查；`rvc-irq` 的负对照（期望和改成 761）正确报 FAIL。
     - 限制：I$ 模型不存数据（取指字从功能内存读），所以去掉 `fence.i` 的负对照 `rvc-fencei` 仍然通过：它检查的是改写后的压缩代码在前端 / bridge / function-model 之间的一致性，不检查 I$ 失效本身；`fence.i` 的时序影响不在测试范围。
     - 没做：MMIO 单字取指（I$ 里 `paddr < 0x40000000` 走单字路径，但平台上该区间没有可执行内存，测试程序和 Linux 都在 `0x80000000` 以上，不可达）；Sv32 第二半字缺页已由 `rvc-sv32` 覆盖（V、非 X、无效、U、A=0 等变体）。C gate 现在 65/65。
+  - **FE_PAIR 与 RVC（2026-11-13，已完成，默认仍关）**：原来 `RVC=1` 开 FE_PAIR 直接报错退出。改动（`front_top.cpp`、`predecode_checker.*`；BPU 和 FTQ 原来就是按槽位参数化、带每槽 pc，不用改）：
+    - 指令起点链按块分段：每个块的第一个槽是起点；一个块最后的 32 位指令（窗口已完整）不会连进下一个块的第一个槽。
+    - 多块预测校验改成按显式块边界（`grp_seg_first`）和指令长度（`is_rvc`）分段；非起点槽（32 位指令的高半字）算组内但不是指令；一个块的顺序续接是它最后一条指令之后。顺序下一 pc 都用「最后一个槽之后的位置」。
+    - **查出的 bug**：lastHalf（组尾 32 位指令的高半字留给下一组）原来在「组里有任何预测 taken」时作废，pair 组里第一个块以 taken 分支结尾是正常的，只有最后一个块的 taken 才说明取指不再顺序继续。症状：带 C 的 Linux（`FE_PAIR=1`）下一组的第 0 个槽被当成指令起点译成垃圾，函数模型跟着执行到 `_start_hang` 的 `wfi` 里空转，TB_CHECK 全是 0 不一致。
+    - **为什么原来的检查没发现**：function-model 是被前端驱动的，不是独立的答案；cpu-tests 的 `check()` 失败也不会让 simulator 报错；所以 0 不一致不能证明前端走对了路。新检查：`TB_PCTRACE=<file>` 记录提交的指令流，`scripts/stream_cmp.sh` 对两种配置比较（架构上的指令流不应该依赖前端时序），`scripts/run_pair_c.sh` 对所有 C 程序比较 `FE_PAIR=0` 和 `1`：60 个程序流完全一致；`interrupt-vectored` 等依赖中断时机的除外（流本来就会不同）；rvc-alu 49 万、pf-stress 87 万条提交一致。Linux 的流在约 1000 万条提交之后因为定时器中断位置不同而分叉，是预期的，所以 Linux 只看启动结果。
+    - 结果：默认（`FE_PAIR=0`）周期不变，gate 64/64、C gate 65/65；`FE_PAIR=1`：rv32c Linux 在约 9000 万周期到登录（不开 pair 约 1 亿）、rv64gc 到登录（1.4 亿，不开 1.3 亿，计数粒度 1000 万），0 oops、0 不一致，`inst_mismatch=0`；19 个周期超过 3000 的 C 程序几何平均周期 −1.1%（itt-dispatch −18.6%，goldbach +7%，prime +5%）。
+    - 局限：RVC 没有 SPEC 检查点，所以没有 EXP-023 那样的 SPEC 收益数字；Linux 启动的 IPC 受空转循环影响大，不能当性能数字。
   - **两级预测校验（2026-11-13，结论：不做，加了统计）**：
     - 现状：trace-model 只有一级校验，在指令 FIFO 队头和 PTAB 队头一起读出时做（方向、JAL / 直接分支目标、顺序目标；JALR 目标不可知，留给后端）。香山分 F3（类型、JAL / JALR / ret 截断）和写回（起点、目标）两级，区别只在于一级校验不被后面的缓冲满压住。
     - 新统计 `[PD_CHK]`（`front_top.cpp`，不改周期，gate 64/64、C gate 65/65 不变）：4 个 SPEC 点（本地 `spec-rv32imab` 检查点、`FASTWARM=1000000 MEAS=3000000 PF_ENABLE=1`、rv32 `FP=0` 构建；数据 `AI-Huma-data/pdchk`）：校验触发的 flush 占组数 0.08%（gcc）/ 0.84%（perlbench）/ 1.16%（sjeng）/ 2.34%（gobmk）；flush 的那一组在队头被「front2back FIFO 满」压住的占 flush 的 0%（gcc）/ 0.1%（perlbench、sjeng）/ 7.0%（gobmk，每次 1 周期）；flush 时队列里排在后面的组数平均 ≤ 0.07。
