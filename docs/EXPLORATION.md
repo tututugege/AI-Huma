@@ -85,6 +85,11 @@
     - 查出并修掉的真问题：高半字按「物理相邻」读，**跨 4 KiB 页时下一虚拟页的物理页不是相邻的**，前端取到的字和 function-model 执行的字不同（实测：Sv32 下 `addi a0,a0,1` 的高半字读成 `ffff`，译码成了另一条指令）。差异原来没有任何检查能发现（bridge 只用 function-model 的事实）。修法：`ICacheTop` 里组到达页尾时，用 ITLB 只读查询、不命中则用软件页表遍历（`soft_walk_fetch`，Sv32 / Sv39，检查 V/R/W/X/U/A）取下一页的物理地址，高半字从那里读；不可映射时高半字读 0（function-model 会报取指缺页）；`FE_PAIR` 第二块的窗口越过页尾时不供给。**时序上仍是乐观的**：下一页的 ITLB 缺失 / 页表遍历不占周期（跨页的straddler 只占行尾指令的约 1/1000 以下，没有量化）。
     - 新检查：bridge 在每条指令提交时比较前端取到的字和 function-model 执行的字（`[TB_CHECK] bridge inst_mismatch=`，非零时打印前 8 条）；wrong-path 上数据被当成指令取的差异不计（在派发时比较会误报，改到提交时比较）。
     - 新测试 `rvc-sv32`（`gen_rvc.py` 的 `gen_sv()` 把 sv39 版推广到 rv32，并在两页之间放一页 `ffff` 诱饵页，物理上不相邻）：修前 `inst_mismatch=2`，修后 0；加进 `run_gate_c.sh` 和 `baseline_c.csv`（2516 周期）。`RVC=0` gate 64/64、C gate 63/63（`rvc-sv32` 加入后）、rv32c Linux 到登录 0 mismatch。
+  - **RVC 边界测试（2026-11-13）**：
+    - `tests/rvc/rvc-fencei`：代码按半字逐个偏移（跨 64 B 行边界）改写成 32 位 / 16 位 / 32 位 jalr 三种形式，每次改写后 `fence.i`，各执行一次；`tests/rvc/rvc-irq`：软件中断（程序写 `mip.MSIP`）在一串全部落在 2 mod 4 的 32 位指令流的 16 个不同位置被取，handler 清中断后 `mret`，要求计数 16、累加和精确（不丢不重）。rv32 和 rv64（`build64c`）都通过，`inst_mismatch=0`，0 TB_CHECK 不一致。
+    - 发现 simulator 不看 `main` 的返回值，`check()` 失败也打印 `Success!!!!`（负对照：返回 1、或把期望和改错，仍然 `Success`）。这两个测试自己在 UART 上打 `RVC_TEST_PASS` / `RVC_TEST_FAIL`，`run_gate_c.sh` 检查；`rvc-irq` 的负对照（期望和改成 761）正确报 FAIL。
+    - 限制：I$ 模型不存数据（取指字从功能内存读），所以去掉 `fence.i` 的负对照 `rvc-fencei` 仍然通过：它检查的是改写后的压缩代码在前端 / bridge / function-model 之间的一致性，不检查 I$ 失效本身；`fence.i` 的时序影响不在测试范围。
+    - 没做：MMIO 单字取指（I$ 里 `paddr < 0x40000000` 走单字路径，但平台上该区间没有可执行内存，测试程序和 Linux 都在 `0x80000000` 以上，不可达）；Sv32 第二半字缺页已由 `rvc-sv32` 覆盖（V、非 X、无效、U、A=0 等变体）。C gate 现在 65/65。
   - **工作负载（带 C 对不带 C）**：同源 dhrystone（64 次）、coremark（2 次迭代），代码大小 −20% 到 −27%，指令数相同，周期：coremark 282,616 → 272,509（−3.6%）、dhrystone `-O0` 116,401 → 113,719（−2.3%）、`-O2` 35,869 → 34,387（−4.1%）；不带 C 的程序在 `RVC=1` 前端上与 `RVC=0` 相差 ±0.5%。
   - **前端统计**（`[RVC_FE]`）：coremark 带 C 时 43.5% 的指令是 16 位、每组 8.2 条指令；`lastHalf` 被用到的组约占 14%（24005 / 169948）。`FE_IPF`、`FE_BFAST` / `FE_RFAST` 与 `RVC=1` 一起跑 C 编译的 cpu-tests：60 个程序 0 个不一致。
 - **没做的**：S4 的两级预测校验（与 C 无关，是更一般的前端改动，没做）、RTL；S3 复核结论：`PreIduQueue` 已经是按指令的环形缓冲（64 项，每拍进最多 16 条、出 8 条），不用改；跨 cache line 的 32 位指令取指没有额外延迟（后半条按功能读取，乐观）；预译码检查器的两级、RAS 返回地址按长度（`pc+4` 仍在 BPU 的 RAS 压栈和 BTB 未命中目标里）；`FE_PAIR` 在 `RVC=1` 下没测；`RVC=1` 的 rv64 构建和 rv64gc Linux 没在 trace-model 上跑。
