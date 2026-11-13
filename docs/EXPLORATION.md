@@ -90,6 +90,11 @@
     - 发现 simulator 不看 `main` 的返回值，`check()` 失败也打印 `Success!!!!`（负对照：返回 1、或把期望和改错，仍然 `Success`）。这两个测试自己在 UART 上打 `RVC_TEST_PASS` / `RVC_TEST_FAIL`，`run_gate_c.sh` 检查；`rvc-irq` 的负对照（期望和改成 761）正确报 FAIL。
     - 限制：I$ 模型不存数据（取指字从功能内存读），所以去掉 `fence.i` 的负对照 `rvc-fencei` 仍然通过：它检查的是改写后的压缩代码在前端 / bridge / function-model 之间的一致性，不检查 I$ 失效本身；`fence.i` 的时序影响不在测试范围。
     - 没做：MMIO 单字取指（I$ 里 `paddr < 0x40000000` 走单字路径，但平台上该区间没有可执行内存，测试程序和 Linux 都在 `0x80000000` 以上，不可达）；Sv32 第二半字缺页已由 `rvc-sv32` 覆盖（V、非 X、无效、U、A=0 等变体）。C gate 现在 65/65。
+  - **两级预测校验（2026-11-13，结论：不做，加了统计）**：
+    - 现状：trace-model 只有一级校验，在指令 FIFO 队头和 PTAB 队头一起读出时做（方向、JAL / 直接分支目标、顺序目标；JALR 目标不可知，留给后端）。香山分 F3（类型、JAL / JALR / ret 截断）和写回（起点、目标）两级，区别只在于一级校验不被后面的缓冲满压住。
+    - 新统计 `[PD_CHK]`（`front_top.cpp`，不改周期，gate 64/64、C gate 65/65 不变）：4 个 SPEC 点（本地 `spec-rv32imab` 检查点、`FASTWARM=1000000 MEAS=3000000 PF_ENABLE=1`、rv32 `FP=0` 构建；数据 `AI-Huma-data/pdchk`）：校验触发的 flush 占组数 0.08%（gcc）/ 0.84%（perlbench）/ 1.16%（sjeng）/ 2.34%（gobmk）；flush 的那一组在队头被「front2back FIFO 满」压住的占 flush 的 0%（gcc）/ 0.1%（perlbench、sjeng）/ 7.0%（gobmk，每次 1 周期）；flush 时队列里排在后面的组数平均 ≤ 0.07。
+    - 上界：把校验提前到不受后端压住，最多省 gobmk 1863 周期 / 1.34M = 0.14%、sjeng 约 0.015%、perlbench 约 0.006%、gcc 0；所以不实现两级（模型里就是香山 F3 级的行为）。flush 种类：gobmk 的 flush 93% 是「预测 taken 但本组没有 taken 的分支」（BTB / uBTB 别名，大代码），不是方向或目标错，所以也不是校验结构能改善的。
+    - 局限：4 个点，每点 3M 条指令，不是全量。RTL 如果要拆成两级是面积 / 时序的取舍，周期模型里没有可量化的收益。
   - **工作负载（带 C 对不带 C）**：同源 dhrystone（64 次）、coremark（2 次迭代），代码大小 −20% 到 −27%，指令数相同，周期：coremark 282,616 → 272,509（−3.6%）、dhrystone `-O0` 116,401 → 113,719（−2.3%）、`-O2` 35,869 → 34,387（−4.1%）；不带 C 的程序在 `RVC=1` 前端上与 `RVC=0` 相差 ±0.5%。
   - **前端统计**（`[RVC_FE]`）：coremark 带 C 时 43.5% 的指令是 16 位、每组 8.2 条指令；`lastHalf` 被用到的组约占 14%（24005 / 169948）。`FE_IPF`、`FE_BFAST` / `FE_RFAST` 与 `RVC=1` 一起跑 C 编译的 cpu-tests：60 个程序 0 个不一致。
 - **没做的**：S4 的两级预测校验（与 C 无关，是更一般的前端改动，没做）、RTL；S3 复核结论：`PreIduQueue` 已经是按指令的环形缓冲（64 项，每拍进最多 16 条、出 8 条），不用改；跨 cache line 的 32 位指令取指没有额外延迟（后半条按功能读取，乐观）；预译码检查器的两级、RAS 返回地址按长度（`pc+4` 仍在 BPU 的 RAS 压栈和 BTB 未命中目标里）；`FE_PAIR` 在 `RVC=1` 下没测；`RVC=1` 的 rv64 构建和 rv64gc Linux 没在 trace-model 上跑。
