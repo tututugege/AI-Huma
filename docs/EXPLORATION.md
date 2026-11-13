@@ -6,7 +6,7 @@
 
 | 编号 | 日期 | 题目 | 分支 | 状态 | 一句话结论 |
 |---|---|---|---|---|---|
-| [EXP-038](#exp-038-c-扩展trace-model-前端按半字取指) | 2026-11-13 | C 扩展：trace-model（前端半字取指、BPU / FTQ 半字位置、按指令的取指缓冲），参考香山和 BOOM | trace-model `exp/rvc`（工作区 `trace-model-rvc`） | **进行中**：S0 完成（`4db3277`），未合入 | S0（后端和 bridge 的长度通路，周期不变）完成；S1–S5 未开始 |
+| [EXP-038](#exp-038-c-扩展trace-model-前端按半字取指) | 2026-11-13 | C 扩展：trace-model（前端半字取指、BPU / FTQ 半字位置、按指令的取指缓冲），参考香山和 BOOM | trace-model `exp/rvc`（工作区 `trace-model-rvc`） | **进行中**：S0、S1 完成（`4db3277`、S1 提交见 LOG），未合入 | S0（后端和 bridge 的长度通路）、S1（取指几何按 slot 宽度参数化）完成，`RVC=0` 周期不变；`RVC=1` 能编译但还不能运行（S2）；S2–S5 未开始 |
 | [EXP-037](#exp-037-c-扩展压缩指令function-model-第一步) | 2026-11-13 | C 扩展（压缩指令）：function-model 第一步，之后 trace-model（前端按半字）、RTL | function-model `exp/rvc`、`exp/rvc-fast` | **function-model 完成（含快速路径），已合入 main（2026-11-13，已推送）**；trace-model / RTL 未开始 | `RVC=1` 开关（rv32 / rv64，默认关）；16 位编码逐个与 Spike 一致，带 C 的 Linux（内核 + OpenSBI）从复位到 `rv64 login:` 前 2.5 亿条指令与 Spike 逐条一致 |
 | [EXP-036](#exp-036-trace-model-仿真速度去掉每周期的状态拷贝) | 2026-11-13 | trace-model 仿真速度：去掉每周期的状态拷贝（BPU、LSU、Bridge、IQ） | trace-model `exp/fcsr`（`067f02e`…`195dad4`） | **已合入 main（2026-11-13，已推送）** | 周期逐个不变（gate 64/64），耗时累计下降约 24%（各步提交里的计时） |
 | [EXP-035](#exp-035-写回口按完成周期在发射时预约) | 2026-11-12 | 每个写回口每周期只能完成一条：发射时按完成周期预约，撞车的留在 IQ | trace-model `exp/fcsr`（`4a1d9df`）、rtl `exp/fd-rtl`（`f61e821`、`b976975`） | **已合入 main（2026-11-13，已推送）** | 撞车从 coremark 12247 次降到 0；coremark −0.80%、dhrystone −0.32% 周期；RTL 与模型逐周期相同 |
@@ -56,7 +56,9 @@
 - **步骤**：S0 后端和 bridge 的长度通路（周期不变）；S1 slot 宽度参数化、16 个半字位置（BPU 数组、FTQ 偏移宽度、PTAB）；S2 I$ 取 17 个半字、两行拼接、预译码边界链和 `isRVC`、`lastHalf`；S3 按指令的环形取指缓冲；S4 预测校验两级和 RAS 带长度；S5 PMU 和带 C / 不带 C 的对比。`FE_PAIR` 先与 RVC 互斥。
 - **S0 做了什么**：`RVC` 编译开关（默认 0，需要 `RVC` 一致的 `librefcpu`）；每条指令 1 位 `is_rvc`，从前端输出经 FTQ 的 slot、uop、ROB 广播一路带到后端；后端所有 `pc+4`（分支解析的预测目标和 `diag_val`、JAL / JALR 的链接值、flush 后重取地址、MsData、FTQ 的配对判断、提交时训练的目标）改成 `pc + ilen`；`Bridge::dispatch` 带长度，`Fact.len`，不执行或 trap 撤销时的 `pc+4` 改 `pc+len`；`FastWarm` 用单步的 `inst_len`。前端各 lane 的 `is_rvc` 仍恒为 0（S2 才产生）。
 - **验证**：`RVC=0` gate 64/64 周期与基线逐个相同；`RVC=1`（function-model 也带 C）能编译，非 C 的测试 61/64 与基线相同，3 个不同是 C 的语义（`jalr` 只清第 0 位、`medeleg[0]`）：`itt-dispatch`、`load-store-aligned`、`supervisor-illegal-delegation`。
-- **没做的**：S1–S5；BPU 里的 `pc+4`（RAS 压栈、BTB 未命中目标、索引的 `>>2`）留到 S1/S2，因为依赖 slot 几何。
+- **S1 做了什么**（2026-11-13）：`config.h` 里 `FETCH_BYTES`（32）、`SLOT_SHIFT`、`SLOT_BYTES`、`FETCH_WIDTH = FETCH_BYTES / SLOT_BYTES`（`RVC=0`：8 个 4 字节 slot；`RVC=1`：16 个 2 字节 slot），`BPU_BANK_NUM = FETCH_WIDTH`；BPU（`BPU.h`、`BPU_pipe.h`）里所有 slot 与 pc 的换算、预测表 / BTB / uBTB / TAGE 的索引移位、块边界、`FE_PAIR` 的位置计算都改用 `SLOT_SHIFT` / `SLOT_BYTES`；前端各 slot 的 pc；I$ 每行的 slot 数和按半字对齐的取指窗口 `tbhook::fetch_window_at`。`RVC=0` gate 64/64 周期不变；`RVC=1` 能编译（`FETCH_WIDTH = 16`）。
+- **S1 的范围调整**：原计划 S1 里让 `RVC=1` 先跑不带 C 的程序，实际上做不到：前端有多处假定有效 slot 是连续前缀（`sequential_next_pc`、预译码检查器的分段、`multi` 判断、FE_PAIR 的顺序检查），半字 slot 下奇数位置是空的，必须和 S2 的预译码边界逻辑一起改。所以「`RVC=1` 能运行」移到 S2。
+- **没做的**：S2–S5；`pc+4` 在前端的残留（RAS 压栈 `pc+4`、预译码检查器的 `+4`、`seq_next_pc` 的 `+4`、BTB 未命中目标 `pc+4`）等 S2 / S4 带上每个 slot 的长度后再改。
 
 ## EXP-037 C 扩展（压缩指令）：function-model 第一步
 

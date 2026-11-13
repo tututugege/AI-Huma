@@ -1,0 +1,110 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 470" font-family="Times New Roman, Times, serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#222"/>
+    </marker>
+    <marker id="r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#a33"/>
+    </marker>
+  </defs>
+  <rect width="920" height="470" fill="#fff"/>
+
+  <!-- main (start) -->
+  <rect x="15" y="170" width="60" height="60" rx="6" fill="#f2f2f2" stroke="#222" stroke-width="1.6"/>
+  <text x="45" y="205" text-anchor="middle" font-size="15" font-weight="bold">main</text>
+  <path d="M75,200 L92,200 M92,95 L92,345" fill="none" stroke="#222" stroke-width="1.4"/>
+  <path d="M92,95 L110,95" stroke="#222" stroke-width="1.4" fill="none" marker-end="url(#a)"/>
+  <path d="M92,255 L110,255" stroke="#222" stroke-width="1.4" fill="none" marker-end="url(#a)"/>
+  <path d="M92,345 L110,345" stroke="#222" stroke-width="1.4" fill="none" marker-end="url(#a)"/>
+  <text x="84" y="150" font-size="11.5" font-style="italic" text-anchor="end" transform="rotate(-90 84 150)">fork</text>
+
+  <!-- Agent boxes -->
+  <g stroke="#2b5c8a" stroke-width="1.6" fill="#eef4fa">
+    <rect x="110" y="65" width="150" height="60" rx="6"/>
+    <rect x="110" y="225" width="150" height="60" rx="6"/>
+    <rect x="110" y="315" width="150" height="60" rx="6" stroke-dasharray="5 3"/>
+  </g>
+  <g text-anchor="middle" fill="#2b5c8a">
+    <text x="185" y="85" font-size="14" font-weight="bold">Agent A · BPU</text>
+    <text x="185" y="101" font-size="12">exp/bpu</text>
+    <text x="185" y="116" font-size="11.5" font-style="italic">trace-model sweeps</text>
+    <text x="185" y="245" font-size="14" font-weight="bold">Agent B · Prefetch</text>
+    <text x="185" y="261" font-size="12">exp/pf</text>
+    <text x="185" y="276" font-size="11.5" font-style="italic">trace-model sweeps</text>
+    <text x="185" y="335" font-size="14" font-weight="bold">Agent N · LSU …</text>
+    <text x="185" y="351" font-size="12">exp/…</text>
+    <text x="185" y="366" font-size="11.5" font-style="italic">trace-model sweeps</text>
+  </g>
+
+  <!-- Lane 1 gates -->
+  <line x1="260" y1="95" x2="293" y2="95" stroke="#222" stroke-width="1.4" marker-end="url(#a)"/>
+  <polygon points="345,65 397,95 345,125 293,95" fill="#fff" stroke="#222" stroke-width="1.5"/>
+  <text x="345" y="92" text-anchor="middle" font-size="12" font-weight="bold">G1</text>
+  <text x="345" y="106" text-anchor="middle" font-size="11.5">ΔIPC &gt; θ</text>
+  <line x1="397" y1="95" x2="423" y2="95" stroke="#222" stroke-width="1.4" marker-end="url(#a)"/>
+  <text x="410" y="88" text-anchor="middle" font-size="10.5" font-style="italic">yes</text>
+  <polygon points="475,65 527,95 475,125 423,95" fill="#fff" stroke="#222" stroke-width="1.5"/>
+  <text x="475" y="92" text-anchor="middle" font-size="12" font-weight="bold">G2</text>
+  <text x="475" y="106" text-anchor="middle" font-size="11.5">area ok?</text>
+  <line x1="345" y1="65" x2="345" y2="40" stroke="#a33" stroke-width="1.3" marker-end="url(#r)"/>
+  <text x="345" y="33" text-anchor="middle" font-size="11.5" font-style="italic" fill="#a33">no → drop, log</text>
+  <line x1="527" y1="95" x2="670" y2="95" stroke="#222" stroke-width="1.4" marker-end="url(#a)"/>
+  <text x="560" y="88" font-size="10.5" font-style="italic">yes</text>
+
+  <!-- Lane 2 gates -->
+  <line x1="260" y1="255" x2="293" y2="255" stroke="#222" stroke-width="1.4" marker-end="url(#a)"/>
+  <polygon points="345,225 397,255 345,285 293,255" fill="#fff" stroke="#222" stroke-width="1.5"/>
+  <text x="345" y="252" text-anchor="middle" font-size="12" font-weight="bold">G1</text>
+  <text x="345" y="266" text-anchor="middle" font-size="11.5">ΔIPC &gt; θ</text>
+  <line x1="397" y1="255" x2="423" y2="255" stroke="#222" stroke-width="1.4" marker-end="url(#a)"/>
+  <text x="410" y="248" text-anchor="middle" font-size="10.5" font-style="italic">yes</text>
+  <polygon points="475,225 527,255 475,285 423,255" fill="#fff" stroke="#222" stroke-width="1.5"/>
+  <text x="475" y="252" text-anchor="middle" font-size="12" font-weight="bold">G2</text>
+  <text x="475" y="266" text-anchor="middle" font-size="11.5">area ok?</text>
+  <line x1="345" y1="285" x2="345" y2="310" stroke="#a33" stroke-width="1.3" marker-end="url(#r)"/>
+  <text x="345" y="324" text-anchor="middle" font-size="11.5" font-style="italic" fill="#a33">no → drop, log</text>
+  <path d="M527,255 L600,255 L600,95" fill="none" stroke="#222" stroke-width="1.4"/>
+  <text x="560" y="248" font-size="10.5" font-style="italic">yes</text>
+
+  <!-- Lane N -->
+  <path d="M260,345 L600,345 L600,255" fill="none" stroke="#222" stroke-width="1.2" stroke-dasharray="5 3"/>
+  <text x="430" y="338" text-anchor="middle" font-size="11.5" font-style="italic">same gates G1 → G2</text>
+
+  <!-- Human -->
+  <rect x="395" y="160" width="160" height="40" rx="6" fill="#f2f2f2" stroke="#222" stroke-width="1.5"/>
+  <text x="475" y="178" text-anchor="middle" font-size="14" font-weight="bold">Human</text>
+  <text x="475" y="193" text-anchor="middle" font-size="11.5" font-style="italic">area / perf trade-off</text>
+  <line x1="475" y1="160" x2="475" y2="125" stroke="#222" stroke-width="1.3" stroke-dasharray="4 3" marker-start="url(#a)" marker-end="url(#a)"/>
+  <line x1="475" y1="200" x2="475" y2="225" stroke="#222" stroke-width="1.3" stroke-dasharray="4 3" marker-start="url(#a)" marker-end="url(#a)"/>
+  <text x="483" y="147" font-size="11" font-style="italic">no → escalate</text>
+  <text x="483" y="217" font-size="11" font-style="italic">no → escalate</text>
+
+  <!-- Integration column -->
+  <rect x="670" y="68" width="140" height="54" rx="6" fill="#f2f2f2" stroke="#222" stroke-width="1.6"/>
+  <text x="740" y="90" text-anchor="middle" font-size="14" font-weight="bold">Merge agent</text>
+  <text x="740" y="106" text-anchor="middle" font-size="11.5" font-style="italic">rebase · compose branches</text>
+  <line x1="740" y1="122" x2="740" y2="135" stroke="#222" stroke-width="1.4" marker-end="url(#a)"/>
+  <polygon points="740,135 805,165 740,195 675,165" fill="#fff" stroke="#222" stroke-width="1.5"/>
+  <text x="740" y="162" text-anchor="middle" font-size="12" font-weight="bold">G3 functional</text>
+  <text x="740" y="177" text-anchor="middle" font-size="11">boot · regression</text>
+  <line x1="740" y1="195" x2="740" y2="225" stroke="#222" stroke-width="1.4" marker-end="url(#a)"/>
+  <text x="748" y="213" font-size="10.5" font-style="italic">pass</text>
+  <polygon points="740,225 805,255 740,285 675,255" fill="#fff" stroke="#222" stroke-width="1.5"/>
+  <text x="740" y="252" text-anchor="middle" font-size="12" font-weight="bold">G4 perf</text>
+  <text x="740" y="267" text-anchor="middle" font-size="11">SPEC no regress</text>
+  <line x1="740" y1="285" x2="740" y2="318" stroke="#222" stroke-width="1.4" marker-end="url(#a)"/>
+  <text x="748" y="305" font-size="10.5" font-style="italic">pass</text>
+  <rect x="670" y="318" width="140" height="52" rx="6" fill="#f2f2f2" stroke="#222" stroke-width="1.8"/>
+  <text x="740" y="341" text-anchor="middle" font-size="15" font-weight="bold">main</text>
+  <text x="740" y="359" text-anchor="middle" font-size="11.5" font-style="italic">+ MAIN_RECORDS</text>
+
+  <!-- fail loop -->
+  <path d="M805,165 L860,165 M805,255 L860,255 M860,255 L860,95 L810,95" fill="none" stroke="#a33" stroke-width="1.3" stroke-dasharray="5 3" marker-end="url(#r)"/>
+  <text x="874" y="175" font-size="11.5" font-style="italic" fill="#a33" text-anchor="middle" transform="rotate(90 874 175)">fail → bisect &amp; fix</text>
+
+  <!-- next round -->
+  <path d="M740,370 L740,412 L45,412 L45,230" fill="none" stroke="#222" stroke-width="1.3" stroke-dasharray="6 3" marker-end="url(#a)"/>
+  <text x="392" y="405" text-anchor="middle" font-size="12" font-style="italic">next round: every agent rebases on the new main</text>
+
+  <text x="460" y="450" text-anchor="middle" font-size="13" font-style="italic">Fig. 2. Parallel agents explore the design space on separate branches; per-branch gates filter, a merge agent integrates, and functional and performance gates guard main.</text>
+</svg>
