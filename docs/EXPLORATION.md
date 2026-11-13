@@ -6,7 +6,7 @@
 
 | 编号 | 日期 | 题目 | 分支 | 状态 | 一句话结论 |
 |---|---|---|---|---|---|
-| [EXP-037](#exp-037-c-扩展压缩指令function-model-第一步) | 2026-11-13 | C 扩展（压缩指令）：function-model 第一步，之后 trace-model（前端按半字）、RTL | function-model `exp/rvc`、`exp/rvc-fast` | **function-model 完成（含快速路径），未合入**；trace-model / RTL 未开始 | `RVC=1` 开关（rv32 / rv64，默认关）；16 位编码逐个与 Spike 一致，带 C 的 Linux（内核 + OpenSBI）从复位到 `rv64 login:` 前 2.5 亿条指令与 Spike 逐条一致 |
+| [EXP-037](#exp-037-c-扩展压缩指令function-model-第一步) | 2026-11-13 | C 扩展（压缩指令）：function-model 第一步，之后 trace-model（前端按半字）、RTL | function-model `exp/rvc`、`exp/rvc-fast` | **function-model 完成（含快速路径），已合入 main（2026-11-13，已推送）**；trace-model / RTL 未开始 | `RVC=1` 开关（rv32 / rv64，默认关）；16 位编码逐个与 Spike 一致，带 C 的 Linux（内核 + OpenSBI）从复位到 `rv64 login:` 前 2.5 亿条指令与 Spike 逐条一致 |
 | [EXP-036](#exp-036-trace-model-仿真速度去掉每周期的状态拷贝) | 2026-11-13 | trace-model 仿真速度：去掉每周期的状态拷贝（BPU、LSU、Bridge、IQ） | trace-model `exp/fcsr`（`067f02e`…`195dad4`） | **已合入 main（2026-11-13，已推送）** | 周期逐个不变（gate 64/64），耗时累计下降约 24%（各步提交里的计时） |
 | [EXP-035](#exp-035-写回口按完成周期在发射时预约) | 2026-11-12 | 每个写回口每周期只能完成一条：发射时按完成周期预约，撞车的留在 IQ | trace-model `exp/fcsr`（`4a1d9df`）、rtl `exp/fd-rtl`（`f61e821`、`b976975`） | **已合入 main（2026-11-13，已推送）** | 撞车从 coremark 12247 次降到 0；coremark −0.80%、dhrystone −0.32% 周期；RTL 与模型逐周期相同 |
 | [EXP-034](#exp-034-exu-改成按单元的状态去掉-execution-driven-遗留结构) | 2026-11-12 | Exu 改成按单元的状态（去掉 Fu 对象和输入输出拷贝） | trace-model `exp/fcsr`（`a50b64b`） | **已合入 main（2026-11-13，已推送）** | 与冻结的旧 Exu 逐周期同步比较 0 不同（gate 64/64、fp_check 32/64 为基线内），约快 6% |
@@ -44,7 +44,7 @@
 
 ## EXP-037 C 扩展（压缩指令）：function-model 第一步
 
-- **状态：2026-11-13 function-model 完成（分支 `exp/rvc`），未合入、未推送；trace-model 和 RTL 还没开始。**
+- **状态：2026-11-13 function-model 完成（`exp/rvc`、`exp/rvc-fast`），已快进合入 `main`（`6bf6c59`）并推送；trace-model 和 RTL 还没开始。**
 - **为什么做**：RV64GC 是发行版、标准工具链和主流 Linux 核的基本配置；C 改变「每条指令 4 字节、PC 4 字节对齐」这条全核约定，前端（取指、预译码、BPU、I$、ITT）受影响最大，后端只需要每条指令多带一位长度。先做 function-model（Spike 可以逐条对拍），再 trace-model，最后 RTL，和 F/D 同样的顺序。
 - **做法**（编译开关 `RVC=1`，`XLEN=32/64`，默认 0，`RVC=0` 行为不变）：
   - 取指单位是半字，一条 32 位指令可以从任意半字开始；第二个半字在下一页时单独翻译，缺页的 `mtval` 是 `pc+2`。
