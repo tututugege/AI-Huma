@@ -6,7 +6,12 @@
 
 | 编号 | 日期 | 题目 | 分支 | 状态 | 一句话结论 |
 |---|---|---|---|---|---|
-| [EXP-031](#exp-031-删除-zfinx全面改用标准-fd含-rv32) | 2026-11-12 | 删除 Zfinx，rv32 也改用标准 F/D（三个仓库） | function-model `exp/fd-all`、trace-model `exp/fd-all`、rtl `exp/no-zfinx` | **三个分支完成，未合入** | F/D 成为默认配置（`FP=1`，rv32 和 rv64），Zfinx 全部删除；rv32 gate 周期不变（64/64，基线只换了 Zfinx 测试），RTL 删掉 Zfinx 的 FPU 后 soc_smoke 56/56 |
+| [EXP-036](#exp-036-trace-model-仿真速度去掉每周期的状态拷贝) | 2026-11-13 | trace-model 仿真速度：去掉每周期的状态拷贝（BPU、LSU、Bridge、IQ） | trace-model `exp/fcsr`（`067f02e`…`195dad4`） | **已合入 main（2026-11-13，已推送）** | 周期逐个不变（gate 64/64），耗时累计下降约 24%（各步提交里的计时） |
+| [EXP-035](#exp-035-写回口按完成周期在发射时预约) | 2026-11-12 | 每个写回口每周期只能完成一条：发射时按完成周期预约，撞车的留在 IQ | trace-model `exp/fcsr`（`4a1d9df`）、rtl `exp/fd-rtl`（`f61e821`、`b976975`） | **已合入 main（2026-11-13，已推送）** | 撞车从 coremark 12247 次降到 0；coremark −0.80%、dhrystone −0.32% 周期；RTL 与模型逐周期相同 |
+| [EXP-034](#exp-034-exu-改成按单元的状态去掉-execution-driven-遗留结构) | 2026-11-12 | Exu 改成按单元的状态（去掉 Fu 对象和输入输出拷贝） | trace-model `exp/fcsr`（`a50b64b`） | **已合入 main（2026-11-13，已推送）** | 与冻结的旧 Exu 逐周期同步比较 0 不同（gate 64/64、fp_check 32/64 为基线内），约快 6% |
+| [EXP-033](#exp-032--exp-033-fp-写口与-fcsr-串行化) | 2026-11-12 | fflags/frm/fcsr 是真正的串行 CSR 指令；ROB 从写回取 illegal_inst；I2F 优先于 ALU | trace-model `exp/fcsr`、rtl `exp/fd-rtl` | **已合入 main（2026-11-13，已推送）** | rv32-fp-trap 87154 → 95438 周期；RTL 与模型一致 |
+| [EXP-032](#exp-032--exp-033-fp-写口与-fcsr-串行化) | 2026-11-12 | FP 寄存器堆写口限制（`FP_WB_PORTS`，默认 2） | trace-model `exp/fcsr`（`c72e9ec`、`59e197c`） | **已合入 main（2026-11-13，已推送）** | fp_check 24/24，微基准延迟不变 |
+| [EXP-031](#exp-031-删除-zfinx全面改用标准-fd含-rv32) | 2026-11-12 | 删除 Zfinx，rv32 也改用标准 F/D（三个仓库） | function-model `exp/fd-all`、trace-model `exp/fd-all`、rtl `exp/no-zfinx` | **已合入 main（2026-11-13，已推送）**，实际合入的是随后的链 `exp/fd-all`→`exp/fp-wb`→`exp/fcsr`（trace-model）和 `exp/fd-rtl`（rtl，含标准 F/D 的 RTL） | F/D 成为默认配置（`FP=1`，rv32 和 rv64），Zfinx 全部删除；rv32 gate 周期不变（64/64，基线只换了 Zfinx 测试），RTL 删掉 Zfinx 的 FPU 后 soc_smoke 56/56 |
 | [EXP-030](#exp-030-rv64-的-fd-浮点扩展) | 2026-11-12 | rv64 的 F/D 浮点扩展（function-model 第一步，之后 trace-model、RTL） | function-model `exp/fd` | **function-model（`cdcb74d`）和 trace-model（`2c1d166`）已合入各自的 `main`（2026-11-12，未推送）**；RTL 未开始 | `FP=1` 编译开关；directed 测试 + 编译器生成的浮点代码与 Spike 逐条一致；检查点版本 5；`FP=0` 的构建不变 |
 | [EXP-029](#exp-029-从-rv32imab-迁移到-rv64imab) | 2026-11-11 | 从 rv32imab 迁移到 rv64imab（function-model → trace-model → RTL，Linux 启动到登录） | function-model `exp/rv64`、trace-model `exp/rv64-on-main`、rtl `exp/rv64` | **已合入 main（2026-11-12，已推送）**：function-model `b388f39`、trace-model `ccc2d0c`、rtl `8dbb7cd` | rv64 在三个层次都跑通：53 个 cpu-tests、Sv39 测试、Linux 从复位到 `rv64 login:`（RTL 约 1.05 亿周期，逐条对比 0 个不一致）；XLEN=32 完全不变 |
 | [EXP-028](#exp-028-rob-压缩加大-rob--prf重命名整组等待) | 2026-11-11 | ROB 压缩 / 加大 ROB、PRF / 重命名整组等待（`REN_AON`），删窗口后在当前 main 上重测（接手 2026-11-10 的未完成实验） | trace-model `merge/rob-compact`（`35b3af4`、`a11b1ca`）、rtl `exp/rob-compact`（`4e954d7`、`a905acd`）；统计 / `REN_AON` 留在 trace-model `exp/rob-compress` | 已合入 main（2026-11-11，默认开） | 30 点（按权重选）：整组等待 +0.59%（hmmer +7.5%），ROB192 不改重命名 −0.29%（hmmer −20.9%），ROB192 + 整组等待 +2.27%，ROB192 + PRF192 +3.06%，PRF160 +0.93%；ROB 行平均填 5.58/8，简单指令压缩比约 1.0–1.5；简单指令压缩不做；**紧凑 ROB（按序分配、前缀提交）+ BPU 训练额度 +2.89%（寄存器版本）**（ROB 仍 128 项，好于 ROB192 + 整组等待）；RTL 已做（fm_gate 69/69 周期与模型逐个相等，Linux 从复位连续启动到登录 0 不一致），`rob` 面积 +11.4%、深度 46 → 53；**SPEC 全量 580 点 +2.74%，分数 11.23 → 11.53 分/GHz**，12 个程序全部提升；已知回退：分支密集的短循环被 BPU 更新带宽卡住（gcc 4 个点 −37%、dhrystone +1.8% 周期） |
@@ -35,6 +40,43 @@
 | [EXP-001](#exp-001-面积优化三个方向) | 2026-11-04 | 面积优化：FTQ 合并、LSU 端口、LD/STA IQ 合并 | trace-model `exp/area-explore` | 未提交、未合入 | 三个方向都能省面积，性能代价 0–1% |
 
 ---
+
+## EXP-036 trace-model 仿真速度：去掉每周期的状态拷贝
+
+- **状态：2026-11-13 已合入 trace-model `main`（`195dad4`，已推送）。** 日期 2026-11-12/13。**目标**：trace-model 每周期要把整个流水线状态拷一份（cur → nxt），先量了耗时占比（function model 只占一小部分），再按 `sample`（macOS）和临时 `cntvct` 计时器找拷贝热点，逐个去掉。**每一步周期都和之前逐个相同**（gate 64/64、`fp_check`、大程序）。
+- **改动**：
+  - `BpuPipe`：流水线寄存器双缓冲加指针交换（提交时不再拷 14 KB），下一拍状态不拷 `R`，S0 块原地构建，`Txn` 不带状态（省 16 KB 清零），`Decision` 只在块离开时清；只拷活的检查点，`Decision.blk` 用指针（约 −14%，累计 −18%）。
+  - 分级 LSU：`cur`/`nxt` 里只保留两个共用的旧单元；`pcur = pnxt` 只拷活的 LDQ / STQ 表项（空 LDQ 项只留 epoch，窗口外的 STQ 项跳过）；`LSU_SEQ_POISON` 构建把跳过的表项填垃圾仍然逐个一致，用来证明没有漏拷（累计约 −20%）。
+  - `LSU_PIPE_DUMP` 只读一次环境变量（每周期 `getenv` 约占 4.5%）。
+  - `TraceBridge::find` 改二分查找（`BRIDGE_FIND_CHECK` 构建会和线性查找对照）。
+  - 发射队列：空位 / 分支扫描用有效位掩码，`clear_br` 只标记变化的项，唤醒以紧凑列表送到各队列，grant gate 只在初始化时设置（不再每周期给 `std::function` 赋值），每个队列只访问自己的端口范围（约 −4.5%）。
+- **结果**：相对 EXP-035 的二进制累计耗时下降约 24%（各步提交里记的是 −14%、累计 −18%、累计 −20%、再 −4.5%；memory-stress-small 一次计时 18.0 s → 12.9 s）。
+- **验证**：每步 gate 64/64、`fp_check`、大程序；LSU 稀疏拷贝用毒化构建验证。
+- **没做的**：`BpuPipe` 的 `R[0]=Blk{}` 和移位（每次约 2.6 KB）、function model 每次派发的 `get_state`（约 2.5%）；多线程加速没做。
+
+## EXP-035 写回口按完成周期在发射时预约
+
+- **状态：2026-11-12 已合入 trace-model `main`（`4a1d9df`）和 rtl `main`（`f61e821`、`b976975`），2026-11-13 已推送。**
+- **问题**：一个写回口每周期只能完成一条 uop，旧模型里撞车的那条先在执行单元里等，而它的消费者已经被唤醒了（带值的核里会读到旧值）。coremark 里撞车 12247 次，fp-kernels 124 次。
+- **做法**：发射时按「完成周期 = 发射 + 延迟（DIV / FDIV 再 +1）」查每个端口的占用环（`WbBusy`，64 项），与 FP 写口的 gate 合并；撞车的 uop 留在 IQ 里下一拍重试，所以撞车数是 0（`WB_RESERVE`，默认开）。
+- **RTL**：`isu_wb_gate`（每端口一个占用位环，偏移用 `isu_pkg::wb_offset()`），接到 `isu.sv` 的候选有效信号上；单元测试 `tests/wb_gate`（随机序列与参考实现的 `WbBusy` 对照，0 不一致）。
+- **周期**：coremark 284,902 → 282,616（−0.80%），dhrystone 116,774 → 116,401（−0.32%），memory-stress-small 325,458 不变；gate 64 个程序里 11 个变化，几何平均约 0，基线已重生成。RTL 与模型逐周期相同（smoke、dhrystone、coremark、pf-stress、fd-*、FP 内核、rv64）。
+
+## EXP-034 Exu 改成按单元的状态，去掉 execution-driven 遗留结构
+
+- **状态：2026-11-13 已合入 trace-model `main`（`a50b64b`，已推送）。**
+- **问题**：Exu 还是最早 execution-driven 时期的结构：每个功能单元是一个 `Fu` 对象，每周期输入输出整体拷贝。
+- **做法**：每个单元一个 `FuUnit`（`SINGLE`/`PIPE`/`ITER` 三种模式，完成周期环形缓冲，赢家用位掩码），各阶段每周期只跑一遍，所以一份状态数组就够；`Fu.h` 只留 `FuKind`/`FuMode` 和 `fu::compute`、`fu::iter_latency`；只访问有 uop 在里面的单元。旧 Exu 冻结成 `tests/exu_ref`，`EXU_SHADOW` 构建里新旧并行、每周期比较输出。
+- **验证**：gate 64/64、`fp_check` 32/64 与基线相同，同步比较 0 不同；约快 6%。过程中修了一处：收集阶段对死 uop 和 LSU 写回要用 `rob_bcast.flush`，不是 `flush_any`。`fd-matmul` 的基线是 EXP-033 的 I2F 优先级变化的陈旧基线，已更新。
+
+## EXP-032 / EXP-033 FP 写口与 fcsr 串行化
+
+- **状态：2026-11-13 已合入 trace-model / rtl `main`，已推送。**
+- **EXP-032**：FP 寄存器堆写口数 `FP_WB_PORTS`（默认 2），发射时预约；统计各口使用；FP 内核和扫描脚本；`fp_check` 24/24、微基准延迟不变。
+- **EXP-033**：`fflags` / `frm` / `fcsr` 是真正的 CSR 指令（串行，`FS=Off` 时非法，`CSR_NUM` 22）；时序模型的 CSR 值不再回补 function model；ROB 从写回取 `illegal_inst`（以前 FP uop 在执行时发现非法不会产生异常）；整数端口的写回优先级里 I2F 在 ALU 之前（I2F 被饿死时消费者读到旧值，带值的核里会错）。`rv32-fp-trap` 87154 → 95438 周期。
+- **RTL 标准 F/D（`exp/fd-rtl`，计划见 `rtl/docs/10-fd-rtl-plan.md`）**：S1 译码和 FP 重命名域、S2 FP 发射队列 / 发射口 / I2F / 第三源唤醒 / FP 写口 gate、S3 FP 寄存器堆和 FP 单元（DPI softfloat）、S4a `flw/fsw`、S5 `fflags/frm/fcsr` / `mstatus.FS/SD` / `misa` / FS=Off 异常、S6 每条提交逐位比较 FP 寄存器（含 NaN-boxing）、rv64 的字 load 宽度位；`exu_ctrl` 的 CSR FU 旁路带 CSR 读数据（以前消费者与 CSR 同拍执行时读到 0，rv32uf-fcmp/fdiv 多 1 周期）。**FP 单元是 DPI softfloat，不可综合**（S7 没做）。
+- **rv64g Linux**（function-model `exp/fd-all`）：Buildroot 2024.02.9、`lp64d`、`riscv,isa = "rv64imafd"`（`linux/ttg64g.dts`）、rootfs 里带 `fptest`；function model 上到登录且 `fptest: PASS`。
+- **RTL 上 rv64g Linux 从复位启动**（2026-11-13）：RTL（rv64、`FP=1`）每条提交与 function model 逐条对比（`SOC_TB_FM=1`），**到 `rv64 login:`，`fptest: PASS`，171,931,468 条指令、6282 个设备/计数器值、816 次中断，0 不一致**；2.2 亿周期上限、约 2 小时 41 分（约 2.3 万周期/秒）。从复位需要 `-DTTG_EBREAK_TRAP` 构建加 `SOC_TB_SEMIHOST=1`（OpenSBI 探测半主机用 ebreak；没有它在 9.7 万周期处停住）。日志和镜像：`AI-Huma-data/linux_rv64g/`。之前还验证过 4 个 Linux 中段检查点各 3M 周期 0 不一致（检查点文件在会话临时目录，已丢，可用 `function-model --mode special-ckpt` 重生成）。
 
 ## EXP-031 删除 Zfinx，全面改用标准 F/D（含 rv32）
 
