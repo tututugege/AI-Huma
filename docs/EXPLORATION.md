@@ -6,6 +6,7 @@
 
 | 编号 | 日期 | 题目 | 分支 | 状态 | 一句话结论 |
 |---|---|---|---|---|---|
+| [EXP-038](#exp-038-c-扩展trace-model-前端按半字取指) | 2026-11-13 | C 扩展：trace-model（前端半字取指、BPU / FTQ 半字位置、按指令的取指缓冲），参考香山和 BOOM | trace-model `exp/rvc`（工作区 `trace-model-rvc`） | **进行中**：S0 完成（`4db3277`），未合入 | S0（后端和 bridge 的长度通路，周期不变）完成；S1–S5 未开始 |
 | [EXP-037](#exp-037-c-扩展压缩指令function-model-第一步) | 2026-11-13 | C 扩展（压缩指令）：function-model 第一步，之后 trace-model（前端按半字）、RTL | function-model `exp/rvc`、`exp/rvc-fast` | **function-model 完成（含快速路径），已合入 main（2026-11-13，已推送）**；trace-model / RTL 未开始 | `RVC=1` 开关（rv32 / rv64，默认关）；16 位编码逐个与 Spike 一致，带 C 的 Linux（内核 + OpenSBI）从复位到 `rv64 login:` 前 2.5 亿条指令与 Spike 逐条一致 |
 | [EXP-036](#exp-036-trace-model-仿真速度去掉每周期的状态拷贝) | 2026-11-13 | trace-model 仿真速度：去掉每周期的状态拷贝（BPU、LSU、Bridge、IQ） | trace-model `exp/fcsr`（`067f02e`…`195dad4`） | **已合入 main（2026-11-13，已推送）** | 周期逐个不变（gate 64/64），耗时累计下降约 24%（各步提交里的计时） |
 | [EXP-035](#exp-035-写回口按完成周期在发射时预约) | 2026-11-12 | 每个写回口每周期只能完成一条：发射时按完成周期预约，撞车的留在 IQ | trace-model `exp/fcsr`（`4a1d9df`）、rtl `exp/fd-rtl`（`f61e821`、`b976975`） | **已合入 main（2026-11-13，已推送）** | 撞车从 coremark 12247 次降到 0；coremark −0.80%、dhrystone −0.32% 周期；RTL 与模型逐周期相同 |
@@ -41,6 +42,21 @@
 | [EXP-001](#exp-001-面积优化三个方向) | 2026-11-04 | 面积优化：FTQ 合并、LSU 端口、LD/STA IQ 合并 | trace-model `exp/area-explore` | 未提交、未合入 | 三个方向都能省面积，性能代价 0–1% |
 
 ---
+
+## EXP-038 C 扩展：trace-model 前端按半字取指
+
+- **状态：2026-11-13 进行中；S0 完成（trace-model `exp/rvc` `4db3277`，工作区 `trace-model-rvc`，未合入）。** function-model 侧见 EXP-037（已合入 main）。
+- **设计依据**（读了香山 [IFU](https://docs.xiangshan.cc/projects/design/en/latest/frontend/IFU/) / [PreDecoder](https://docs.xiangshan.cc/projects/design/en/latest/frontend/IFU/PreDecoder/) / [FTQ](https://docs.xiangshan.cc/projects/design/en/latest/frontend/FTQ/) 文档和 `PreDecode.scala`、`IBuffer.scala`，以及 BOOM 的取指和分支预测文档）：
+  - 预测位置：2 字节一个（香山 32B 块 16 个位置；BOOM 按 `fetchWidth*16` 位的取指包）。我们把 slot 宽度参数化：`RVC=1` 时 slot 是 2 字节、每块 16 个位置，`RVC=0` 仍是 4 字节 8 个位置。
+  - 跨界的 32 位指令：采用香山的约定，归起始所在的块；取 34B（17 个半字），后半条同拍可见，下一块用 `lastHalf{valid, middlePC}` 作废自己的第 0 个位置，不多一次取指；BOOM 是归含高 16 位的包、F3 带状态多拍拼接，不选。
+  - 块起点在 64B 行的后半时 I$ 取两行拼接（BOOM 不支持跨行）。
+  - 取指缓冲按指令存：最多 16 条进、`PopCount` 压缩、每拍最多 DecodeWidth 条出、空时旁路、剩余空间容不下一整块就不接收。
+  - 预测校验两级：F3 级对 jal / jalr / ret 截断范围；写回级查「预测 taken 的位置不是指令起点」「非跳转被预测 taken」「目标不符」。顺序目标 `pc + (isRVC ? 2 : 4)`。
+  - 没查到的：香山 FTB 的分支槽数和偏移编码、跨行气泡周期数、RAS 返回地址规则、译码宽度、BOOM 的 FTQ 字段。
+- **步骤**：S0 后端和 bridge 的长度通路（周期不变）；S1 slot 宽度参数化、16 个半字位置（BPU 数组、FTQ 偏移宽度、PTAB）；S2 I$ 取 17 个半字、两行拼接、预译码边界链和 `isRVC`、`lastHalf`；S3 按指令的环形取指缓冲；S4 预测校验两级和 RAS 带长度；S5 PMU 和带 C / 不带 C 的对比。`FE_PAIR` 先与 RVC 互斥。
+- **S0 做了什么**：`RVC` 编译开关（默认 0，需要 `RVC` 一致的 `librefcpu`）；每条指令 1 位 `is_rvc`，从前端输出经 FTQ 的 slot、uop、ROB 广播一路带到后端；后端所有 `pc+4`（分支解析的预测目标和 `diag_val`、JAL / JALR 的链接值、flush 后重取地址、MsData、FTQ 的配对判断、提交时训练的目标）改成 `pc + ilen`；`Bridge::dispatch` 带长度，`Fact.len`，不执行或 trap 撤销时的 `pc+4` 改 `pc+len`；`FastWarm` 用单步的 `inst_len`。前端各 lane 的 `is_rvc` 仍恒为 0（S2 才产生）。
+- **验证**：`RVC=0` gate 64/64 周期与基线逐个相同；`RVC=1`（function-model 也带 C）能编译，非 C 的测试 61/64 与基线相同，3 个不同是 C 的语义（`jalr` 只清第 0 位、`medeleg[0]`）：`itt-dispatch`、`load-store-aligned`、`supervisor-illegal-delegation`。
+- **没做的**：S1–S5；BPU 里的 `pc+4`（RAS 压栈、BTB 未命中目标、索引的 `>>2`）留到 S1/S2，因为依赖 slot 几何。
 
 ## EXP-037 C 扩展（压缩指令）：function-model 第一步
 
