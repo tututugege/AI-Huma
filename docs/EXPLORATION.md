@@ -6,7 +6,7 @@
 
 | 编号 | 日期 | 题目 | 分支 | 状态 | 一句话结论 |
 |---|---|---|---|---|---|
-| [EXP-038](#exp-038-c-扩展trace-model-前端按半字取指) | 2026-11-13 | C 扩展：trace-model（前端半字取指、BPU / FTQ 半字位置、按指令的取指缓冲），参考香山和 BOOM | trace-model `exp/rvc`（工作区 `trace-model-rvc`） | **进行中**：S0、S1、S2 完成（`4db3277`、`544da52`、`5bd7a75`），未合入 | S0–S2 完成，`RVC=0` 周期不变；`RVC=1` 的前端能运行带 C 和不带 C 的程序，与 function-model 逐条对拍 0 不一致；S3–S5 未开始 |
+| [EXP-038](#exp-038-c-扩展trace-model-前端按半字取指) | 2026-11-13 | C 扩展：trace-model（前端半字取指、BPU / FTQ 半字位置、按指令的取指缓冲），参考香山和 BOOM | trace-model `exp/rvc`（工作区 `trace-model-rvc`） | **进行中**：S0–S2 和变慢程序的修复已合入 trace-model `main`（`74e6827`，2026-11-13，已推送）；S3–S5 未做 | S0–S2 完成，`RVC=0` 周期不变；`RVC=1` 的前端能运行带 C 和不带 C 的程序，与 function-model 逐条对拍 0 不一致；S3–S5 未开始 |
 | [EXP-037](#exp-037-c-扩展压缩指令function-model-第一步) | 2026-11-13 | C 扩展（压缩指令）：function-model 第一步，之后 trace-model（前端按半字）、RTL | function-model `exp/rvc`、`exp/rvc-fast` | **function-model 完成（含快速路径），已合入 main（2026-11-13，已推送）**；trace-model / RTL 未开始 | `RVC=1` 开关（rv32 / rv64，默认关）；16 位编码逐个与 Spike 一致，带 C 的 Linux（内核 + OpenSBI）从复位到 `rv64 login:` 前 2.5 亿条指令与 Spike 逐条一致 |
 | [EXP-036](#exp-036-trace-model-仿真速度去掉每周期的状态拷贝) | 2026-11-13 | trace-model 仿真速度：去掉每周期的状态拷贝（BPU、LSU、Bridge、IQ） | trace-model `exp/fcsr`（`067f02e`…`195dad4`） | **已合入 main（2026-11-13，已推送）** | 周期逐个不变（gate 64/64），耗时累计下降约 24%（各步提交里的计时） |
 | [EXP-035](#exp-035-写回口按完成周期在发射时预约) | 2026-11-12 | 每个写回口每周期只能完成一条：发射时按完成周期预约，撞车的留在 IQ | trace-model `exp/fcsr`（`4a1d9df`）、rtl `exp/fd-rtl`（`f61e821`、`b976975`） | **已合入 main（2026-11-13，已推送）** | 撞车从 coremark 12247 次降到 0；coremark −0.80%、dhrystone −0.32% 周期；RTL 与模型逐周期相同 |
@@ -45,7 +45,7 @@
 
 ## EXP-038 C 扩展：trace-model 前端按半字取指
 
-- **状态：2026-11-13 进行中；S0 完成（trace-model `exp/rvc` `4db3277`，工作区 `trace-model-rvc`，未合入）。** function-model 侧见 EXP-037（已合入 main）。
+- **状态：2026-11-13 进行中；S0–S2 和变慢程序的修复已快进合入 trace-model `main`（`74e6827`）并推送；工作区 `trace-model-rvc`（分支 `exp/rvc`）。** function-model 侧见 EXP-037（已合入 main）。
 - **设计依据**（读了香山 [IFU](https://docs.xiangshan.cc/projects/design/en/latest/frontend/IFU/) / [PreDecoder](https://docs.xiangshan.cc/projects/design/en/latest/frontend/IFU/PreDecoder/) / [FTQ](https://docs.xiangshan.cc/projects/design/en/latest/frontend/FTQ/) 文档和 `PreDecode.scala`、`IBuffer.scala`，以及 BOOM 的取指和分支预测文档）：
   - 预测位置：2 字节一个（香山 32B 块 16 个位置；BOOM 按 `fetchWidth*16` 位的取指包）。我们把 slot 宽度参数化：`RVC=1` 时 slot 是 2 字节、每块 16 个位置，`RVC=0` 仍是 4 字节 8 个位置。
   - 跨界的 32 位指令：采用香山的约定，归起始所在的块；取 34B（17 个半字），后半条同拍可见，下一块用 `lastHalf{valid, middlePC}` 作废自己的第 0 个位置，不多一次取指；BOOM 是归含高 16 位的包、F3 带状态多拍拼接，不选。
