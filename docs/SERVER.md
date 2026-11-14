@@ -46,7 +46,7 @@ RTL_SRC=/Users/ruyaoh/personal/AI-Huma/<你的 trace-model worktree> RTL_DST=/ro
 
 - 30 点精确预热：`POINTS=points_30.txt`，并发 3。
 - 全量 580 点快速预热：`POINTS=points_full.txt FASTWARM=1000000`，并发 8；mcf 单独一批 `POINTS=points_full_429.mcf.txt`（并发 ≤12），不要和其它程序混在一起（OOM）。去掉 mcf 的列表：`grep -v ' 429.mcf ' points_full.txt`。
-- 运行时开关用 `env LSU_PIPE=0 BPU_PIPE=0 ...` 放在 `bash run_eval.sh` 前面。
+- 运行时开关用 `env LSU_PIPE=0 ...` 放在 `bash run_eval.sh` 前面。
 - 任务用 `nohup ... &` 放在后台；远程命令里的 `$` 要转义成 `\$`。
 
 ## 4. 看进度、取结果
