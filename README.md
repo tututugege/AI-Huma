@@ -19,7 +19,7 @@ AI-Huma 有两层意思：
 |---|---|---|
 | 建立起点 | 至 2026-11-04 | 从 tututugege/simulator 蒸馏出 trace-model（代码从约 8.4 万行降到 4.3 万行、更快，周期与原模型完全一致）；逐模块翻译出 RTL，与原模型逐拍对照；接入 function-model。逐拍对照体系完成使命后退役（rtl `docs/history/`、标签 `legacy-reference`）。 |
 | 自主优化 | 2026-11-04 起 | 正确性改为对照 function-model，周期不再要求与原模型一致；建立探索 → 验证 → 合入 main 的流程（[WORKFLOW.md](docs/WORKFLOW.md) 第 4–6 节）；重建 SPEC 检查点。已合入 main 的优化（逐项数字见 [MAIN_RECORDS.md](docs/MAIN_RECORDS.md)）：第 3 批面积配置（EXP-005）、DRAMsim3 DDR 内存模型并去掉 AXI 分频（EXP-006，新基线）、mov 消除（EXP-012）、L1D 数据预取器 h1（EXP-009）、PMU（EXP-013）、分级 LSU + 流水化 BPU（EXP-015）、后端 DSE 支持代码（EXP-016）、IQ 入队宽度（EXP-017）、访存推测与前端快速通路（EXP-019/020/023）、已提交 store 的 write buffer（EXP-024）、多表间接跳转预测 ITT（EXP-025）、删除 0x87f00000 非缓存窗口（EXP-027）、紧凑 ROB（EXP-028）。待做见 [TODO.md](docs/TODO.md)。 |
-| rv64 | 2026-11-11 起 | 从 rv32imab 迁移到 rv64imab + Sv39（EXP-029，2026-11-12 合入本地 main）：三个层次都支持，XLEN 是构建参数，默认 32 保持原行为；F/D、C、SPEC rv64 检查点未做。 |
+| rv64 | 2026-11-11 起 | 从 rv32imab 迁移到 rv64imab + Sv39（EXP-029），后加 F/D、C（rv64gc）；**2026-11-16 起 main 只有 rv64gc，rv32 在各仓库分支 `rv32-legacy`**（见 [docs/RV32_REMOVAL.md](docs/RV32_REMOVAL.md)）。 |
 
 ## 三个部分
 
@@ -80,13 +80,13 @@ README 只写概况，**各次合入的数字、配置变化和已知回退以 [
 - **性能**：SPEC 估算分数（官方参考时间直接换算，580 个检查点、快速预热）11.53 分/GHz（EXP-028 合入时）；各次合入对上一次 main 的几何平均 IPC：EXP-027 +10.75%、EXP-028 +2.74%。**RTL 没有跑过 SPEC**；没有工艺库综合和时序（WNS），只有 yosys 通用门面积代理。
 - **rv64（EXP-029，2026-11-12 合入本地 main）**：`XLEN_BITS=64` / `-DXLEN=64` 可选，rv64imab + Sv39；RTL 上 53 个 rv64 程序和 Linux 到 `rv64 login:` 逐条对比 0 不一致；默认 XLEN=32 周期不变。未做：F/D、C、SPEC rv64 检查点、`back_top.sv`/`exu.sv`/`soc_top.sv` 生成器同步（见 TODO）。
 - **C 扩展与 rv64gc 的 RTL（EXP-038、EXP-040，2026-11-15 合入）**：`RVC=1`（C910 式携带）和 rv64gc（`RVC=1`、`FP=1`）的 RTL 与 trace-model 逐周期对齐，含 Linux；默认配置（rv32、`RVC=0`）周期不变。快速检查用 `rtl/scripts/linux_segments_cmp.sh`（检查点窗口并行，RTL 对 trace-model），从复位的完整 Linux gate 是最后确认（[docs/WORKFLOW.md](docs/WORKFLOW.md) 第 3.2 节）。已知遗留：rv32 `RVC=1`（`FP=0`）整核测试平台起不来，见 `rtl/docs/RVC_RTL.md`。
-- **trace-model**：gate 64/64（`run_gate.sh`，周期等于 `results/baseline/baseline.csv`）；Linux 启动到登录；SPEC 回放（580 个 rv32imab 检查点）。
-- **rtl**：lint 干净（按目录和整芯片，XLEN=32 和 64）；`fm_gate.sh` 69/69 逐条对比，周期与 trace-model（`LSU_PIPE_NOWD=1`）逐个相等；Linux 从复位一次连续启动到 `rv32 login:`（rv64 到 `rv64 login:`）逐条对比 0 不一致；store 数据不在逐条对比范围内。已知风险见 [rtl/docs/08-risk-register.md](rtl/docs/08-risk-register.md)。
+- **trace-model**：gate 62/62（`run_gate.sh`，周期等于 `results/baseline/baseline.csv`，rv64）；Linux 启动到登录；SPEC 回放（原 580 个 rv32imab 检查点已不能用于 rv64 main，只在 `rv32-legacy`）。
+- **rtl**：lint 干净（按目录和整芯片）；`fm_gate.sh` 67/67 逐条对比，周期与 trace-model（`LSU_PIPE_NOWD=1`）逐个相等；Linux 从复位一次连续启动到 `rv64 login:`逐条对比 0 不一致；store 数据不在逐条对比范围内。已知风险见 [rtl/docs/08-risk-register.md](rtl/docs/08-risk-register.md)。
 - **未合入的实验**：sdip 预取器（EXP-026，`exp/sdip`）、LD/STA IQ 合并与统一 FTQ 的 RTL 试做（见 TODO）、其余探索见 [EXPLORATION.md](docs/EXPLORATION.md) 索引。
 
 ## 复现
 
-细节见 `trace-model/docs/PROJECT.md` 和 `rtl/docs/README.md`。要点（默认 rv32）：
+细节见 `trace-model/docs/PROJECT.md` 和 `rtl/docs/README.md`。要点（rv64）：
 
 ```bash
 # trace-model 依赖同级的 function-model（trace-model/function-model 是指向 ../function-model 的符号链接）

@@ -15,10 +15,8 @@
 |---|---|---|
 | **从复位的 Linux 在约 3000–3050 万周期起与 RTL 的 PMU 区间不同**（EXP-040 的已知误差） | 提交指令数 684,700 / 686,688（+0.29%），之后区间差异正负不定；检查点冷启动（`s44`、`s46`）不复现，只能从复位。原因没查 | `drill_pmu.sh` 找出第一个差异的 25 周期窗口并抓波形，对出原因（线索：错误路径上的 FP / 污染表 / 发射停顿这一类）；从复位的 140M 周期 Linux 全程逐区间相同、逐条检查 0 不一致、到 `login:` |
 | 最终版本的检查点窗口整批重跑 | 18/18 是最后几处修复之前的模型跑的 | `linux_segments_cmp.sh` 对 18 个窗口加 `s44`/`s45`/`s46` 全部 PASS |
-| rv32 `RVC=1`（`FP=0`）整核测试平台起不来 | 67 个程序在第一条提交 `pc rtl=4 fm=0`，在没有改动的 HEAD 上同样（2026-11-15 查）；原因不明（RTL 前端起点、测试平台启动桩、function-model 库的 RVC 设置三处都没排除） | 查清原因并修好；`ref_cycles_rvc.txt` 用当前模型重新生成；`fm_gate.sh` 在 `RVC=1` 配置下全部通过且周期相等 |
 | 检查点窗口里比 PMU 区间 | `linux_segments_cmp.sh` 现在只比 PT / UP 指纹：恢复程序在 RTL 里比模型慢约 8k 周期（0x0 的非 RAM 启动窗口取指慢），PMU 区间按绝对周期切所以错位 | 两边在恢复结束处对齐计数（或模型的启动窗口取指时间与 RTL 一致），`PMU_CMP=1` 能通过 |
-| rv64 `RVC=0`、rv32 `FP=1` 之外的组合 | 这次只验了 rv32 `RVC=0` 和 rv64gc（`RVC=1`、`FP=1`） | 其余组合各跑 `fm_gate.sh` 与周期对比 |
-| `memspec_pf` 的 rv32 版没有区分力 | 旧 rv32 RTL 与模型周期相同（rv64 版差 9 周期） | 调整 rv32 版（迭代数、错误路径深度）使旧实现失败 |
+| rv64gc（`RVC=1`、`FP=1`）之外的组合（rv64 `RVC=0`、`FP=0`） | main 只验 rv64gc | 其余组合各跑 `fm_gate.sh` 与周期对比 |
 | **逐条对比加上 store 比较**（rtl V-12） | 现在只比提交 PC 和目的寄存器。第 1 批的 MMIO store 数据错误（串口乱码、中断不来）逐条对比没报，是靠比串口输出发现的；之后还要动 LSU 端口和 LD/STA 合并 | `tb/soc/fm_check.h` 在每条 store 提交时比较物理地址、数据、字节使能（MMIO 和可缓存都比）；门禁重跑通过；再考虑 CSR 写值 |
 | RTL 断言 | RTL 里几乎没有 assert；统一 FTQ、LD/STA 合并新加的断言因为测试平台不带 `--assert` 从未执行过 | 测试平台默认带 `--assert`，断言失败算门禁失败；模块笔记里的“假设/不可达”都有对应断言 |
 | 闭环补跑 `float_test`；扩大 gate（rv32 `memory-stress` 已在 EXP-029 合入时跑过：230.8 万周期、745 万条指令逐条对比 0 不一致，但还没进回归，见 rv64 收尾） | 现在的 gate 程序都很小（最长 23 万周期） | `float_test` 在 RTL 逐条对比通过；gate / 回归加入更长的定向程序 |
@@ -87,7 +85,6 @@ EXP-024 合入的是"STQ 内分组"的简化版 write buffer：4 个条目、每
 
 - 生成文件欠债：`back_top.sv` / `exu.sv` / `soc_top.sv` 是手改的，`tools/gen_backtop.py`、`gen_soc_top.py`、`spec/*.io` 和 `gen_cfg_pkg.py`（`XLEN_BITS`）要同步，否则重新生成会丢 rv64 位宽。
 - 对周期必须用 `LSU_PIPE_NOWD=1` 跑模型（否则 63 周期看门狗会让 store 重发，`crc32` 等程序差几十周期）；考虑把它设成 trace-model 默认或在 `cyc*.sh` 里写死。
-- 把 rv32 `memory-stress` 加进回归（rv32 子集 ≤15 万周期测不出大数组写回 bug）。
 - F/D（rv32 和 rv64，EXP-030…036 已合 main，模型和 RTL 逐周期一致，rv64g Linux 在 RTL 上到登录且 `fptest: PASS`；还没做：RTL 的可综合 FP 单元（现在是 DPI softfloat，S7）、PolyBench/SPECfp 上标定延迟和队列大小、STD 口 FP 数据口数、F/D 的 SPEC 验证、`BpuPipe` 剩余拷贝热点）、C（EXP-037：function-model 已完成并合入 main；trace-model 前端按半字取指、BPU / FTQ 半字粒度、RTL 预译码和边界还没做）、bitmanip 边界测试、SPEC rv64 检查点流程、FastWarm 的 Sv39、function-model rv64 的 MMIO `sd`/`ld` 回读、交互式登录测试。
 
 ## 待做：乘除法器的物理实现优化（2026-11-12，EXP-029 综合代理对比后）

@@ -16,7 +16,7 @@
 - **trace-model**：正确性 = 每个 gate 程序以 difftest Success 结束（与 function-model 提供的“事实”一致）；回归标准是 gate 周期等于 `results/baseline/baseline.csv`。开关默认关闭的实验，关闭时周期必须与基线逐个相同；改默认值时重生成基线（第 6 节第 2 步）。原模型的周期已不再是标准（2026-11-04 起）。
 - **rtl**（2026-11-04 起，见 `rtl/docs/06-equivalence-policy.md`）：正确性 = 整核测试平台逐条提交与 function-model 一致（提交 PC + 目的寄存器值）。周期数是性能指标；**合入 main 时**要求同一配置下 RTL 与 trace-model 整程序周期逐个相等（第 1 节第 3 条）。逐条对比不比较 store 数据和内存，访存/外设路径有改动时还要对比串口输出。
 - **function-model**：提交序列与参考模型（Spike）一致。
-- **位宽（XLEN）**：默认 `XLEN=32`（rv32imab），行为和周期是回归标准；`XLEN=64`（rv64imab + Sv39，EXP-029）是可选配置（RTL `XLEN_BITS=64`，模型和 function-model `-DXLEN=64`），改动到位宽相关的代码（数据通路、LSU、dcache、MMU、CSR、PC 宽度）时两种配置都要验：整芯片 lint 两种都 0 警告，rv32 门禁周期不变，rv64 的 cpu-tests 逐条对比通过（构建方法见 [../rtl/scripts/README.md](../rtl/scripts/README.md)）。F/D、C、SPEC rv64 检查点尚未做。
+- **位宽（XLEN）**：main 只有 rv64gc（`XLEN=64`、`FP=1`、`RVC=1`；RTL 默认配置包即此配置）。rv32 已于 2026-11-16 从 main 删除，整套保留在各仓库的分支 `rv32-legacy`，不要再在合入清单里加 rv32 门禁，见 [RV32_REMOVAL.md](RV32_REMOVAL.md)。
 - **对 RTL 比周期时模型必须设 `LSU_PIPE_NOWD=1`**：RTL 没有 LDQ/STQ 的 63 周期看门狗，不设时模型会在 load/store 停住 63 周期后重发，`crc32`、`memory-stress` 等程序会差几十周期（见 [../trace-model/docs/ENV_VARS.md](../trace-model/docs/ENV_VARS.md)）。`ref_cycles.txt` 是在这个设置下标定的。
 
 ## 3. 必须具备的 harness
@@ -27,7 +27,7 @@
 |---|---|---|
 | gate | 64 个测试（含 pf-stress、itt-dispatch；`memory-stress`、`load-store`、`smc-*` 不在 gate 里），周期与基线一致 | `scripts/run_gate.sh build/simulator results/gate` |
 | 大程序 | dhrystone 64 次、coremark 2 次迭代（2026-11-04 起固定为这两个缩短版）、memory-stress、smc-div、smc-addi；当前标准周期见 `trace-model/docs/PROJECT.md` 的 Gate 第 4 条，随配置变化更新 | dhrystone/coremark 在 `rtl/programs/big`，其余在 `trace-model/build/tests`；每次改动后检查 |
-| Linux | 镜像 `~/personal/AI-Huma-data/linux/linux.bin`（`function-model/linux/mkimage.sh`，`MEM=0x10000000`），从复位启动到 `rv32 login:` | 合入 main 前必跑 |
+| Linux | 镜像 `~/personal/AI-Huma-data/linux_rv64/linux.bin`（`function-model/linux/mkimage.sh`，`KOFF=0x200000 DTS=ttg64.dts MEM=0x10000000`），从复位启动到 `rv64 login:` | 合入 main 前必跑 |
 | small-LLC 检查 | 默认 8 MiB LLC 在小测试里不会换出，用 64 KiB LLC 检查 DDR 写回路径 | `scripts/llc_small_check.sh $PWD <baseline-sim/src 绝对路径>` |
 | lockstep 影子 | 把冻结的原模块和重写的模块在同一模拟里并行跑，每个阶段比较输出和状态摘要，不一致退出码 2 | 现只剩 `scripts/lsu_shadow.sh`，参考副本在 `tests/*_ref` |
 | 随机差分 | 随机激励下比较重写模块和冻结原版：`bpu_diff`、`ddr_diff`；闭环 `llc_diff`、`ic_diff` | `scripts/bpu_diff.sh`、`ddr_diff.sh`、`llc_diff.sh`、`ic_diff.sh`（`csr_diff`/`idu_diff`/`pre_diff` 只剩 `tests/` 里的源码，没有脚本） |
@@ -39,7 +39,7 @@
 |---|---|
 | lint | `scripts/lint.sh`（按目录、规范 + `-Wall`）和 `scripts/lint_chip.sh`（以 `soc_top` 为顶的整芯片 `-Wall`）都要 0 警告；改参数前用 `CFG=<配置包> scripts/lint_chip.sh` 预查写死的位宽 |
 | 逐条对比门禁 | `scripts/fm_gate.sh`：`ref_cycles.txt` 里 69 个程序（gate + vm + 定向测试 + dhrystone + coremark）在整核测试平台上逐条对比 function-model，全部通过；同时报告与 trace-model 周期（`ref_cycles.txt`）不同的个数 |
-| Linux | 整核测试平台（`SOC_FM=1`、`SOC_VOPT="--threads 4 -DTTG_EBREAK_TRAP"`），`SOC_TB_FM=1 SOC_TB_SEMIHOST=1` 从复位启动到 `rv32 login:`，全程逐条对比（数小时） |
+| Linux | 整核测试平台（`SOC_FM=1`、`SOC_VOPT="--threads 4 -DTTG_EBREAK_TRAP"`），`SOC_TB_FM=1 SOC_TB_SEMIHOST=1` 从复位启动到 `rv64 login:`，全程逐条对比（数小时） |
 | Linux 窗口（rv64，快速 gate） | `scripts/linux_segments_cmp.sh <soc_tb> <模型> <检查点目录> <输出目录> [周期]`：每 1000 万条指令一个检查点，RTL 和 trace-model 从同一个检查点冷启动、跑同样的周期数，只比逐条检查和 PT/UP 指纹（PMU 区间按绝对周期切，不比）。并行跑，十几分钟出全部；改动 RTL/模型的行为后先跑它，从复位的完整 Linux 留到合入前最后确认 |
 | 综合对比 | `scripts/synth_cfg.sh`：受影响模块在改动前后各综合一遍（面积代理，见 `rtl/docs/09-synthesis-report.md`） |
 | 已退役（2026-11-04） | 模块边界 trace 回放、整程序实时锁步、随机 trace：随旧参考模型退役，脚本在 rtl 标签 `legacy-reference` |
@@ -48,7 +48,7 @@
 ### 3.3 通用要求
 
 - **新模块或新特性要同时带 harness。** 没有测试能区分对错的行为，不算验证过。
-  - **新特性要补一个短 gate 测试程序**（2026-11-15）：能稳定触发这个特性的小程序，放 rtl `programs/directed/`，rv32 / rv64 同源，在 `build.sh` 里加一项，周期进 `scripts/ref_cycles*.txt`；判据是逐条检查无不一致 + 模型与 RTL 周期相同（预测器、前端类特性再加 PT/UP 指纹，`scripts/align_check.sh`）。写好后要在**没有该特性的旧实现上确认它会失败**，否则它没有区分力。
+  - **新特性要补一个短 gate 测试程序**（2026-11-15）：能稳定触发这个特性的小程序，放 rtl `programs/directed/`，rv64，在 `build.sh` 里加一项，周期进 `scripts/ref_cycles*.txt`；判据是逐条检查无不一致 + 模型与 RTL 周期相同（预测器、前端类特性再加 PT/UP 指纹，`scripts/align_check.sh`）。写好后要在**没有该特性的旧实现上确认它会失败**，否则它没有区分力。
   - **不能把 Linux 当作唯一的测试。** 同一天有两个差异（页错误的 load 把出错地址写进目的寄存器；store 的基址寄存器来自读到旧值的 load，数据写到旧地址）都只在 Linux 跑到几百万周期后的推测窗口里出现，定位用了几个小时；一个短程序几秒钟就能复现，也能让以后的改动一直回归到它。
   - 合入 main 时检查：这次改动带来的新行为，在 `programs/directed/` 里有没有对应的短程序；没有就先补，写进 `MAIN_RECORDS.md` 那一节的"验证范围"。
 - **新 harness 自己要先验证**：植入一个已知 bug，确认能抓到。
@@ -103,8 +103,8 @@
 2. **trace-model 分两步提交**：先加开关、默认值保持原设计（gate 与基线逐个相同、大程序周期不变）；再单独提交新的默认值，同时更新 `results/baseline/baseline.csv`（每个 gate 程序都以 difftest Success 结束、无不一致）和 `docs/PROJECT.md` 的大程序标准周期。
 3. **rtl 跟着 trace-model 的默认值走**：`make cfg` 不带 `-D`，生成的 `ttg_cfg_pkg.sv` 必须与实验时用的配置包逐字节相同；`scripts/ref_cycles.txt` 换成新周期，并与 trace-model 的 `baseline.csv` 交叉核对。写死的位宽、维度改成从配置推出，和改参数分开提交。
 4. **在提交后的代码上复验**（不能拿实验时的结果代替）：
-   - trace-model：gate 全部通过（64/64，周期等于基线），大程序，Linux 从复位启动到 `rv32 login:`；
-   - rtl：`lint.sh`、`lint_chip.sh` 0 警告；`fm_gate.sh` 69/69（以 `ref_cycles.txt` 的个数为准），周期与 trace-model（`LSU_PIPE_NOWD=1`）逐个相等；串口输出与上一版一致（打印计时器的 `timer-mmio` 除外）；Linux 从复位启动到 `rv32 login:`，全程逐条对比；；rv64 Linux 先跑 `linux_segments_cmp.sh`（检查点窗口全部 PT/UP 一致、逐条检查 0 不一致），再跑从复位的完整 `linux_gate.sh`；新特性对应的短 gate 程序已补且通过
+   - trace-model：gate 全部通过（`results/baseline/baseline.csv` 62/62，周期等于基线；RVC=1 用 `baseline_c.csv` 67/67），大程序，Linux 从复位启动到 `rv64 login:`；
+   - rtl：`lint.sh`、`lint_chip.sh` 0 警告；`fm_gate.sh` 67/67（以 `ref_cycles.txt` 的个数为准），周期与 trace-model（`LSU_PIPE_NOWD=1`）逐个相等；串口输出与上一版一致（打印计时器的 `timer-mmio` 除外）；Linux（rv64）先跑 `linux_segments_cmp.sh`（检查点窗口全部 PT/UP 一致、逐条检查 0 不一致），再跑从复位的完整 `linux_gate.sh`；新特性对应的短 gate 程序已补且通过
    - 动到位宽相关代码时再验 XLEN=64（第 2 节“位宽”）；
    - 原配置参数下的回归：改动若声称“原配置下不变”，用原配置包再跑一遍门禁确认周期逐个相同。
 5. **性能和面积**：固定负载（第 5.2 节）+ quick SPEC（`trace-model/scripts/spec/replay.sh quick`）；受影响模块的综合前后对比。

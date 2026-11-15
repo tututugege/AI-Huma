@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Pre-merge gate for the three repositories.   usage: scripts/gate_all.sh [smoke|standard]
-#   smoke    (~10 min): trace-model gate (62 tests) | RTL lint | RTL per-commit check vs the function model on every gate/vm program
+#   smoke    (~10 min): trace-model gate (62 tests) | RTL lint | RTL per-commit check vs the function model on every gate program
 #                       | trace-model vs RTL first-divergence check (dhrystone window)
 #   standard (+ ~30 min): + whole-program cycle/instruction equality trace-model vs RTL (scripts/cmp_trace_model.sh)
 #                         + RTL Linux checkpoint window with the per-commit check (1M cycles)
@@ -14,7 +14,7 @@ step() { local name=$1; shift; if "$@" > "/tmp/gate_all.$$.$name.log" 2>&1; then
 step tm_gate        bash -c "cd '$ROOT/trace-model' && bash scripts/run_gate.sh build/simulator /tmp/gate_all.$$.gate | tail -1 | grep -q 'fail=0'"
 step rtl_lint       bash -c "cd '$ROOT/rtl' && bash scripts/lint.sh"
 step rtl_vs_fm      bash -c "cd '$ROOT/rtl' && FMTB=build/soc_fm4/obj/soc_tb; G='$ROOT/trace-model/build'; bad=0; n=0
-  for b in \$(ls \$G/tests/*/*.bin \$G/vm/*/*.bin | grep -v -e load-store/ -e memory-stress); do n=\$((n+1))
+  for b in \$(ls \$G/tests/*/*.bin | grep -v -e load-store/ -e memory-stress); do n=\$((n+1))
     out=\$(SOC_TB_FM=1 SOC_TB_SEMIHOST=1 perl -e 'alarm 90; exec @ARGV' \$FMTB \$b 2000000 2>&1 | grep -a '\\[FM\\] [0-9]'); case \"\$out\" in *MISMATCH*|'') echo \"BAD \$b: \$out\"; bad=\$((bad+1));; esac; done
   echo \"\$n programs, \$bad bad\"; [ \$bad -eq 0 ]"
 step first_diff     bash -c "cd '$ROOT/rtl' && bash scripts/first_diff.sh programs/big/dhrystone.bin 20000 | grep -q identical"
