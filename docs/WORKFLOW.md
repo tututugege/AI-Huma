@@ -40,6 +40,7 @@
 | lint | `scripts/lint.sh`（按目录、规范 + `-Wall`）和 `scripts/lint_chip.sh`（以 `soc_top` 为顶的整芯片 `-Wall`）都要 0 警告；改参数前用 `CFG=<配置包> scripts/lint_chip.sh` 预查写死的位宽 |
 | 逐条对比门禁 | `scripts/fm_gate.sh`：`ref_cycles.txt` 里 69 个程序（gate + vm + 定向测试 + dhrystone + coremark）在整核测试平台上逐条对比 function-model，全部通过；同时报告与 trace-model 周期（`ref_cycles.txt`）不同的个数 |
 | Linux | 整核测试平台（`SOC_FM=1`、`SOC_VOPT="--threads 4 -DTTG_EBREAK_TRAP"`），`SOC_TB_FM=1 SOC_TB_SEMIHOST=1` 从复位启动到 `rv32 login:`，全程逐条对比（数小时） |
+| Linux 窗口（rv64，快速 gate） | `scripts/linux_segments_cmp.sh <soc_tb> <模型> <检查点目录> <输出目录> [周期]`：每 1000 万条指令一个检查点，RTL 和 trace-model 从同一个检查点冷启动、跑同样的周期数，只比逐条检查和 PT/UP 指纹（PMU 区间按绝对周期切，不比）。并行跑，十几分钟出全部；改动 RTL/模型的行为后先跑它，从复位的完整 Linux 留到合入前最后确认 |
 | 综合对比 | `scripts/synth_cfg.sh`：受影响模块在改动前后各综合一遍（面积代理，见 `rtl/docs/09-synthesis-report.md`） |
 | 已退役（2026-11-04） | 模块边界 trace 回放、整程序实时锁步、随机 trace：随旧参考模型退役，脚本在 rtl 标签 `legacy-reference` |
 | 变异检查（可选，不是门禁） | 故意改坏 RTL，检查 harness 能否抓到。2026-11-04 起：**不要求把存活变异清零**（跑一遍太慢），改为把存活和未运行的变异、覆盖缺口、未验证项如实记录在 `rtl/docs/08-risk-register.md`，不得默认当作没问题 |
@@ -47,6 +48,9 @@
 ### 3.3 通用要求
 
 - **新模块或新特性要同时带 harness。** 没有测试能区分对错的行为，不算验证过。
+  - **新特性要补一个短 gate 测试程序**（2026-11-15）：能稳定触发这个特性的小程序，放 rtl `programs/directed/`，rv32 / rv64 同源，在 `build.sh` 里加一项，周期进 `scripts/ref_cycles*.txt`；判据是逐条检查无不一致 + 模型与 RTL 周期相同（预测器、前端类特性再加 PT/UP 指纹，`scripts/align_check.sh`）。写好后要在**没有该特性的旧实现上确认它会失败**，否则它没有区分力。
+  - **不能把 Linux 当作唯一的测试。** 同一天有两个差异（页错误的 load 把出错地址写进目的寄存器；store 的基址寄存器来自读到旧值的 load，数据写到旧地址）都只在 Linux 跑到几百万周期后的推测窗口里出现，定位用了几个小时；一个短程序几秒钟就能复现，也能让以后的改动一直回归到它。
+  - 合入 main 时检查：这次改动带来的新行为，在 `programs/directed/` 里有没有对应的短程序；没有就先补，写进 `MAIN_RECORDS.md` 那一节的"验证范围"。
 - **新 harness 自己要先验证**：植入一个已知 bug，确认能抓到。
 - **变异存活要记录**：存活或未运行的变异不要求立刻清零，但必须登记（模块、变异内容、判断是等价还是覆盖缺口、风险等级）；改动过的模块要在登记簿里注明变异结果已过期。
 - **覆盖率裁剪不算验证**：只靠覆盖率删代码曾误删 DDR 写路径，所以删代码要靠重写加差分测试。
@@ -100,7 +104,7 @@
 3. **rtl 跟着 trace-model 的默认值走**：`make cfg` 不带 `-D`，生成的 `ttg_cfg_pkg.sv` 必须与实验时用的配置包逐字节相同；`scripts/ref_cycles.txt` 换成新周期，并与 trace-model 的 `baseline.csv` 交叉核对。写死的位宽、维度改成从配置推出，和改参数分开提交。
 4. **在提交后的代码上复验**（不能拿实验时的结果代替）：
    - trace-model：gate 全部通过（64/64，周期等于基线），大程序，Linux 从复位启动到 `rv32 login:`；
-   - rtl：`lint.sh`、`lint_chip.sh` 0 警告；`fm_gate.sh` 69/69（以 `ref_cycles.txt` 的个数为准），周期与 trace-model（`LSU_PIPE_NOWD=1`）逐个相等；串口输出与上一版一致（打印计时器的 `timer-mmio` 除外）；Linux 从复位启动到 `rv32 login:`，全程逐条对比；
+   - rtl：`lint.sh`、`lint_chip.sh` 0 警告；`fm_gate.sh` 69/69（以 `ref_cycles.txt` 的个数为准），周期与 trace-model（`LSU_PIPE_NOWD=1`）逐个相等；串口输出与上一版一致（打印计时器的 `timer-mmio` 除外）；Linux 从复位启动到 `rv32 login:`，全程逐条对比；；rv64 Linux 先跑 `linux_segments_cmp.sh`（检查点窗口全部 PT/UP 一致、逐条检查 0 不一致），再跑从复位的完整 `linux_gate.sh`；新特性对应的短 gate 程序已补且通过
    - 动到位宽相关代码时再验 XLEN=64（第 2 节“位宽”）；
    - 原配置参数下的回归：改动若声称“原配置下不变”，用原配置包再跑一遍门禁确认周期逐个相同。
 5. **性能和面积**：固定负载（第 5.2 节）+ quick SPEC（`trace-model/scripts/spec/replay.sh quick`）；受影响模块的综合前后对比。

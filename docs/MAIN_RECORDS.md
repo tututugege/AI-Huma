@@ -10,6 +10,7 @@
 
 | 日期 | 版本（总仓库 / function-model / trace-model / rtl） | 正确性 | dhrystone 周期 (IPC) | coremark 周期 (IPC) | memory-stress-small 周期 (IPC) | RTL 周期 | 综合（工具 / 频率 / 面积 / WNS） | 说明 |
 |---|---|---|---|---|---|---|---|---|
+| 2026-11-15 | 本行所在提交 / `6555530` / `fb5096e` / `4a6397f` | **待补：以最终的 Linux gate 结果为准**；已完成：trace-model（`RVC=0` rv32 默认）周期与 RTL 逐个相同，rv32 逐条对比 `fm_gate.sh` **64/64**（67 个程序的表里新增 3 个 directed：`memspec_data` 5598、`memspec_addr` 3086、`memspec_pf` 2700，各自模型周期 = RTL 周期、逐条检查 0 不一致）、与提交的 `ref_cycles.txt` 逐个相同；rv64：directed 3/3 周期相等（`scripts/ref_cycles_rv64.txt`），rv64gc Linux 检查点窗口 **18/18**（`linux_segments_cmp.sh`，每窗 200 万周期，PT / UP 指纹全部相同，逐条检查 0 不一致）；从复位的 Linux（rv64gc，140M 周期的 gate，**最终版本只跑到 3400 万周期就停了**）：**到 3000 万周期为止 PMU 一级事件逐区间完全相同；第 3000–3050 万周期区间开始有误差（提交指令数 模型 684,700 / RTL 686,688，+0.29%），原因未查，这是已知误差**，逐条功能检查到 3400 万周期 0 个不一致 | 116,399（−0.002%） | 282,735（+0.04%） | 325,458（不变） | 与 trace-model 逐个相等（见左） | 未做（只改 RTL 行为和模型，没有新综合）；`lp_wb` / `lp_wake` 各改一行条件 | **RVC=1 / rv64gc 的 RTL 与 trace-model 逐周期对齐（Linux 到约 3000 万周期逐区间相同，之后有已知误差）**：见下面的「变化」。rv32 `RVC=1`（`FP=0`）的整核测试平台起不来，在没有改动的 HEAD 上同样如此（已存在的遗留，已登记，没有修） |
 | 2026-11-13 | 本行所在提交 / `c602794` / `74e6827` / 未动 | trace-model：`RVC=0`（默认）gate 64/64 周期与基线逐个相同；`RVC=1`：不带 C 的 64 个程序 0 个 difftest 不一致（周期约 ±5%）；C 编译的 cpu-tests 62/62（`results/baseline/baseline_c.csv`，`scripts/run_gate_c.sh`），function-model 的 `gen_rvc.py` 压力测试（全部 16 位编码、访存、跳转、跨行跨页）0 不一致；C 编译 + `RVC=1` 对 不带 C + `RVC=0` 周期几何平均 0.920（52 个程序）；function-model：`rvc.h` 沿用编译开关 | 116,401（不变） | 282,616（不变） | 325,458（不变） | 未动 | 未做（只改 trace-model） | **EXP-038 S0–S2 合入**：C 扩展在 trace-model 的前端（`RVC=1`，默认关）：slot 宽度参数化（16 个 2 字节 slot）、预译码展开和指令起点链、`lastHalf`、有空洞的有效位、`is_rvc` 到后端、BPU 训练和 RAS 按指令长度。还没做：两级预测校验、跨 cache line 的取指延迟、PMU 和带 C / 不带 C 对比、rv64 的 `RVC=1`、RTL |
 | 2026-11-13 | 本行所在提交 / `6bf6c59` / 未动 / 未动 | function-model：`RVC=0`（默认）回归不变：rv32 53/56、rv64 52/54（不通过的是已知平台差异）、F/D 3/3、官方 rv32uf/ud 21/21、快速路径与单步路径状态摘要（含 CSR）在 rv64g Linux 前 1 亿条指令逐块一致；`RVC=1`：定向 RVC 测试（全部 16 位编码、访存、跳转、跨行跨页、Sv39 缺页）rv32 / rv64 与 Spike 逐条一致、官方 rv32uc / rv64uc、cpu-tests 带 C rv64 47/52 rv32 46/51（不通过的是测试源码假定 4 字节指令或已知平台差异）、带 C 的 rv64 Linux（内核 + OpenSBI）到 `rv64 login:` 前 2.5 亿条指令与 Spike 逐条一致、快速路径与单步状态摘要在 Linux 前 1 亿条指令和 58 个程序上一致 | 未动 | 未动 | 未动 | 未动 | 未做（只改 function-model） | **EXP-037：C 扩展（function-model）合入**（`RVC=1`，默认关）：半字取指、16 位展开、跨页第二半字缺页、`misa.C`、`RefCpuStepInfo.inst_len`、快速路径支持压缩指令（带 C 的 Linux 15 亿条指令 30 s → 4.6 s）。trace-model / RTL 的 C 还没做 |
 | 2026-11-13 | 本行所在提交 / `0323bd9` / `195dad4` / `15af4b4` | trace-model：rv32 gate 64/64（11 个程序因 EXP-035 周期变化，基线已重生成）、`fp_check` 32/64 与基线相同、`EXU_SHADOW` 与冻结旧 Exu 逐周期 0 不同、`LSU_SEQ_POISON` 构建一致；RTL：与模型逐周期相同（smoke、dhrystone、coremark、pf-stress、fd-*、FP 内核、rv64），`isu_wb_gate` 单元测试 0 不一致；**rv64g Linux 从复位到 `rv64 login:`，`fptest: PASS`，171,931,468 条指令逐条对比 function model 0 不一致（2.2 亿周期，816 次中断）**；function-model：F/D 的 rv32 + rv64 与 Spike 一致，rv64g Linux 到登录 `fptest: PASS` | 116,401（−0.32%） | 282,616（−0.80%） | 325,458（0.00%） | 与模型相同 | 未做（FP 单元是 DPI softfloat，不可综合；FP 寄存器堆和 FP IQ 的面积还没估） | **EXP-031…036 合入（均为快进，已推送）**：删 Zfinx、rv32/rv64 标准 F/D 为默认（`FP=1`）；EXP-032/033 FP 写口与 fcsr 串行化；EXP-034 Exu 按单元重写；EXP-035 写回口发射时预约（trace-model + RTL）；EXP-036 仿真提速约 24%（周期不变）；RTL 标准 F/D（S1–S6）与 rv64g Linux。已知回退：coremark / dhrystone 周期略降是 EXP-035 的建模修正（−0.8% / −0.3%），不是性能优化 |
@@ -32,6 +33,40 @@
 | 2026-11-04 | `6210e46` / `4f99467` / `41a5cdd` / `dc46f6d`（rtl 工作区有未提交修改） | gate 62/62；RTL gate+vm 64 个程序逐条对比一致 | 150,838 (1.935) | 226,991 (2.371) | 189,128 (5.718) | 待补 | **未做**：还没有综合流程（见 README"下一步"第 2 条） | 起始记录（本表从这里开始） |
 
 ## 变化
+
+### 2026-11-15 RVC=1 / rv64gc 的 RTL 与 trace-model 逐周期对齐，含 Linux（EXP-038、EXP-040）
+
+这是一次很大的合入：把 C 扩展（`RVC=1`）从 trace-model 做到 RTL，并把 rv64gc 的 Linux 在 RTL 和 trace-model 上对齐到逐周期。默认配置（rv32、`RVC=0`、`FP` 同原来）的周期不变，下面的新行为都在 `RVC=1` 或 rv64 下才生效。
+
+**配置变化**
+
+| 参数 | 旧值 | 新值 |
+|---|---|---|
+| `CFG_LSU_MS_DATA`（trace-model `include/config.h`，旧值路径的位掩码） | 1（分支 + store 数据） | 7（再加第 2 位：污染地址）；rv32 默认配置周期逐个不变 |
+| 配置包（`ttg_cfg_pkg.sv`） | 提交的是 rv32 `RVC=0`；rv64 要手工 `sed` | 提交的不变；`tb/soc/build.sh` 在 `SOC_XLEN=64` 时从 trace-model 生成 `-DXLEN=64 -DRVC=1 -DFP=1` 的配置包（与 `gen_cfg.sh` 同一个脚本，`SOC_RVC`、`SOC_FP` 可改） |
+
+**设计改动和修掉的问题**（trace-model 与 RTL 的差别，按发现的先后）
+- **C 扩展 RTL**（R0–R4，`exp/rvc-rtl`）：配置包导出 `RVC_ENABLE` / `SLOT_*`；后端带每条指令的 `is_rvc`、`pc + 长度`；前端 `rvc_expand`、携带寄存器（C910 式：组末的 32 位指令前半字存起来，下一个顺序组的 slot 0 拼成整条）、BPU 16 槽几何；`RVC=1` 非 C 程序 64/64 周期与模型相等，C 程序 59/60（`rvc-fencei` 差 7 周期，自修改代码）。
+- **trace-model**：C910 式携带（取代 I$ 第二行）；删掉不再使用的旧 BPU（`class Bpu`、`BPU_PIPE 0..2` 等）和冻结 RTL 差分测试；冻结只跑过默认值的开关；RAS 改成追加队列 + 指针检查点；FE 三个 RVC=1 / rv64 预测修复（hmmer 上 48.7% 的取指组被预译码冲刷）；STQ store 数据加宽到 XLEN（rv64 的 `sd` 之前丢了高 32 位，OpenSBI 的 mtimecmp 高半字写成 0，定时器一直挂起）；FP load 遇 `mstatus.FS=Off` 现在作为非法指令到达 ROB。
+- **对齐工具**：`FPR=<bin>`（PTAB 写入流 PT 和预测器更新流 UP 的逐 bin 计数加可交换哈希，trace-model 与 RTL 测试平台同一份代码，UP 里含 TAGE 的 4×10 位索引、4×8 位标签）、`FPR_DUMP=<起>:<止>` 展开原始事件；PMU 时间序列（`SOC_TB_PMU_IV` / `PMU=1`）；`scripts/align_check.py`、`scripts/linux_gate.sh`（逐条检查 + 每区间 PMU + 到 `login:`）、**`scripts/linux_segments_cmp.sh`（检查点窗口并行，RTL 对 trace-model，约 15 分钟出全部结果）**；`SOC_TB_VCD=<起>:<止>:<文件>` 波形导出 + `scripts/vcd_query.py`（按层次名逐周期查信号，窗口几十周期，文件不大）。
+- **rv64 的 32 → 64 位错误**（RTL 里按 32 位处理的地址，Linux 的符号扩展物理地址 `0xffffffff80…` 才暴露）：历史哈希符号 `hsym_of`（先按槽移位再截断）、uBTB 目标展开（高位取块基址而不是补 0）、预译码目标类型、MDP 等待表索引（`SLOT_SHIFT` 而不是写死的 2）。
+- **测试平台**：`EVAL()` 在读 `env_rd_en` 之前先稳定 `env_modeled`（旧顺序下 Linux 偶尔卡死）；逐条检查加了 **store 的地址和数据**与 **设备 load** 的检查；RTL 报 page fault 而功能模型不报的合法情形（遍历器在 `sfence.vma` 前读到旧页表项）由 `refcpu_force_next_page_fault`（function-model）强制模型同样 fault。
+- **EXP-020 旧值路径扩到 rv64**（`MsData.h`，XLEN 位的 ALU / 乘除 / W 形式 / 带符号扩展的 load，STQ 的 `m_*` 字段 64 位，旧数据转发的 load 也打污染）；**默认打开污染地址**：store 的基址寄存器来自读到旧值的 load 时，数据写到旧地址、之后在真地址上读到旧内存，RTL 如此，模型原来不跟。
+- **RTL 行为改动（唯一的 RTL 功能改动）**：页错误的 load 不再把出错地址写进目的寄存器（`lp_wb.sv` 的 `wb_dest` / `wb_dest_en` 照 store-conditional 页错误的写法；`lp_wake.sv` 的 L3 唤醒加 `!pf`）。体系结构上 rd 本来不变；原来写 `rd = 出错地址` 会让错误路径上依赖它的 load 用这个地址去访存，模型（取功能模型的值）不会，两边的页表遍历和缓存内容因此分叉（Linux 第 4,012,380 周期）。模型同步（`RealLsuPipe.cpp`：wb 的 `dest_en` / `dest_preg`、L3 唤醒）。
+
+**验证范围**
+- 跑了：rv32 `RVC=0` 的 `fm_gate.sh` 64/64、周期与新模型、与提交的 `ref_cycles.txt` 都逐个相同；旧 rv32 模型（`build32g`）与新模型（默认值 7）在 64 个程序上周期逐个相同；rv32 的 `memspec_vio`、`itt-dispatch`（旧 rv32 模型构建上崩溃过，新构建没有）正常；rv64 directed 3/3；rv64gc Linux **18 个检查点窗口 18/18**（每 1000 万条指令一个，每窗 200 万周期，PT / UP 指纹 1998 个 bin 全部相同，逐条检查全部 0 不一致）；从复位的 Linux 对齐到 450 万周期。
+- **从复位的 Linux 长跑（最终版本）**：RTL 用 `rtl-rvc` 自己构建的 rv64gc（4 线程），模型是合入的这一版；PMU 区间 50 万周期。**3000 万周期之前 60 个区间的一级事件全部相同**（包括之前一路追下来的 400 万、417.6 万周期附近，那里 167,047 个 25 周期区间全相同）。**第 60 个区间（3000–3050 万周期）起出现误差**：INSTRET 模型 684,700 / RTL 686,688、COMMIT_LOAD 136,214 / 136,554、COMMIT_STORE 124,138 / 124,546、COMMIT_BRANCH 87,460 / 87,736、BR_MISPRED 3,706 / 3,690、SLOT_FIRE 757,105 / 759,115。之后的区间差异正负不定（较早一版模型的对比里，到 5850 万周期的 117 个区间有 58 个有差异，单区间提交指令数差到 ±2.7 万）。逐条功能检查到 3400 万周期 0 个不一致（更早一版跑到 9800 万周期同样 0 个）。**没有在最终版本上跑到 `login:`**。
+- **已知误差（没查原因，不阻塞合入，用户决定先合）**：误差点在 Linux 约第 3000–3050 万周期（约第 4,620 万–4,690 万条提交指令）。已排除：从 4400 万、4600 万条指令的检查点冷启动（`s44`、`s46`，200 万周期）都不复现；4500 万条指令（`s45`）复现过一处不同的分叉，已修（旧值路径的污染表泄漏），修后窗口 PT / UP 与 RTL 逐行一致。这一处需要热状态，只能从复位复现：`bash scripts/drill_pmu.sh <rtl soc_tb> <模型 simulator> <带波形的 soc_tb> <linux64gc.bin> 30500000 <输出目录> 25`（先 25 周期区间找出第一个差异窗口，再抓这个窗口的波形，两次 RTL 运行约 45 分钟）。上一个类似的问题（400 万周期处）最后是模型对错误路径的处理：FP 访存在 `FS=Off` 时模型先按地址挡掉没走非法指令判断、污染表在分支误预测冲刷后泄漏，可作为这一处的线索。
+- **最终版本上没有重跑的验证**：18 个检查点窗口（18/18 全过）是用最终修复之前的模型跑的；最终版本只验了 rv64 directed 3/3、s45 窗口、从复位 417.6 万周期以内。最后几处修复是：FP 访存的污染立即数、MMIO / LR-SC load 写回清污染、重命名处清污染、`FS=Off` 时 FP 访存走 FM 的非法指令 trap。
+- 没跑：rv32 `RVC=1` 与 rv64 `RVC=0` 的整表；SPEC；综合。
+- **rv32 `RVC=1`（`FP=0`）整核测试平台起不来**（67 个程序在第一条提交 `pc rtl=4 fm=0`），在没有任何未提交改动的 HEAD 上同样复现，不是这次引入的，没有查原因，登记在 `rtl/docs/RVC_RTL.md` 的"已知遗留"。
+
+**已知回退**：dhrystone −2 周期、coremark +119 周期（+0.04%），来自 RAS 追加队列；其余默认配置程序周期不变。
+
+**短 gate 测试程序**（新约定，见 [WORKFLOW.md](WORKFLOW.md) 第 3.3 节）：`programs/directed/memspec_data`（旧值路径）、`memspec_addr`（污染地址，默认 `LSU_MS_DATA=1` 的模型周期对不上）、`memspec_pf`（页错误 load 的消费者；rv64 版能区分旧 RTL，周期差 9），rv32 / rv64 同源，周期在 `scripts/ref_cycles.txt`、`scripts/ref_cycles_rv64.txt`。
+
+**对应记录**：[EXPLORATION.md](EXPLORATION.md) EXP-038、EXP-040；[LOG.md](LOG.md) 2026-11-15 各行。
 
 ### 2026-11-12 rv64imab 迁移（EXP-029）
 

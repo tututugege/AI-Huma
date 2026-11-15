@@ -6,6 +6,7 @@
 
 | 编号 | 日期 | 题目 | 分支 | 状态 | 一句话结论 |
 |---|---|---|---|---|---|
+| [EXP-040](#exp-040-rv64gc-linux-的-rtl-与-trace-model-逐周期对齐) | 2026-11-15 | rv64gc Linux：RTL 与 trace-model 逐周期对齐（旧值路径扩到 rv64、32→64 位错误、页错误 load 的写回、窗口并行检查） | trace-model `exp/rvc-carry`、rtl `exp/rvc-rtl`、function-model `exp/fm-forced-pf` | **待合入**（完整 Linux gate 结果待补） | 18 个 Linux 检查点窗口 PT / UP 指纹全部相同；唯一的 RTL 行为改动是页错误 load 不写 rd |
 | [EXP-038](#exp-038-c-扩展trace-model-前端按半字取指) | 2026-11-13 | C 扩展：trace-model（前端半字取指、BPU / FTQ 半字位置、按指令的取指缓冲），参考香山和 BOOM | trace-model `exp/rvc`（工作区 `trace-model-rvc`） | **进行中**：S0–S2 和变慢程序的修复已合入 trace-model `main`（`74e6827`，2026-11-13，已推送）；S3–S5 未做 | S0–S2 完成，`RVC=0` 周期不变；`RVC=1` 的前端能运行带 C 和不带 C 的程序，与 function-model 逐条对拍 0 不一致；S3–S5 未开始 |
 | [EXP-037](#exp-037-c-扩展压缩指令function-model-第一步) | 2026-11-13 | C 扩展（压缩指令）：function-model 第一步，之后 trace-model（前端按半字）、RTL | function-model `exp/rvc`、`exp/rvc-fast` | **function-model 完成（含快速路径），已合入 main（2026-11-13，已推送）**；trace-model / RTL 未开始 | `RVC=1` 开关（rv32 / rv64，默认关）；16 位编码逐个与 Spike 一致，带 C 的 Linux（内核 + OpenSBI）从复位到 `rv64 login:` 前 2.5 亿条指令与 Spike 逐条一致 |
 | [EXP-036](#exp-036-trace-model-仿真速度去掉每周期的状态拷贝) | 2026-11-13 | trace-model 仿真速度：去掉每周期的状态拷贝（BPU、LSU、Bridge、IQ） | trace-model `exp/fcsr`（`067f02e`…`195dad4`） | **已合入 main（2026-11-13，已推送）** | 周期逐个不变（gate 64/64），耗时累计下降约 24%（各步提交里的计时） |
@@ -42,6 +43,29 @@
 | [EXP-001](#exp-001-面积优化三个方向) | 2026-11-04 | 面积优化：FTQ 合并、LSU 端口、LD/STA IQ 合并 | trace-model `exp/area-explore` | 未提交、未合入 | 三个方向都能省面积，性能代价 0–1% |
 
 ---
+
+## EXP-040 rv64gc Linux 的 RTL 与 trace-model 逐周期对齐
+
+- **状态：2026-11-16 已合入本地 main（带已知误差）**（trace-model `exp/rvc-carry`、rtl `exp/rvc-rtl`、function-model `exp/fm-forced-pf`）。**已知误差：从复位的 Linux 在约 3000–3050 万周期起 PMU 区间与 RTL 不同（提交指令数 +0.29%），没有查原因。**
+- **问题**：rv64gc（`RVC=1`、`FP=1`）的 Linux 在 RTL 上能启动、逐条对比 0 不一致，但与 trace-model 的周期不同；要合入 main 必须逐周期相等（[WORKFLOW.md](WORKFLOW.md) 第 1 节）。
+- **方法**：不比周期总数，比「事件在哪个周期发生」。`FPR=<bin>`：PTAB 写入流（PT）和预测器更新流（UP）每 bin 的个数加可交换哈希，trace-model 与 RTL 测试平台用同一份 `fpr.h`；第一个不同的 bin 用 `FPR_DUMP=<起>:<止>` 展开原始事件，再用 `SOC_TB_VCD` 抓 RTL 那几十个周期的波形、`vcd_query.py` 按层次名查信号，模型一侧在对应函数里加临时打印；定位后删掉打印。长程序先用 `scripts/linux_segments_cmp.sh`（每 1000 万条指令一个检查点，RTL 与模型从同一个检查点冷启动，各跑同样的周期数，约 15 分钟出 18 个窗口），从复位的 140M 周期 gate 留作最后确认。
+- **查出并修掉的问题**（按发现的先后）：
+  1. 测试平台 `EVAL` 顺序：先读 `env_rd_en` 后稳定 `env_modeled`，Linux 偶尔卡死。
+  2. MDP 等待表索引写死按 4 字节（`pc[2+B-1:2]`），`RVC=1` 是 2 字节对齐（`SLOT_SHIFT`），真实的 load 时序差 3 周期。
+  3. 三个 32 → 64 位的错误，只在符号扩展的物理地址（`0xffffffff80…`）上暴露：历史哈希符号、uBTB 目标展开（高位应取块基址）、预译码目标类型。这三处之后 UP 流在 150 万周期内逐位相同。
+  4. 旧值路径（EXP-020）只对 rv32：`MsData.h` 的 ALU / 乘除 / load 扩展、STQ 的 `m_*` 字段、旧数据转发都改成 XLEN 位。
+  5. **页错误的 load 把出错地址写进 rd（RTL）**：体系结构上 rd 不变；错误路径上依赖它的 load 会用这个地址访存，模型取功能模型的值不会，页表遍历和缓存内容分叉（第 4,012,380 周期）。RTL 改成不写、不唤醒（照 store-conditional 页错误的写法），模型同步。
+  6. **store 的基址寄存器来自读到旧值的 load 时，数据写到旧地址**，之后在真地址上读到旧内存；模型的 `LSU_MS_DATA` 第 2 位（污染地址）原来默认关，默认改成 7。
+  7. **FS=Off 时的错误路径 FP 访存**：trace bridge 对访存指令先查对齐，不对齐就标 `blocked`（不执行），绕过了 FM 的非法指令 trap；RTL 在 `FS=Off` 时把它标成需要冲刷的条目，ROB 通知发射级停住，两边的发射停顿不同（第 4,175,850 周期）。FP 访存在 `FS=Off` 时不再走 `blocked`，交给 FM trap。Linux 的惰性浮点（进程没用过浮点时 `FS=Off`）下，预测错误的路径会走进浮点上下文保存代码。
+  8. **旧值污染表泄漏**：污染表只在 ROB 冲刷时整体清空，分支误预测冲掉的错误路径生产者留下的污染会泄漏给寄存器的下一个持有者（检查点 `s45` 第 1,972,774 周期，`p108`）。物理寄存器新分配时清污染；MMIO / LR-SC / 页错误 load 的写回也清；旧值地址对 FP 访存补上立即数（`0x07` / `0x27`）。
+- **结果（合入时）**：从复位的 Linux 到约 3000 万周期逐区间相同（400 万、417.6 万周期附近的 167,047 个 25 周期区间全相同），**3000–3050 万周期起有误差（见上）**；rv64gc Linux **18 个检查点窗口 18/18**（用最终修复之前的模型跑的，最终版本没有整批重跑）（每窗 200 万周期，PT / UP 指纹 1998 个 bin 全部相同，逐条检查 0 不一致）；从复位对齐到 450 万周期；rv32 `RVC=0` 的 `fm_gate.sh` 64/64、周期与新模型和 `ref_cycles.txt` 逐个相同，新旧模型 64 个程序周期逐个相同；rv64 directed 3/3。
+- **走过的弯路（避免重复）**：
+  - 把模型的 stderr 通过管道再接 `grep` 会**丢行**，表现成「模型每次结果不同」；写到文件就逐字节确定。比对指纹一律先写文件。
+  - 检查点模式下 trace-model 的 `-c` 是**指令数**不是周期数：高 IPC 的窗口模型提前停，指纹只比了前几百个 bin。要用 `SIM_MAX_CYCLES` 限周期。
+  - 检查点恢复程序放在非 RAM 的启动窗口（0x0），RTL 取指很慢（约 100 周期一条，恢复约 26k 周期），模型约 18k 周期；PMU 区间按绝对周期切所以错位，窗口检查只比 PT / UP（它们从恢复结束后开始数周期）。
+  - 一度怀疑「模型不会算旧值」：其实 EXP-020 早就有，只是只对 rv32 打开；扩到 rv64 之后大部分差异直接消失。
+- **未覆盖的风险**：窗口是冷启动，不能替代从复位的完整 gate；rv32 `RVC=1`、rv64 `RVC=0` 没有整表；SPEC 没跑；PMU 区间（绝对周期）在检查点窗口里没比。
+- **复现**：`TM_DIR=<trace-model> FMLIB=<rv64 gc 的 librefcpu.a> bash scripts/build_soc64_linux.sh <目录>` 构建 RTL；`bash scripts/linux_segments_cmp.sh <soc_tb> <trace-model 的 simulator> <检查点目录> <输出目录> 2000000`；从复位：`bash scripts/linux_gate.sh <soc_tb> <simulator> <linux64gc.bin> 140000000 <输出目录>`。rv64 directed：`REF_CYCLES=scripts/ref_cycles_rv64.txt bash scripts/fm_gate.sh <soc_tb> <输出目录>`。
 
 ## EXP-038 C 扩展：trace-model 前端按半字取指
 
@@ -112,6 +136,8 @@
   - **前端统计**（`[RVC_FE]`）：coremark 带 C 时 43.5% 的指令是 16 位、每组 8.2 条指令；`lastHalf` 被用到的组约占 14%（24005 / 169948）。`FE_IPF`、`FE_BFAST` / `FE_RFAST` 与 `RVC=1` 一起跑 C 编译的 cpu-tests：60 个程序 0 个不一致。
 - **没做的**：S4 的两级预测校验（与 C 无关，是更一般的前端改动，没做）、RTL；S3 复核结论：`PreIduQueue` 已经是按指令的环形缓冲（64 项，每拍进最多 16 条、出 8 条），不用改；跨 cache line 的 32 位指令取指没有额外延迟（后半条按功能读取，乐观）；预译码检查器的两级、RAS 返回地址按长度（`pc+4` 仍在 BPU 的 RAS 压栈和 BTB 未命中目标里）；`FE_PAIR` 在 `RVC=1` 下没测；`RVC=1` 的 rv64 构建和 rv64gc Linux 没在 trace-model 上跑。
 - **（S1 遗留）`pc+4` 在前端的残留**（RAS 压栈 `pc+4`、预译码检查器的 `+4`、`seq_next_pc` 的 `+4`、BTB 未命中目标 `pc+4`）等 S2 / S4 带上每个 slot 的长度后再改。
+
+- **2026-11-15 更新（RTL）**：RTL 侧 R0–R4 在 rtl `exp/rvc-rtl` 完成：`RVC=1` 非 C 程序 64/64 周期与模型相等，C 程序 59/60（`rvc-fencei` 差 7 周期，自修改代码），RAS 改成追加队列后 trace-model 与 RTL 同步（trace-model `73aea0d`、rtl `2ec1d5f`）；rv64gc（`RVC=1`、`FP=1`）的 Linux 对齐见 EXP-040。**未解决**：rv32 `RVC=1`（`FP=0`）整核测试平台起不来（67 个程序在第一条提交 `pc rtl=4 fm=0`），在没有改动的 HEAD 上同样如此，原因没查，登记在 `rtl/docs/RVC_RTL.md`。
 
 ## EXP-037 C 扩展（压缩指令）：function-model 第一步
 
