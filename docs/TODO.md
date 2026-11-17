@@ -123,3 +123,9 @@ EXP-024 合入的是"STQ 内分组"的简化版 write buffer：4 个条目、每
 | EXP-015 的已知回退 | 全量 −1.20%：bzip2 −10.2%、libquantum −5.6%、hmmer −5.3%、h264ref −5.1% | 先用精确预热确认是不是快速预热对新 BPU 的偏差；真实回退看 TMA（前端空槽）；推测唤醒（模型 +2.9pp，硬件代价未测）；DCW 看门狗事件根因；SPEC 开 `PMU=1` 补 TMA |
 
 - 合入 main 之前必须跑 trace-model 的 Linux（`WORKFLOW.md`）；EXP-034…036 合入时漏了，造成 `Bridge::find` 的回归。脚本已有：`scripts/linux_check.sh <模拟器> <镜像>`（登录提示出现且没有 oops）；还没做的是把它接进 `WORKFLOW.md` 的合入检查清单和 CI。
+
+- **（2026-11-17）rtl 测试平台对 trace-model 源码的依赖**：
+  - `fpr.h` **已解决**（rtl main `261bd67`）：测试平台用自己的 `tb/soc/fpr.h`（只保留 RTL 侧接口，哈希与 trace-model `front-end/BPU/fpr.h` 逐位相同；两边不一致时 align_check 第一个 bin 就 FAIL），`tb/soc/build.sh` 不再 `-I trace-model/front-end/BPU`。起因：trace-model `c984a0c` 删掉 `fpr::set_raw_cycle` 后测试平台编译不过。验证：配 trace-model main 重建，Linux 窗口 s07 PASS，输出与之前逐字节相同。
+  - **还剩**：DRAMsim3（`tb/soc/build.sh` 从 `$TM_DIR/third_party/DRAMsim3` 取头文件和库）；门禁测试程序在 `trace-model/build`（`TTG_PROGS`）、`build_dcache_tests.sh` 用 `trace-model/baremetal`。比较脚本运行 trace-model 二进制是正常的，不算。
+  - 另：trace-model 的 Makefile 链接 `-lstdc++fs`，macOS 本机构建要加 `LDFLAGS=-lz`。
+- **（2026-11-17）Linux 窗口要用 function-model main 的检查器**：用 `drop32/function-model`（`d12be0c`）构建的 rv64 Linux 测试平台在窗口 s03/s07/s11 第 94949 周期报不一致（rtl main 也一样）；换成 function-model main `55affa0`（`make XLEN=64 FP=1 RVC=1 librefcpu.a`）后 3/3 PASS。function-model 内部具体差在哪没有追。

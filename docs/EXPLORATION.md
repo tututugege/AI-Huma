@@ -6,6 +6,7 @@
 
 | 编号 | 日期 | 题目 | 分支 | 状态 | 一句话结论 |
 |---|---|---|---|---|---|
+| [EXP-042](#exp-042-rtl-时序tlb-口并行化first_set-对数深度) | 2026-11-17 | RTL 时序：DTLB/ITLB 的 8 口串行链改为并行，`ttg_first_set` 改为对数深度 | rtl `exp/tlb-par`（`1d8688e`、`261bd67`，基于 main `8abb7ab`） | **已合入 main（2026-11-17，rtl `261bd67`，未推送）** | `tlb_mmu` 深度代理 163 → 67（rv64），行为逐拍不变；fm_gate 67/67、Linux 窗口 3/3 与 main 逐字节相同 |
 | [EXP-040](#exp-040-rv64gc-linux-的-rtl-与-trace-model-逐周期对齐) | 2026-11-15 | rv64gc Linux：RTL 与 trace-model 逐周期对齐（旧值路径扩到 rv64、32→64 位错误、页错误 load 的写回、窗口并行检查） | trace-model `exp/rvc-carry`、rtl `exp/rvc-rtl`、function-model `exp/fm-forced-pf` | **待合入**（完整 Linux gate 结果待补） | 18 个 Linux 检查点窗口 PT / UP 指纹全部相同；唯一的 RTL 行为改动是页错误 load 不写 rd |
 | [EXP-038](#exp-038-c-扩展trace-model-前端按半字取指) | 2026-11-13 | C 扩展：trace-model（前端半字取指、BPU / FTQ 半字位置、按指令的取指缓冲），参考香山和 BOOM | trace-model `exp/rvc`（工作区 `trace-model-rvc`） | **进行中**：S0–S2 和变慢程序的修复已合入 trace-model `main`（`74e6827`，2026-11-13，已推送）；S3–S5 未做 | S0–S2 完成，`RVC=0` 周期不变；`RVC=1` 的前端能运行带 C 和不带 C 的程序，与 function-model 逐条对拍 0 不一致；S3–S5 未开始 |
 | [EXP-037](#exp-037-c-扩展压缩指令function-model-第一步) | 2026-11-13 | C 扩展（压缩指令）：function-model 第一步，之后 trace-model（前端按半字）、RTL | function-model `exp/rvc`、`exp/rvc-fast` | **function-model 完成（含快速路径），已合入 main（2026-11-13，已推送）**；trace-model / RTL 未开始 | `RVC=1` 开关（rv32 / rv64，默认关）；16 位编码逐个与 Spike 一致，带 C 的 Linux（内核 + OpenSBI）从复位到 `rv64 login:` 前 2.5 亿条指令与 Spike 逐条一致 |
@@ -43,6 +44,28 @@
 | [EXP-001](#exp-001-面积优化三个方向) | 2026-11-04 | 面积优化：FTQ 合并、LSU 端口、LD/STA IQ 合并 | trace-model `exp/area-explore` | 未提交、未合入 | 三个方向都能省面积，性能代价 0–1% |
 
 ---
+
+## EXP-042 RTL 时序：TLB 口并行化、first_set 对数深度
+
+**起因**：综合报告（`rtl/docs/09-synthesis-report.md` 第 10 节）里 `tlb_mmu` 深度代理 159/163 级，用户指出 TLB 没有并行。最长路径：lane 0 查表 → 64 位 `ttg_first_set`（`req & -req` 进位链）→ 8 个口的 `chain` 依次串过去。
+
+**做法**（rtl `exp/tlb-par`，只改 RTL 结构，不改周期）：
+- `tlb_mmu_core` / `tlb_mmu_lane`：参考模型 `top_comb` 是口 0→7 依次调用 `core_comb`，但一拍里能改共享状态（walk、回填、PTW 请求/响应）的口最多两个——A（第一个在当前 walk 页上缺失的口：发请求或消费响应/退休 walk）和 B（walk 空闲或被 A 退休后第一个缺失的口：启动新 walk）。各口并行算好自己的缺失/同页/权限和两种回填视图下的结果，A、B 各用一个 8 位 first_set 选出（B 对三种情况预选），选择信号只控制末级二选一。
+- `ttg_first_set`（公共原语）：`req & -req` 改为 Kogge-Stone 前缀或，函数相同，37 个模块受益。
+- 设计说明：`rtl/docs/modules/tlb_mmu.md` 第 2 节、第 3 节第 6 条。
+
+**验证**：
+- `rtl/tests/tlb_par/run.sh`：旧串行核心（原样保留为 `tlb_mmu_core_ref`）与新核心并排，随机输入逐拍比较全部输出（DTLB 8 口 + ITLB 1 口，`ENTRIES=8`），rv64 300 万拍、rv32 配置 500 万拍 0 不一致；覆盖计数：同拍退休 + 新 walk 约 1.7 万次、A 之后的口用 A 的回填约 3 千次、退休出错约 2 万次、多口同页约 7.5 万次；3 个人为变异都被抓到。`ttg_first_set` 在 N=1/3/7/8/13/64 上与 `req & -req` 比较 0 不一致，`make prims` PASS。
+- `lint.sh` 输出与 main 相同，`lint_chip.sh` 0 警告。
+- 整芯片 fm_gate（rv64，67 个程序）：67/67 逐条对 function-model 一致，周期与 `scripts/ref_cycles.txt` 0 处不同。
+- Linux 窗口（`scripts/linux_segments_cmp.sh`，s03/s07/s11，各 400 万周期，RTL 对 trace-model main `5b95b35`，function-model main `55affa0`（`RVC=1`））：**3/3 PASS**，逐条对 function-model 0 不一致（585.7 万 / 536.2 万 / 272.8 万条提交），PT/UP 指纹与 trace-model 相同；同一环境下 rtl main（`8abb7ab`）也 3/3 PASS，且两者的 rtl.out / rtl.err **逐字节相同**。
+  （先前用 `drop32/function-model`（`d12be0c`）构建的测试平台，三个窗口都在第 94949 周期报不一致，rtl main 也一样；换成 function-model main 后消失，是检查器版本问题，与 RTL 无关。）
+
+**综合（深度代理，rv64）**：`tlb_mmu` 163 → 67、单元 84,088 → 80,255；`tlb_mmu_lookup` 61 → 33；`icache_itlb` 68 → 49；first_set 的其他用户 `lsu_stlf_match` 139 → 97、`isu_iq_select` 69 → 46、`isu_alloc_chain` 72 → 55（面积 +1.5k）、`bpu_main_sel` 121 → 113。完整表见 `rtl/docs/09-synthesis-report.md` 第 11 节。
+
+**合入**：rtl main 快进到 `261bd67`（另含测试平台自带 `fpr.h` 和构建提速），说明见 [RTL_TLB_PAR.md](RTL_TLB_PAR.md)。
+
+**剩下的**：TLB 最长路径现在是查表（约 33 级）→ A → B → `walk_q`，A→B 是语义依赖；再降要改周期（查表打一拍等），未做。
 
 ## EXP-040 rv64gc Linux 的 RTL 与 trace-model 逐周期对齐
 
