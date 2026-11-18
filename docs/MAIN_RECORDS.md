@@ -10,6 +10,7 @@
 
 | 日期 | 版本（总仓库 / function-model / trace-model / rtl） | 正确性 | dhrystone 周期 (IPC) | coremark 周期 (IPC) | memory-stress-small 周期 (IPC) | RTL 周期 | 综合（工具 / 频率 / 面积 / WNS） | 说明 |
 |---|---|---|---|---|---|---|---|---|
+| 2026-11-19 | 本行所在提交 / 未动（`55affa0`）/ `c795844` / `a26a102` | RTL：`lint_chip` 0；`fm_gate.sh` 67/67、周期与 `ref_cycles.txt` 0 处不同、0 个函数模型不一致；Linux 检查点窗口 s00–s11 共 12 个全部 PASS（约 5900 万条指令逐条检查，PT / UP 指纹全程相等）。trace-model：RVC=0 门禁 62/62（新基线）、RVC=1 C 门禁 67/67（新基线）、67 个程序周期 = RTL；Linux 从复位启动到 `rv64 login:`（无 oops / panic）。SPEC06 rv64gc 386 点（eda 集群）新旧两个配置各跑一遍，0 失败 | 108,732 (2.38)，相对上一版 main 的 100,722 +7.95% | 294,895 (2.14)，相对 286,265 +3.0% | 343,672 (3.05)，相对 343,381 +0.08% | RTL = trace-model：dhrystone 108,732、coremark 294,895、memory-stress-small 343,672（`ref_cycles.txt`，67 个程序几何平均 +1.92%） | 未做整芯片综合（整芯片要一次一个、耗时几十分钟到数小时，这一轮只做了单模块；yosys 通用门深度代理，无工艺库 / 无 WNS）：`bpu_ub_track_ser` 528 → 97、`bpu_ub_look` 75 → 29、`mul_unit` 209 → 90；整机 `back_top` 135 / `front_top` 132 是后来又改了几处之前的数，`ren` 110、`axi_llc` 238 仍超过 100 层（见 TODO） | **有意的性能回退**：67 个程序周期 +1.92%，SPEC06 386 点 IPC 几何平均 −2.15%（hmmer −8.6%），换来压低综合深度的结构（两个 INT 队列、合并访存队列、FLUSH_REG 等，[EXPLORATION.md](EXPLORATION.md) EXP-044）。这一行的固定负载用 rv64 的 `big/dhrystone.bin`、`big/coremark.bin`（RTL 门禁里的版本），与前几行 trace-model 列的数字（另一版程序）不可直接比；相对上一版用 RTL 的 `ref_cycles.txt` 比 |
 | 2026-11-17 | 本行所在提交 / 未动 / 未动 / `261bd67` | RTL TLB 口并行化 + first_set 对数深度 + 测试平台自带 fpr.h、构建提速（[RTL_TLB_PAR.md](RTL_TLB_PAR.md)）：`tests/tlb_par` 300 万拍新旧 TLB 核心 0 不一致；lint_chip 0；fm_gate 67/67 周期 0 差异；Linux 窗口 s03/s07/s11 3/3 PASS（trace-model `5b95b35`、function-model `55affa0`），与 rtl main 逐字节相同 | 未动（trace-model 未改） | 未动 | 未动 | 不变：dhrystone 100,722、coremark 286,265、memory-stress-small 343,381（与 `ref_cycles.txt` 相同） | yosys 通用门深度代理（无工艺库 / 无 WNS）：`tlb_mmu` 163 → 67、单元 84,088 → 80,255；`lsu_stlf_match` 139 → 97、`isu_iq_select` 69 → 46（rtl `docs/09-synthesis-report.md` 第 11 节） | 只改结构不改周期；rv64 Linux 测试平台构建 111 s → 89 s |
 | 2026-11-17 | 本行所在提交 / 未动 / `e971e79` / 未动 | trace-model 模块整理（[TM_MODULE_CLEANUP.md](TM_MODULE_CLEANUP.md)）：RVC=0 门禁 62/62、RVC=1 门禁 67/67 周期与基线逐个相同；FPR、TB / LSU 轨迹、Linux 检查点、FE_PAIR / FE_IPF 相同；Linux 窗口与 RTL 13/13；Linux 2 亿周期输出与合入前逐字节相同 | 1,526,122 (2.98)，不变 | 未测（rv64 coremark 未建） | 327,170 (3.21)，不变 | 门禁程序不变（`ref_cycles*.txt` 不变） | 未做：RTL 未改 | 源码 30070 → 29096 行，周期不变 |
 | 2026-11-17 | 本行所在提交 / 未动 / `83af731` / 未动 | trace-model 结构整理和提速（[TM_GLOBAL_SCHED.md](TM_GLOBAL_SCHED.md)）：RVC=0 门禁 62/62、RVC=1 门禁 67/67 周期与基线逐个相同；FPR、TB / LSU 轨迹、Linux 检查点、FE_PAIR / FE_IPF 相同；Linux 窗口与 RTL 13/13（s03 由 LSU_MS_DATA 修复对齐，之前 12/13）；Linux 2 亿周期控制台文本相同 | 1,526,122 (2.98)，不变 | 未测（rv64 coremark 未建） | 327,170 (3.21)，不变 | 门禁程序不变（`ref_cycles*.txt` 不变） | 未做：RTL 未改 | 模拟速度：dhrystone 7.85 s → 6.3 s |
@@ -36,6 +37,41 @@
 | 2026-11-04 | `6210e46` / `4f99467` / `41a5cdd` / `dc46f6d`（rtl 工作区有未提交修改） | gate 62/62；RTL gate+vm 64 个程序逐条对比一致 | 150,838 (1.935) | 226,991 (2.371) | 189,128 (5.718) | 待补 | **未做**：还没有综合流程（见 README"下一步"第 2 条） | 起始记录（本表从这里开始） |
 
 ## 变化
+
+### 2026-11-19 RTL 降深度那一轮：两个 INT 队列、合并访存队列、FLUSH_REG、低深度改写，模型默认值 = RTL 配置（EXP-044）
+
+这是一次很大的合入（rtl 47 个提交、trace-model 48 个提交）：RTL 为压低综合深度改了发射队列、访存队列、flush、前端 / BPU / LSU 的结构，trace-model 的默认值同步改成 RTL 的配置（之前要带 13 个 `-D`），并用 12 个 Linux 检查点窗口对齐。**有意的性能回退**：67 个程序周期几何平均 +1.92%，SPEC06 386 点 IPC 几何平均 −2.15%。
+
+**配置变化**（trace-model `include/config.h` 的默认值；RTL 一直是这个配置）
+
+| 参数 | 旧值 | 新值 |
+|---|---|---|
+| `CFG_INT_CLUSTERS` / `CFG_INT_IQ_SIZE` / `CFG_INT_IQ_ENQ_WIDTH` | 1 / 64 / 7 | 2 / 32 / 4（两个 INT 发射队列，端口 0,1,4 / 2,3,5） |
+| `CFG_MEM_IQ_ENQ_WIDTH` | 8 | 6（访存队列 load + STA 合并，去掉 STA 空队列和 `CFG_MEM_MERGE`，共 6 个发射队列） |
+| `CFG_AGU_SHARED` | 0 | 2（5 个 AGU：2 个 load 专用、2 个 load / STA 共用、1 个 STA 专用） |
+| `CFG_ISSUE_OLDEST_FIRST` / `CFG_ISSUE_OLDEST_QUEUES` | 0 / 0xff | 2 / 2 |
+| `CFG_IQ_SAME_CYCLE_REUSE` | 1 | 0 |
+| `CFG_FLUSH_REG` | 0 | 1（全局 flush 晚一拍到各模块，`rtl/docs/FLUSH_REG.md`） |
+| `CFG_LSU_STAEV_REG` / `CFG_LSU_SLOT_FIXED` / `CFG_LSU_WBMERGE_REG` | 0 / 0 / 0 | 1 / 1 / 1 |
+| `CFG_FE_OVR_REG` | 0 | 1（取指地址 FIFO 晚一拍读） |
+| `scripts/ref_cycles.txt`（rtl）| 上一版 main 的表 | 新配置的表（67 个程序，几何平均 +1.92%） |
+| 基线（trace-model `results/baseline/baseline.csv`、`baseline_c.csv`） | 旧配置 | 新配置重新生成（62 / 62（关预取）/ 67 个程序周期都变化，见下） |
+
+**设计改动和修掉的问题**
+- **RTL 结构改写**（周期不变或与模型同步）：`lp_ptr` / `lp_rp`、`lp_wbstep`、`lp_ovl`、`bpu_ub_track_ser`（528 → 97 层）、`bpu_updq`、`bpu_ub_look`（75 → 29 层）、`front_fetch_buf` 的起点前缀扫描、`fetch_addr_fifo` 的 `head_fresh`、`mul_core` 铺在 3 拍（`mul_unit` 209 → 90 层）、dispatch / isu 队列清理；删除旧 LSU、`LSU_PIPE`、行式 ROB、`csr_fu` 和只剩一个值的开关。
+- **RTL 修掉的 bug**：`lp_ldq` 的 DCache 响应选择不比 epoch（过期响应盖住有效响应，load 停在 DCW）；`bpu_ub_look` uBTB 目标只取低 32 位；`back_top_glue` 在 flush 决定那一拍用重定向地址覆盖提交槽的 `diag_val`（同拍提交的调用用 mtvec 训练了 BTB）。
+- **trace-model**：桥接层对 `mstatus.FS = Off` 的 FP store 不先读旧值（Linux 里 `illegal word load`）；flush 型提交指令的 FS-dirty 保留；uBTB 目标全宽；`MsData` 对违例 load 第二次写回的同拍可见性（`MsLdq::early_clean`）；指纹口径：`dir=0` 的训练事件不计目标。
+- **文档**：每个原子模块一份设计文档（`rtl/docs/modules/`，34 份）、`WORKFLOW.md` 第 7 节（RTL 开发流程：文档先行、提交前核对）、`LINUX_ALIGN.md`。
+
+**验证范围**
+- 跑了：RTL `lint_chip` 0；`fm_gate.sh` 67/67、周期与 `ref_cycles.txt` 0 处不同、0 个函数模型不一致；Linux 检查点窗口 s00–s11 12/12 PASS（约 5900 万条指令逐条检查，PT / UP 指纹全程相等）；trace-model：RVC=0 门禁 62/62、RVC=1 C 门禁（新基线）、67 个程序周期 = RTL、Linux 从复位启动到 `rv64 login:`（无 oops / panic）；SPEC06 rv64gc 386 点（`final95`，eda 集群，0 失败）新旧两个配置各跑一遍。
+- **没跑**：RTL 从复位的 Linux 全程（1.4 亿周期）指纹对比；整机综合（`back_top` 135、`front_top` 132 是后来又改了几处之前的数，`ren` 110、`axi_llc` 238 超过 100 层）；SPEC 的两次全量用的是没有 `early_clean` 补丁的模型（影响应远小于 0.1%，没有重跑）。
+
+**已知回退**
+- 67 个程序：几何平均 +1.92% 周期（dhrystone +7.95%、coremark +3.0%、memory-stress-small +0.08%；最差 `timer-mmio` +19.8%、`goldbach` +12.3%）。
+- SPEC06 386 点：新配置对旧默认值（同一份代码）IPC 几何平均 −2.15%（hmmer −8.6%、bzip2 −3.5%、sjeng −3.5%、astar −2.6%、gobmk −2.4%、perlbench −2.0%，xalancbmk +1.6%）；旧默认值对 11 月 15 日 `res_final` +0.04%。主要来自两个 INT 队列（32 项、4 条入队）和 FLUSH_REG，每一项的单独代价没有量化。
+
+**对应** EXP-044；总仓库本行所在提交 / function-model `55affa0`（未动）/ trace-model `c795844` / rtl `a26a102`。
 
 ### 2026-11-15 RVC=1 / rv64gc 的 RTL 与 trace-model 逐周期对齐，含 Linux（EXP-038、EXP-040）
 

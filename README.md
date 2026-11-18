@@ -73,17 +73,17 @@ git submodule update --init          # 取出 function-model、trace-model、rtl
 - **旧的逐模块锁步 / trace 回放 / 变异检查体系已退役**（代码在 rtl 标签 `legacy-reference`，文档在 `rtl/docs/history/`）。
 - **目标是方法，而不只是代码**：AI 和人能否系统地做 CPU 架构优化——每个想法先在模型上量化，再落到 RTL，保证正确，留下可复用的验证手段和完整记录（包括负面结果）。
 
-## 当前状态（2026-11-16）
+## 当前状态（2026-11-19）
 
 README 只写概况，**各次合入的数字、配置变化和已知回退以 [docs/MAIN_RECORDS.md](docs/MAIN_RECORDS.md) 为准**，在做的事见 [docs/TODO.md](docs/TODO.md)。
 
-- **当前配置**（默认开）：第 3 批面积配置（取指宽度 8、在飞分支 32）→ DRAMsim3 DDR4-3200 + 60 ns 非核心延迟、核心 1 GHz、无 AXI 分频 → mov 消除 → L1D 预取器 h1 → 分级 LSU + 流水化 BPU → IQ 入队宽度 INT7/LD6/STA4/STD4/BR5 → 访存推测（`LSU_MEMSPEC`）+ 前端快速通路（`FE_RFAST=15`）→ 已提交 store 的 write buffer（4 项 × 2 store）→ 3 张 × 64 项间接跳转目标表 → 紧凑 ROB（128 项，按序分配、前缀提交）+ 寄存器版 BPU 提交额度。
+- **当前配置**（默认开）：第 3 批面积配置（取指宽度 8、在飞分支 32）→ DRAMsim3 DDR4-3200 + 60 ns 非核心延迟、核心 1 GHz、无 AXI 分频 → mov 消除 → L1D 预取器 h1 → 分级 LSU + 流水化 BPU → 两个 INT 发射队列（各 32 项、每个 4 条入队）+ 合并的访存队列（load + STA，入队 6）+ 5 个 AGU（共 6 个发射队列）→ 访存推测（`LSU_MEMSPEC`）+ 前端快速通路（`FE_RFAST=15`）→ 已提交 store 的 write buffer（4 项 × 2 store）→ 3 张 × 64 项间接跳转目标表 → 紧凑 ROB（128 项，按序分配、前缀提交）+ 寄存器版 BPU 提交额度 → 全局 flush 晚一拍到各模块（`FLUSH_REG`）、取指地址 FIFO 晚一拍读、STA / STD 事件和写缓冲合并的寄存（EXP-044；2026-11-19 起 trace-model 的 `config.h` 默认值就是 RTL 配置，不再需要 `-D`）。
 - **ISA**：main 只有 rv64gc（rv64imafdc + Sv39；`RVC=0` / `RVC=1` 两种构建），rv32 在各仓库分支 `rv32-legacy`。
-- **性能**：rv32 时代的 SPEC 估算分数（官方参考时间直接换算，580 个 rv32imab 检查点、快速预热）11.53 分/GHz（EXP-028 合入时）；各次合入对上一次 main 的几何平均 IPC：EXP-027 +10.75%、EXP-028 +2.74%。**rv64 main 还没有 SPEC 分数**（SPEC06 rv64gc 检查点在重建，原 580 个 rv32imab 检查点只能用于 `rv32-legacy`）。**RTL 没有跑过 SPEC**；没有工艺库综合和时序（WNS），只有 yosys 通用门面积代理。
+- **性能**：rv32 时代的 SPEC 估算分数（官方参考时间直接换算，580 个 rv32imab 检查点、快速预热）11.53 分/GHz（EXP-028 合入时）；各次合入对上一次 main 的几何平均 IPC：EXP-027 +10.75%、EXP-028 +2.74%。**rv64 的 SPEC**：SPEC06 rv64gc 检查点已建好（386 个点，约 95% 权重，`AI-Huma-data/spec06_rv64gc`），trace-model 在 eda 集群上跑；2026-11-19（EXP-044）新配置对旧默认值 IPC 几何平均 −2.15%、对 11 月 15 日基线 −2.11%，还没有换算成 SPEC 分数（原 580 个 rv32imab 检查点只能用于 `rv32-legacy`）。**RTL 没有跑过 SPEC**；没有工艺库综合和时序（WNS），只有 yosys 通用门面积代理。
 - **C 扩展与 rv64gc 的 RTL（EXP-038、EXP-040，2026-11-15 合入）**：`RVC=1`（C910 式携带）和 rv64gc 的 RTL 与 trace-model 逐周期对齐，含 Linux。快速检查用 `rtl/scripts/linux_segments_cmp.sh`（检查点窗口并行，RTL 对 trace-model），从复位的完整 Linux gate 是最后确认（[docs/WORKFLOW.md](docs/WORKFLOW.md) 第 3.2 节）。
-- **trace-model**：gate `RVC=0` 62/62（`run_gate.sh`）、`RVC=1` 67/67（`run_gate_c.sh`），周期等于基线；`comb_graph.py --check` 0 隐患、模块声明与代码一致；rv64gc Linux 启动到 `rv64 login:`（2 亿周期控制台与基线一致）。
-- **rtl**：lint 干净（按目录和整芯片）；`fm_gate.sh` 67/67 逐条对比，周期与 trace-model（`LSU_PIPE_NOWD=1`）逐个相等；Linux 从复位一次连续启动到 `rv64 login:`逐条对比 0 不一致；store 数据不在逐条对比范围内。已知风险见 [rtl/docs/08-risk-register.md](rtl/docs/08-risk-register.md)。
-- **未合入的实验**：sdip 预取器（EXP-026，`exp/sdip`）、LD/STA IQ 合并与统一 FTQ 的 RTL 试做（见 TODO）、其余探索见 [EXPLORATION.md](docs/EXPLORATION.md) 索引。
+- **trace-model**：gate `RVC=0` 62/62（`run_gate.sh`）、`RVC=1` 67/67（`run_gate_c.sh`），周期等于基线（2026-11-19 按新默认配置重新生成）；`comb_graph.py --check` 0 隐患、模块声明与代码一致；rv64gc Linux 启动到 `rv64 login:`（2 亿周期控制台与基线一致）。
+- **rtl**：lint 干净（按目录和整芯片）；`fm_gate.sh` 67/67 逐条对比，周期与 trace-model（`LSU_PIPE_NOWD=1`）逐个相等；Linux 检查点窗口 s00–s11 共 12 个全部 PASS（2026-11-19，逐条对比 0 不一致、PT / UP 指纹全程相等）；Linux 从复位的整段连续启动最后一次是 11-16 的 RTL，没有在最终 RTL 上重跑；store 数据不在逐条对比范围内。已知风险见 [rtl/docs/08-risk-register.md](rtl/docs/08-risk-register.md)。
+- **未合入的实验**：sdip 预取器（EXP-026，`exp/sdip`）、统一 FTQ 的 RTL 试做（见 TODO）、其余探索见 [EXPLORATION.md](docs/EXPLORATION.md) 索引。
 
 ## 复现
 

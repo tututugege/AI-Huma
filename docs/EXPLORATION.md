@@ -6,6 +6,7 @@
 
 | 编号 | 日期 | 题目 | 分支 | 状态 | 一句话结论 |
 |---|---|---|---|---|---|
+| [EXP-044](#exp-044-rtl-降深度那一轮和-linux-窗口对齐) | 2026-11-19 | RTL 降深度那一轮：两个 INT 队列、合并访存队列、FLUSH_REG、前端 / BPU / LSU 的低深度改写，模型默认值 = RTL 配置，Linux 12 个窗口对齐 | rtl `exp/agu-share`、trace-model `exp/tlb-ports` | 已合入 main | 67 个程序周期 +1.92%、SPEC06 386 点 IPC −2.15%（hmmer −8.6%），12 个 Linux 窗口全部 PASS；整机深度没有最新数 |
 | [EXP-042](#exp-042-rtl-时序tlb-口并行化first_set-对数深度) | 2026-11-17 | RTL 时序：DTLB/ITLB 的 8 口串行链改为并行，`ttg_first_set` 改为对数深度 | rtl `exp/tlb-par`（`1d8688e`、`261bd67`，基于 main `8abb7ab`） | **已合入 main（2026-11-17，rtl `261bd67`，未推送）** | `tlb_mmu` 深度代理 163 → 67（rv64），行为逐拍不变；fm_gate 67/67、Linux 窗口 3/3 与 main 逐字节相同 |
 | [EXP-040](#exp-040-rv64gc-linux-的-rtl-与-trace-model-逐周期对齐) | 2026-11-15 | rv64gc Linux：RTL 与 trace-model 逐周期对齐（旧值路径扩到 rv64、32→64 位错误、页错误 load 的写回、窗口并行检查） | trace-model `exp/rvc-carry`、rtl `exp/rvc-rtl`、function-model `exp/fm-forced-pf` | **待合入**（完整 Linux gate 结果待补） | 18 个 Linux 检查点窗口 PT / UP 指纹全部相同；唯一的 RTL 行为改动是页错误 load 不写 rd |
 | [EXP-038](#exp-038-c-扩展trace-model-前端按半字取指) | 2026-11-13 | C 扩展：trace-model（前端半字取指、BPU / FTQ 半字位置、按指令的取指缓冲），参考香山和 BOOM | trace-model `exp/rvc`（工作区 `trace-model-rvc`） | **进行中**：S0–S2 和变慢程序的修复已合入 trace-model `main`（`74e6827`，2026-11-13，已推送）；S3–S5 未做 | S0–S2 完成，`RVC=0` 周期不变；`RVC=1` 的前端能运行带 C 和不带 C 的程序，与 function-model 逐条对拍 0 不一致；S3–S5 未开始 |
@@ -44,6 +45,44 @@
 | [EXP-001](#exp-001-面积优化三个方向) | 2026-11-04 | 面积优化：FTQ 合并、LSU 端口、LD/STA IQ 合并 | trace-model `exp/area-explore` | 未提交、未合入 | 三个方向都能省面积，性能代价 0–1% |
 
 ---
+
+## EXP-044 RTL 降深度那一轮和 Linux 窗口对齐
+
+**目的**：整芯片综合深度（yosys 通用门的深度代理）压到 100 层以下，同时 RTL 周期与 trace-model 逐个相同。负责方法：在深度最长的路径上找结构，能并行的并行，能少一级的少一级，改了必须保持周期不变，或者模型同步改并重新对齐。
+
+**分支**：rtl `exp/agu-share`（比 main 多 47 个提交），trace-model `exp/tlb-ports`（比 main 多 48 个提交），均已快进合入 main。function-model 未动（`55affa0`）。
+
+**配置变化（模型 `include/config.h` 默认值 = RTL 配置，之前要 13 个 `-D`）**：
+
+| 参数 | 旧默认值 | 新默认值 |
+|---|---|---|
+| `CFG_INT_CLUSTERS` / `CFG_INT_IQ_SIZE` / `CFG_INT_IQ_ENQ_WIDTH` | 1 / 64 / 7 | 2 / 32 / 4（两个 INT 发射队列，端口 0,1,4 / 2,3,5） |
+| `CFG_MEM_IQ_ENQ_WIDTH` | 8 | 6（访存队列只有一个，load + STA 合并，去掉了 STA 空队列和 `CFG_MEM_MERGE`，共 6 个队列） |
+| `CFG_AGU_SHARED` | 0 | 2（5 个 AGU：2 个 load 专用、2 个 load / STA 共用且 load 优先、1 个 STA 专用） |
+| `CFG_ISSUE_OLDEST_FIRST` / `CFG_ISSUE_OLDEST_QUEUES` | 0 / 0xff | 2 / 2（只有访存队列、每种能力的第一个口选最老的） |
+| `CFG_IQ_SAME_CYCLE_REUSE` | 1 | 0 |
+| `CFG_FLUSH_REG` | 0 | 1（全局 flush 晚一拍到达各模块，`docs/FLUSH_REG.md`） |
+| `CFG_LSU_STAEV_REG` / `CFG_LSU_SLOT_FIXED` / `CFG_LSU_WBMERGE_REG` | 0 / 0 / 0 | 1 / 1 / 1（STA / STD 事件先寄存再唤醒停车的 load；L1 的槽 k 就是 AGU 口 k；写缓冲插入只合并到本拍刚开始的项） |
+| `CFG_FE_OVR_REG` | 0 | 1（取指地址 FIFO 的一项在写入后一拍才读，不依赖同拍 BPU 最后一级的覆盖） |
+
+**RTL 的结构改写（都有 old-vs-new 随机对拍或整核周期不变的验证）**：`lp_ptr` / `lp_rp`（提交接受从第一个命中 `commit_ptr` 的 store 起算、STA 重放选择不转请求向量）、`lp_wbstep`（写缓冲只合并到本拍刚开始的项）、`lp_ovl`（load 与 store 的邻居比较）、`bpu_ub_track_ser`（提交块跟踪器，余量用独热存：528 → 97 层）、`bpu_updq`（更新队列前缀计数压缩）、`bpu_ub_look`（uBTB 查表 75 → 29 层）、`front_fetch_buf`（指令起点的前缀扫描）、`fetch_addr_fifo`（`head_fresh`）、`mul_core`（乘法铺在 3 拍上，`mul_unit` 209 → 90 层）、dispatch / isu 队列清理。删掉的死代码：旧 LSU 和 `LSU_PIPE`、行式 ROB 和 `ROB_COMPACT`、`csr_fu`、各种只剩一个值的开关（`INT_CLUSTERS`、`MEM_AGE`、`IQ_SAME_CYCLE_REUSE`、`LP_STAEV_REG`、`LSU_WAIT_MSHR_FILL`）。每个原子模块一份设计文档（`rtl/docs/modules/`，34 份，模板 `TEMPLATE.md`，索引 `docs/05-module-tracker.md`），开发流程见 `WORKFLOW.md` 第 7 节（文档先行、提交前核对）。
+
+**Linux 窗口对齐中修掉的问题**（trace-model `docs/LINUX_ALIGN.md` 有过程）：
+- RTL `lp_ldq`：DCache 响应选择把 epoch 放进匹配（过期响应盖住有效响应，load 停在 DCW）；
+- RTL `bpu_ub_look`：uBTB 目标按完整宽度读（原来取低 32 位，内核地址预测错）；
+- RTL `back_top_glue`：flush 决定那一拍不再用重定向地址覆盖提交槽的 `diag_val`（同拍提交的调用用 mtvec 训练了 BTB）；
+- 模型：`MsData` 对违例 load 第二次写回的同拍可见性（`MsLdq::early_clean`）、桥接层对 `mstatus.FS = Off` 的 FP store 不先读旧值、flush 型提交指令的 FS-dirty 保留、uBTB 目标全宽；
+- 指纹口径：`dir=0` 的训练事件不计目标。
+
+**负载和结果**：
+- 67 个程序（`scripts/fm_gate.sh`）：RTL 周期 = 模型周期，逐条提交对 function-model 0 不一致；相对上一版 main 的参考表几何平均 **+1.92%** 周期（变慢）：dhrystone 100,722 → 108,732（+7.95%）、coremark 286,265 → 294,895（+3.0%）、memory-stress-small 343,381 → 343,672（+0.08%）；最差的是 `timer-mmio`（+19.8%）、`goldbach`（+12.3%）、`mersenne`（+8.6%）。
+- SPEC06 rv64gc，386 个点（`final95`，约 95% 权重，10M 指令、10M 详细预热，`PF_ENABLE=1`，eda 集群，同一份代码两个配置各跑一遍）：新配置对旧默认值（同一份代码）12 个程序 IPC 几何平均 **−2.15%**（hmmer −8.6%、bzip2 −3.5%、sjeng −3.5%、astar −2.6%、gobmk −2.4%、perlbench −2.0%、gcc −1.4%、omnetpp −1.4%、libquantum −0.7%、mcf −0.4%、h264ref −0.4%、xalancbmk +1.6%）；旧默认值对 11 月 15 日的 `res_final` 基线 +0.04%（说明这期间的代码变化对 SPEC 几乎没有影响）；新配置对 `res_final` −2.11%。结果和对比脚本：`AI-Huma-data/spec06_rv64gc/ev5_run/`（`cmp_ev5.py`）。
+- Linux：检查点窗口 s00–s11 共 12 个（各 400 万周期）trace-model 对 RTL 的 PT / UP 指纹全程相等、逐条检查 0 不一致；模型 Linux 从复位启动到 `rv64 login:`，无 oops / panic。
+- 综合：这一轮的每个改写在单模块上有深度数字（见各模块文档的 `depth:` 和第 6 节）；**整机深度没有最新数**（`back_top` 135、`front_top` 132 都是后来又改了好几处之前的数；`ren` 110、`axi_llc` 238 超过 100）。
+
+**结论**：深度目标的主要改写已经做完，代价是 SPEC 约 −2.1%、67 个程序 +1.9%，主要来自两个 INT 队列（32 项、4 条入队，hmmer 这种 INT 密集的受影响最大）和 FLUSH_REG；每一项的单独代价没有逐项量化（只做过取指地址 FIFO 晚一拍读：16 个点 IPC −0.82%）。
+
+**后续**（TODO.md）：整机综合和剩余超 100 层的模块；模型里 13 个旧配置宏的旧路径要删；`diag_val` 字段拆分；访存违例改成从 load 本身冲刷（第二次写回不再写寄存器）；新旧并排的等价测试台进 `rtl/tb/`；RTL 从复位的 Linux 全程指纹对比。
 
 ## EXP-042 RTL 时序：TLB 口并行化、first_set 对数深度
 

@@ -129,3 +129,62 @@ EXP-024 合入的是"STQ 内分组"的简化版 write buffer：4 个条目、每
   - **还剩**：DRAMsim3（`tb/soc/build.sh` 从 `$TM_DIR/third_party/DRAMsim3` 取头文件和库）；门禁测试程序在 `trace-model/build`（`TTG_PROGS`）、`build_dcache_tests.sh` 用 `trace-model/baremetal`。比较脚本运行 trace-model 二进制是正常的，不算。
   - 另：trace-model 的 Makefile 链接 `-lstdc++fs`，macOS 本机构建要加 `LDFLAGS=-lz`。
 - **（2026-11-17）Linux 窗口要用 function-model main 的检查器**：用 `drop32/function-model`（`d12be0c`）构建的 rv64 Linux 测试平台在窗口 s03/s07/s11 第 94949 周期报不一致（rtl main 也一样）；换成 function-model main `55affa0`（`make XLEN=64 FP=1 RVC=1 librefcpu.a`）后 3/3 PASS。function-model 内部具体差在哪没有追。
+- **（2026-11-18）低深度写法的仿真速度：公共模块做"快速仿真版 + 综合版"双版本**：为压低综合深度重写了几个模块（`bpu_ub_track_ser` 528→97 层、`lp_ovl`、`lp_ptr`/`lp_rp`、`front_fetch_buf` 的 `start_a` 前缀扫描、`lp_wbstep`），仿真是否变慢、慢在哪还没量过；已知一处：追踪器里的 `rem_of` 每次调用都建 64 项的表，应改成一次性常量表。
+  - 做法：沿用 `mul_core` 的先例（`STRUCT` 参数，`SYNTHESIS` 定义时用结构版，仿真用简单版，`scripts/mul_check.sh` 比较两者）；保留原来的简单写法作仿真版本，低深度版作综合版本。
+  - 先量再改：用 Verilator 性能统计（`--prof-cfuncs` / 总周期数每秒）找出真正拖慢的几个模块，只对它们做双版本，不全拆（多一份代码要维护）。
+  - 等价性回归：这次为追踪器（`bpu_ub_track_ser` 新旧并排、3000 万周期随机，含 fall/ntslot/taken 覆盖计数）、`lp_ovl`（2000 万组随机，W=32/12）、`start_a`（穷举全部有效前缀 × 65536 种压缩组合）各写了新旧对比测试，目前只在 session 草稿目录里，应整理进 `tb/` 并写进回归脚本，双版本后拿来比较两个版本。
+- **（2026-11-18）综合深度优化这一轮的文档（整体优化到 100 层以下之后统一补）**：这一轮（rtl `exp/agu-share`、trace-model `exp/tlb-ports`）改了很多模块但还没同步文档；用户决定等整体降到 100 层以下再统一规范。
+  - 已有：`docs/FLUSH_REG.md`；`docs/TODO.md` 的"双版本"一条。
+  - 要写：一份总文档（如 `rtl/docs/DEPTH_OPT.md`）：哪里深、改了什么、怎么验证（随机并排测试、周期对比）、各模块前后层数；更新受影响的 `docs/modules/*.md`（`bpu`、`front_top`、`front_basic`、`lsu`、`isu`、`exu_*`），给没有说明的小模块补几行（`bpu_updq`、`bpu_ub_track_ser`、`front_fifo`、`lp_ovl`、`lp_wbstep`）；合入 main 前补 `EXPLORATION.md` / `MAIN_RECORDS.md`。
+  - 涉及的改动：两个 INT 队列 / 共享 AGU / STAEV_REG / 乘法流水；`lp_ptr`+`lp_rp`（提交接受、STA 重放选择）；`lp_wbstep` 合并（`CFG_LSU_WBMERGE_REG`）；`lp_ovl`；`bpu_ub_track_ser`（528→97）；`front_fetch_buf` 的 `start_a` 前缀扫描（40）；`front_fifo` 的 `head_fresh` 与取指地址 FIFO 读使能（`CFG_FE_OVR_REG`，16 个 SPEC 点 IPC −0.82%）；`bpu_updq` 压缩（90）。
+
+## 待做：RTL 降深度与模块文档这一轮的遗留（2026-11-18 / 19，rtl `exp/agu-share`、trace-model `exp/tlb-ports`，已合入 main，见 [MAIN_RECORDS.md](MAIN_RECORDS.md)、EXP-044）
+
+这一轮做了：两个 INT 队列、合并的内存队列（load + STA，去掉了 STA 空队列和 `MEM_MERGE` 开关，6 个队列）、5 个 AGU（2 load 专用 + 2 共用 + 1 STA 专用）、全局 flush 晚一拍、LSU / 前端 / BPU 的一批降深度改写，以及每个原子模块一份设计文档（`rtl/docs/modules/`，开发流程见 [WORKFLOW.md](WORKFLOW.md) 第 7 节）。下面是没做完的和发现的问题，按类别列。
+
+### 深度与验证
+- **整机深度没有最新数**：`back_top` 最后一次是 135 层、`front_top` 132 层，都是后来又改了好几处之前的数；整芯片综合要一次一个、给足时限（`synth_module.sh back_top 26000 14400`），不要和仿真同时跑。
+- **单模块仍超过 100 层**：`ren` 110（最长路径：指令队列 → FP 重命名检查点 `u_ckpt`）；`axi_llc` / `axi_subsys` 238（路径：内存写响应 → LLC 行数据；**LLC 算不算优化范围待定**）；`pmu` 90、`bpu_spec` 91、`bpu_updq` 90 在线内但偏高。
+- **`bpu`、`dcache`、`mem_top` 的单模块深度没测完**（结果在 `rtl/build/synth_dp2/`）；测完用 `rtl/scripts/fill_depth.py` 填进文档的 `depth:` 行和第 6 节。其余模块已填，索引 `docs/05-module-tracker.md` 用 `make tracker` 重新生成。
+- **新旧并排的随机等价测试要进仓库 `rtl/tb/`**（原来在临时目录，重启后丢了）：`lp_ovl`（文件头声称做过，仓库里没有）、`bpu_ub_track_ser`、`bpu_updq`、`bpu_ub_look`、`front_fetch_buf` 的起点扫描（对所有有效前缀穷举）。每个都要再植入一个已知错误确认能抓到。
+- **最终 Linux 从复位启动、带指纹（`FPR`）的 RTL 对比没有在最终 RTL 上跑**（之前那次被停掉了，约 7 小时、`--threads 4`）。合入 main 用的是 12 个检查点窗口（s00–s11，各 400 万周期）全部 PASS 和模型 Linux 启动到 `rv64 login:`，没有 RTL 从复位的 1.4 亿周期对比。
+- **方案 A（取指地址 FIFO 晚一拍读）的代价**：16 个 SPEC 点 IPC 几何平均 −0.82%（astar.25 −3.86%）；如果要拿回来，是方案 B（先读后杀，需要作废已发出的取指，模型里要改）。
+- **PMU**：队列相关事件已换成 MEM / 补上 FP；计数器块没有被任何地方实例化、CSR 侧没接；`tests/pmu/pmu_tb.cpp` 的 `NUM_EV=52`、`soc_tb.cpp` 的 `kPmuEv=51` 过期（事件包现在 66 个）。
+
+### 可能和模型不一致的地方（待查，不一定是 bug）
+- **（2026-11-18）已改：`back_top_glue` 不再在 flush 那一拍覆盖提交项的 `diag_val`**（Linux 窗口 s08 周期 2856352：同拍提交的 `jal ra` 被用 mtvec 训练 BTB，模型不覆盖）。**待做：`diag_val` 承担的功能太多**（分派时装指令字、BRU 写分支目标 / pc+4、访存口写地址、故障时写 tval、trap 时 `trap_val` 读它，提交时前端又拿它当训练目标），建议拆成各自的字段或让每种用途有明确的来源，再删掉“指令类型决定含义”的隐含约定。
+  - **现状（RTL，2026-11-18 查）**：ROB 每项一个 64 位 `diag_val`（`ROB_NUM = 128`，共 8192 位，另有 8 个提交口各 64 位的读出线）。写入方：IDU 分派时放指令字（页错误 NOP 也带着）；BRU 写回放“跳转则目标，否则 pc+4”；LSU load / STA 写回放虚拟地址（`diag_we = mem_port | is_br`，没故障也写）。读取方只有两处：`rob_trap_ctrl` 的 `trap_val`（页错误 load / store 读地址，非法指令读指令字；页错误指令和断点读的是 `ftq_resp_pc`，不读它），和 `core_back2front` 的 `class_target`（提交的分支 / 跳转训练 BTB 的目标）。
+  - **优化方向（按顺序）**：
+    1. 访存口只在故障时写 `diag_val`（`diag_we = is_br | (mem_port & has_pf)`），没有行为变化，零风险；
+    2. 访存地址不放 ROB：LDQ / STQ 里本来就有 `vaddr`（LSU 写回的 `diag` 就是从那里读的），trap 时按 ROB 号找对应项读（要核对 ROB 项里有没有 LDQ / STQ 索引）；
+    3. 分支目标放 FTQ：BPU 对不跳转的分支不用目标，一个取指块在第一个实际跳转处结束，一个 FTQ 项只要存 1 个实际目标（由跳转的那条写）；提交口读 FTQ。**未核实**：FTQ 项和取指块是否一一对应，误预测重定向后同一项会不会被再写；
+    4. 非法指令字：`mtval` 要等于指令字（函数模型这么做，后面 `csrr` 读到会被逐条检查抓到），分派之后没有别的地方存。推荐做法：IDU 译码出非法指令时把指令字写进一个很小的旁表（2–4 项），ROB 项只记小索引，表满了暂停分派非法指令；错误路径上也会有非法指令，所以要随冲刷释放。备选：trap 时重新取指（要加读口、trap 路径变长）；写 0 会和函数模型对不上，不建议；
+    5. 做完以上，ROB 的 `diag_val` 列和提交口的 64 位读线可以整体删除。
+  - 这些要先写文档（rob.md、back_top.md、exu_ctrl.md、idu.md、core_top.md），模型（`Rob.cpp`、`Idu.cpp`）和 RTL 一起改，周期必须不变。
+- RTL 的 `prf_awake` 在写回级唤醒所有 load；模型跳过 LSU 已经唤醒的（`early_woken`，RTL 没有这根线）。
+- CSR 异常原因优先级：RTL 非法指令排在断点之前，模型相反（只有两者同时发生才有区别）；`mstatus` 输出没有 SD 位，CSR 存 19 个寄存器，模型 22 个。
+- `peripheral_axi_fmt` 对 lb / lh / lw 做 64 位符号扩展，模型 `extract_read_data` 对高 32 位零扩展（只影响没建模的 AXI 路径，没查 LSU 会不会再扩展）。
+- `ptw_walk` 静默丢掉 32 位物理地址以上的 PPN，模型 `exit(2)`；RTL 没有"I-Cache 取指组 pc 与 PTAB pc 一致"的检查（模型非成对路径有 `fatal`）；路由号 RTL 只留 4 位、模型 32 位。
+- `dispatch` 同时接 4 路 PRF load 唤醒和 22 路 `iss_awake`，`isu_wake_src` 已经把前者并进后者（重复；模型是 30 路）；`ldq_alloc_valid` 在 `dispatch_lsu_alloc` 里没用，模型用。
+- ROB 自己算 F/D 的 `fs_need` / `fs_off` / `fs_dirty` / `fflags`，模型从 trace bridge 取；`lp_mdp` 一个训练口、`RTL_MEMSPEC_NOTES.md` 写两个；LSU 没有对应模型 `PLdq.illegal` 的 F/D 字段。
+- `fp_core` 在 `SYNTHESIS` 下返回 0，所以任何综合结果里都没有 FP 运算的面积和深度。
+- **模型里这 13 个 `CFG_*` 配置宏**（`CFG_AGU_SHARED`、`CFG_MEM_IQ_ENQ_WIDTH`、`CFG_ISSUE_OLDEST_FIRST`、`CFG_ISSUE_OLDEST_QUEUES`、`CFG_IQ_SAME_CYCLE_REUSE`、`CFG_INT_CLUSTERS`、`CFG_INT_IQ_SIZE`、`CFG_INT_IQ_ENQ_WIDTH`、`CFG_LSU_SLOT_FIXED`、`CFG_LSU_STAEV_REG`、`CFG_FLUSH_REG`、`CFG_LSU_WBMERGE_REG`、`CFG_FE_OVR_REG`）现在默认就是 RTL 配置（trace-model `7ced459`），但旧路径和宏还在；按 WORKFLOW 7.6（采纳优化就删旧开关）同样适用于模型：要删掉旧路径、旧默认值和这些宏，只保留 RTL 配置，删完用 67 程序周期（对 `ref_cycles.txt`）、12 个 Linux 窗口和 Linux 启动回归。
+
+### 死代码与清理
+- **2026-11-18 已清掉**：行式 ROB（`ROB_COMPACT` 和 7 个文件）、旧 LSU（30 个 `lsu_*` 文件、`LSU_PIPE` 常量和 `lsu.sv` 的旧分支、测试台的 `SOC_LSU_PIPE` 开关、`gen_cfg_pkg.py` 里生成 `LSU_PIPE` 的那行）、`csr_fu.sv`、`core_top.sv` 里空的 `always_comb`、`lp_pkg::NDC`、`lp_stq_ent` 里 `dr_pick ? rw13 : rw13`、`scripts/fe_refs/`、`scripts/ref_cycles_legacy_lsu*.txt`。
+- **有意留着的**：`bpu_ub_track.sv`（只在 `RVC_ENABLE == 0` 时用）和所有 `FE_BFAST != 0` 的路径（`bpu_cmd`、`bpu_ctl`、`bpu_spec`、`WR_AFTER_DROP`）：它们是模型也支持的配置选项，当前默认不开；要不要连 RTL 的这些选项一起删（只支持 rv64gc + 现行前端配置）待定。`pmu` 计数器块没被实例化是因为 CSR 侧还没接，不是废弃。`back_top.sv` 里的 `nc_*` 线是给没人读的输出接的"垃圾桶"（避免 lint 警告），不是死代码。
+- 还在的：`rob.sv` 把写回的 `pf_inst` 恒接 0；`lsu_pipe.sv` 有 `lint_on` 没有对应的 `lint_off`；`lp_ffs` 的 `LP_L2[9]` 多余；`lp_l1.sv` 头注释还说 load 压缩到前几个槽；`tests/tlb_par`（接口已变，编不过）；`exu_fu` 的单周期功能单元的 `consume / complete / ready` 是死的（接 0 或悬空）；LLC 的 `hz_wctx` / `hz_wresp` 输出没人用；`mem_axi` 的读主口 2（`UNCORE_LSU_R`）是固定为 0 的桩；`tlb_mmu_pkg`、`fp_pkg` 里还有 rv32 的分支 / 注释；`tlb_mmu` 的 `resp_hit` 接到一个没用的线上，`resp_paddr` 在权限错误时是拼出来的地址（模型给 0，外部看不到）。
+- **命名误导**：`ptw_walk` 里的 "L1 / L2" 不是页表层级（L1 是第一次读即第 2 层，L2 覆盖第 1、0 层），`go_level0`、`l1_ppn_q` 同；`bpu_icache_read_ready` 实为"取指地址 FIFO 没满且 `bpu_can_run`"。
+- **过期的注释**（对着文档逐个改）：`memcpu_pkg` 写"4 store ports"（实为 `LSU_STA_COUNT = 3`）；`mem_top` / `mem_axi` / 适配器里的"16 tick"（现在 `AXI_SUBSYSTEM_FREQ_DIV = 1`）；`core_front2back`、`core_top` 的"8->16 lane"；各 FIFO 头里的深度和位宽（如 8 项队列写成"32 x 2424b"）；`front_pred_path` 写 `+4*i`（槽间距 2）；多处指向已不存在的旧文档章节号和 `spec/`；`exu.sv`（"27 FUs"）、`exu_ctrl_*`（22 个口）、`prf.sv`（`MAX_UOP_TYPE=18`）、`isu_wake_src.sv`（"14 wake channels"，实为 22）、`dis_pkg`（"18 UopType"）、`rob_pkg`（说 F/D 不在 RTL）、`ren` / `idu` 里的 "reference model commit 2f31e8d"、`pre_idu_ctrl.sv` 里指向旧文档的章节号；`ftq_commit_info_resp_valid_t` 是 4 份相同的拷贝；`InstType` 编码在几个 pkg 里手抄。
+- **配置包**（2026-11-19 更新）：模型默认值 = RTL 配置之后（trace-model `7ced459`），`make cfg` 用 trace-model 的 `config.h` 生成的包与提交的 `ttg_cfg_pkg.sv` **所有同名常量的值都相同**（以前有 5 个值不同）；剩下的差别是常量集合：生成器还会输出两个已经删掉的常量（`ROB_COMPACT`、`LSU_WAIT_MSHR_FILL`），提交的包里有 6 个生成器输出不了的常量（`DCACHE_WORDS_PER_BANK`、`DCACHE_MISS_NUM`、`VIRTUAL_MEMORY_LENGTH`、`LDQ_WAIT_MMU_UPPER_BOUND`、`STQ_WIAT_MMU_UPPER_BOUND`、`STQ_MMU_DONE_UPPER_BOUND`），常量的顺序也不同；文件头还写着"Generated, do not edit"。要做：让生成器输出提交包里在用的那些常量、不再输出已删的，之后 `make cfg` 的结果与提交的逐字节相同（WORKFLOW 第 6 节第 3 步的要求）。
+- **其他**：`LP_L2 = 1907` 的第 3 位是 0，LSU 的推测唤醒取消通路在当前配置下是关的（`lsu_byp_valid` 恒 0）；`LP_CUT` 的几个位只读了位置、没证明等价。
+
+### 文档
+- 每份文档末尾的"未核对"项（继承自旧文档、没重新核对的说法）和"待补"项没有处理；这一轮只对文档做了抽查（文件表覆盖全部 `.sv`、配置数字对 `ttg_cfg_pkg`、几处具体说法对代码），没有逐份逐条核对。
+- `pmu` 和 `common` 的 `area` 写的是 `core`（跟踪表里只有 backend / frontend / memsys / core / uncore）。
+- 旧文档里的"验证"一节（覆盖率、变异表、集成问题表）在重写时丢掉了，只留在 git 历史里；如果还需要，从 `git log -- rtl/docs/modules/<模块>.md` 找回。
+- 提交前核对（WORKFLOW 7.3）从下一次 RTL 提交开始执行；这一轮的提交说明里没有"文档已核对"的字样。
+- **（2026-11-18）模型合入前必须跑 Linux 启动，67 个程序的周期对比抓不到时序类回归**：`CFG_LSU_WBMERGE_REG=1` 让模型在 Linux 里失败（`[RefCPU] illegal word load at paddr=0x7ffffffc`），原因是桥接层对 `mstatus.FS = Off` 的 FP store 先读旧值（没检查地址在不在内存里），wrong-path 上基址陈旧时地址任意；67 个程序一个都碰不到。已修（trace-model `abfd869`），修复后 RTL 对齐配置从复位启动到 `rv64 login:`（约 1.4 亿周期）。**这个缺口没有短测试**（wrong-path FP store 取决于时序，没法稳定构造），只有 Linux 能触发；`FE_OVR_REG` 单独对 Linux 的影响没有单独二分过（完整配置两个开关都开时通过）。
+- **（2026-11-19）`rtl` 分支 `exp/ldq-resp-epoch`（工作树 `rtl-i2`，别的会话在用）的两个 RTL 修复已并入 `exp/agu-share`**：`b69f661`（LDQ 响应选择把 epoch 放进匹配）= `6fae572`，`bfe8a1a`（uBTB 目标按完整宽度读）= `4120e2e`（在重写过的 `bpu_ub_look` 上手工改了 `w_next` 一行，模型侧 `b286059` 已是完整宽度）。那个分支的分出点是 `6d7ed85`，`exp/agu-share` 合入 main 之后它和 main 在 `lp_ldq.sv`、`bpu_ub_look.sv` 上有重复和冲突，由用它的会话丢弃或重新基于 main。
+- **（2026-11-19）Linux 窗口 s00–s11 12/12 PASS**（rtl `3120531`、trace-model `dcd0faa`）。对齐中发现并处理了四类差别，过程和根因见 trace-model `docs/LINUX_ALIGN.md` 最后一节：模型默认值 = RTL 配置；指纹不计不跳转分支的目标；RTL `back_top_glue` 不再在 flush 那一拍覆盖提交槽的 `diag_val`；模型 `MsData` 对违例 load 第二次写回的同拍可见性（`early_clean`）。
+- **（2026-11-19）待改设计：访存违例改成“从违例的 load 本身开始冲刷、重新取指”（现在是从 load 的下一条 pc+4 开始，load 保留）**。现状（EXP-019，`f6daf0a`，RTL 与模型一致）：推测 load 第一次写回（`rob_defer=1`，ROB 不完成，LDQ 项进 `LS_SPD`），违例时 load 在 LSU 里**重新执行**，**第二次写回**带修正后的值和 `flush_pipe`，ROB 让这条 load 自己提交，只冲它后面的指令，从 pc+4 重新取指（`back_top_glue.sv` 的 `flush_redirect_pc = rob_bcast_pc + 指令长度`；窗口 s08 周期 3214686 的冲刷就是这样：违例 load `pc=…eba44` → 重定向 `…eba48`）。这个设计下违例 load 必须再写一次寄存器（修正值），不违例时第二次写回只是重复写同样的数据。**改成从 load 本身冲刷后**：第二次写回不再写寄存器（只通知 ROB 完成），违例 load 连同后面的指令一起冲掉、从它自己的 pc 重新取指、完整重走流水线、只写一次寄存器。好处：（1）**第二次写回不再占 PRF 写口**：load 的写回口是和别的 load 共用的，违例 load 的第二次写回（`kind_wp`，WBP 路径）要和别的 load 的第一次写回抢同一个口，推测 load 越多越明显（没有量化，改完用 SPEC 比）；（2）LSU 里“违例 load 重新执行再写回”这条路径（`lp_ent_ms` 的违例处理、`LS_SPD` 释放后的 `second` 写回数据路径）可以简化；（3）模型里为了对齐“同拍可见性”加的 `early_clean` 补丁（`MsData.h` 的 `keep_clean`、`MsLdq::early_clean`）不再需要，可以删掉；（4）`diag_val` / 写回通路上“第二次写回带不同数据”的特例消失。代价：违例时多重取、重做 load 自己，违例有等待表抑制（`lp_mdp`），应该少见，要用 SPEC 访存组量化。要改的地方：RTL `lp_wb.sv`（`wb_dest_en` 在 `second` 时为 0）、`lp_ent_ms.sv` / `lp_ldq_ent.sv`（违例处理）、`back_top_glue.sv`（违例冲刷的重定向地址取 load 自己的 pc）、ROB（违例 load 不提交，随冲刷一起被冲掉；“单条提交”的特例去掉）；模型 `Rob.cpp`、`LsuPipeWriteback.cpp`、`MsData.h` 同步；先写 `lsu.md` / `rob.md` / `back_top.md`，周期参考表要重新生成，67 程序、12 个 Linux 窗口、SPEC 全部回归。
