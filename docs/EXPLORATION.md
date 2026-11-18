@@ -7,6 +7,7 @@
 | 编号 | 日期 | 题目 | 分支 | 状态 | 一句话结论 |
 |---|---|---|---|---|---|
 | [EXP-044](#exp-044-rtl-降深度那一轮和-linux-窗口对齐) | 2026-11-19 | RTL 降深度那一轮：两个 INT 队列、合并访存队列、FLUSH_REG、前端 / BPU / LSU 的低深度改写，模型默认值 = RTL 配置，Linux 12 个窗口对齐 | rtl `exp/agu-share`、trace-model `exp/tlb-ports` | 已合入 main | 67 个程序周期 +1.92%、SPEC06 386 点 IPC −2.15%（hmmer −8.6%），12 个 Linux 窗口全部 PASS；整机深度没有最新数 |
+| [EXP-043](#exp-043-l1-berti--store-预取l2-streambreadcrumbs-l1-部分) | 2026-11-17 | 预取组合：L1 Berti、STA 时的 store 预取、LLC 里的 stream、Breadcrumbs（EXP-022 最终设计）的 L1 部分，rv64gc SPEC06 访存组 59 点 | trace-model `exp/pf-l1l2`（`9275c6c`、`215e466`、`39dfc71`，工作区 `trace-model-pfl1l2`） | 未合入 | 第一阶段（1 GHz）：h1 + Berti 最好（+1.9%）；store 预取 ≈ 0；BC L1 + h1 +0.9%。**第二阶段（2026-11-18，3 GHz、MSHR 16、LLC PLRU，只开 L1、相对不预取）：BC_UNIFY（标签步长 + 采样步长按 PC 协同，共用及时距离）+ 按行封顶 + 有用性反馈 +33.1%**，h1 +18.9%，Berti（64 路）+22.5%，原版 Berti +6.3%（`023668e`）。**第三阶段：只留核心规则的 BC_CORE（有用性置信度 + 前沿 + MSHR 反压）+29.8%**（`fc05c5d`），差距在 mcf；探索暂停 |
 | [EXP-042](#exp-042-rtl-时序tlb-口并行化first_set-对数深度) | 2026-11-17 | RTL 时序：DTLB/ITLB 的 8 口串行链改为并行，`ttg_first_set` 改为对数深度 | rtl `exp/tlb-par`（`1d8688e`、`261bd67`，基于 main `8abb7ab`） | **已合入 main（2026-11-17，rtl `261bd67`，未推送）** | `tlb_mmu` 深度代理 163 → 67（rv64），行为逐拍不变；fm_gate 67/67、Linux 窗口 3/3 与 main 逐字节相同 |
 | [EXP-040](#exp-040-rv64gc-linux-的-rtl-与-trace-model-逐周期对齐) | 2026-11-15 | rv64gc Linux：RTL 与 trace-model 逐周期对齐（旧值路径扩到 rv64、32→64 位错误、页错误 load 的写回、窗口并行检查） | trace-model `exp/rvc-carry`、rtl `exp/rvc-rtl`、function-model `exp/fm-forced-pf` | **待合入**（完整 Linux gate 结果待补） | 18 个 Linux 检查点窗口 PT / UP 指纹全部相同；唯一的 RTL 行为改动是页错误 load 不写 rd |
 | [EXP-038](#exp-038-c-扩展trace-model-前端按半字取指) | 2026-11-13 | C 扩展：trace-model（前端半字取指、BPU / FTQ 半字位置、按指令的取指缓冲），参考香山和 BOOM | trace-model `exp/rvc`（工作区 `trace-model-rvc`） | **进行中**：S0–S2 和变慢程序的修复已合入 trace-model `main`（`74e6827`，2026-11-13，已推送）；S3–S5 未做 | S0–S2 完成，`RVC=0` 周期不变；`RVC=1` 的前端能运行带 C 和不带 C 的程序，与 function-model 逐条对拍 0 不一致；S3–S5 未开始 |
@@ -83,6 +84,135 @@
 **结论**：深度目标的主要改写已经做完，代价是 SPEC 约 −2.1%、67 个程序 +1.9%，主要来自两个 INT 队列（32 项、4 条入队，hmmer 这种 INT 密集的受影响最大）和 FLUSH_REG；每一项的单独代价没有逐项量化（只做过取指地址 FIFO 晚一拍读：16 个点 IPC −0.82%）。
 
 **后续**（TODO.md）：整机综合和剩余超 100 层的模块；模型里 13 个旧配置宏的旧路径要删；`diag_val` 字段拆分；访存违例改成从 load 本身冲刷（第二次写回不再写寄存器）；新旧并排的等价测试台进 `rtl/tb/`；RTL 从复位的 Linux 全程指纹对比。
+
+## EXP-043 L1 Berti / store 预取、L2 stream、Breadcrumbs L1 部分
+
+**目的**：在 h1（EXP-009：全局单项步长 + 只进 LLC 的 next-line）之外，试 L1 用 Berti 和 store 预取、L2（LLC）放 stream；再把 EXP-022 x86 的最终设计（Breadcrumbs，trace-model-rdf `docs/experiments/exp022_x86_design.md`，gem5 `afba9f8`）的 **L1 部分**移植到 RISC-V。
+
+**实现**（trace-model `exp/pf-l1l2`，全部默认关、关时与 main 周期一致：RVC=1 gate 67/67）：
+- 接口：`LoadReq` 带 load 的 PC（以及模型侧的 uid / 虚地址）；LSU 把翻译好的 store 地址送到 L1D（`DCacheReqPorts.sta_pf`）；L1D 把每次填充告诉预取器。
+- `PF_STRIDE=0` / `PF_LLC=<n>`：关 h1 的步长 / 设只进 LLC 的 next-line 行数（0 = 关）。
+- `PF_BERTI=1`：Berti（历史表 8×16、16 PC × 16 delta，按实测缺失延迟找及时的 delta，覆盖 ≥65 % 进 L1、≥35 % 只进 LLC，页内）。模型级结构。
+- `PF_STPF=1`：STA 翻译出地址时预取该行进 L1（8 项最近行过滤）。
+- `PF_L2S=1`：`AXI_LLC` 里 16 条流（每条一个 4 KiB 页），用 LLC 收到的 L1D 读训练，确认方向后前取 16 行、每次入队 4 行；最多 4 个预取 MSHR，留 2 个给需求。
+- `PF_BC=1`：Breadcrumbs 的 L1 部分。解耦标签引擎（8 项队列、每拍 `BC_TQ_W`=2 条，只有走标签规则的整数写指令进队，其余整数写指令的清除位随下一条入队指令走，分支 / FP load / store 在重命名时直接读标签）；按归纳寄存器的循环表（周期、从分支学边界）；数据流步长实例（距离 = 缺失延迟 ÷ 周期，4 行，流终点截断）；值表 16 + 关系表 32（提交时训练，双链、算术右移）；L1 侧的间接触发（自己取进来的生产者行填充、冗余探测、需求缺失、下一跳）。没做远端窗口和 L2 填充触发。模型简化：元素值读功能内存，预取地址用 1024 项的 VA→PA 页映射翻译（查不到丢弃）。定向测试 `tests/extra/bc-indirect.c`。
+
+**方法**：rv64gc SPEC06 检查点（eda 集群，stub 模式，10M 详细预热 + 10M 测量），访存组 = res_final 里 DRAM 读 / 千指令 > 6 的 6 个程序（gcc、mcf、libquantum、omnetpp、astar、xalancbmk），每个程序权重最高的点到 60 % 或 10 个，共 59 点。基线直接用 `spec06_rv64gc/tm/res_final`（2026-11-15 的二进制，PF 开），没有用当前 main 重跑。程序内按权重加 CPI，程序间几何平均。结果 `/nfs_global/S/houruyao/spec06_rv64gc/tm/res_pf43/<配置>/`，脚本 `tm/pf43_one.sh`。
+
+**结果**（周期加速，相对 res_final）：
+
+| 配置 | gcc | mcf | libq | omnetpp | astar | xalanc | 几何平均 |
+|---|---|---|---|---|---|---|---|
+| h1 + Berti | +1.3 | +7.6 | +1.2 | 0.0 | +1.4 | 0.0 | **+1.88** |
+| h1 + L2 stream（保留 LLC 引擎） | +1.9 | +8.0 | +0.2 | −0.6 | +1.3 | +0.3 | +1.81 |
+| h1 步长 + Berti + store + L2 stream（关 LLC 引擎） | +1.9 | +9.2 | +1.6 | −1.7 | +1.0 | −2.1 | +1.57 |
+| h1 + Breadcrumbs L1，标签引擎 3 宽 | +0.4 | +5.2 | −1.3 | +0.2 | +0.7 | +1.0 | +1.01 |
+| h1 + Breadcrumbs L1（2 宽） | +0.3 | +3.1 | +0.2 | +0.2 | +0.6 | +0.7 | +0.84 |
+| L2 stream 替换 LLC 引擎 | +0.6 | +3.8 | +0.3 | −2.2 | +0.6 | −1.7 | +0.21 |
+| h1 + store 预取 | +0.1 | 0.0 | 0.0 | +0.3 | 0.0 | 0.0 | +0.06 |
+| Breadcrumbs L1，关 LLC 引擎 | −1.6 | +5.4 | +0.3 | −3.5 | +0.2 | −7.0 | −1.09 |
+| 只关 h1 步长（Berti + store + L2 stream） | +1.9 | +6.9 | −24.0 | −1.7 | +0.9 | −5.1 | −4.05 |
+| 只用 Berti（关 h1） | +0.8 | +4.5 | −30.0 | −3.6 | +0.5 | −9.2 | −6.96 |
+
+**结论**：
+1. Berti 只能叠加在 h1 上，替换不了 h1 的步长（libquantum 全部点 −20～−40 %，与 EXP-026 sdip 替换 h1 的现象相同）。
+2. h1 的只进 LLC 引擎对 omnetpp / xalancbmk 很重要：L2 stream 或 Breadcrumbs 替换它都会掉；两者并存才有收益。
+3. store 预取在访存组上无收益（写缓冲已经吸收 store 缺失）。
+4. Breadcrumbs L1 收益不到 Berti 的一半。原因：2 宽标签引擎丢 19～35 % 的标签指令（3 宽仍丢 10～16 %，只多 +0.2）；关系表 32 项在 mcf / xalancbmk 上反复换出（置信转变 13～18 万次）；用于及时距离的缺失延迟 EWMA 只有 19～90 拍（被 LLC 命中拉低），提前量偏小。也没有 L2 部分（gem5 上 GAP 收益的主要来源）。
+5. mcf sp21：当前代码重跑基线 35,395,818 周期，与 res_final（35,356,425）差 0.1 %，不是漂移；这个点对预取非常敏感（h1 + Berti 20.5M，h1 + BC 33.4M）。
+
+**Breadcrumbs 移植的修正（2026-11-17 晚，提交 `42edde1`…`249dc82`）**：上面 BC 的数字有移植错误，逐点诊断（`[BC-DIAG]` / `[BC-PC]`）后改正：
+- 步长 ≥ 64 B 按迭代取（`va + (D+k)·S`），距离至少 4 个步长（gem5 `min_distance`）；之前一律按行取连续 4 行。
+- 寄存器步长归纳 `r = r + rX`：按 gem5 `BC_RSTEP` 在提交时从相邻结果学步长，置信后才给仿射标签；之前沿用了 r 的旧步长（mcf 上 BC stride 填进 L1 的 341 万行只有 2076 行被用到，−17 %）。只有 r 的上一个写者是这条指令或另一条自增 add 时才算（libquantum 的 `ld a5; add a5,a5,a3` 是"新读的基址 + 仿射偏移"，不是归纳）。
+- 标签队列 3 宽 16 项（2 宽 8 项在突发时丢 19～35 %）；`BC_TQ_REUSE=1`（本拍出队的空位当拍可写）让 8 深 8 宽不丢、8 深 3 宽丢 2.6 %。
+- `BC_NOOVL=1`（gem5 的近端不重叠）、`PF_PCS=1`（gem5 StridePrefetcher 形式的 PC stride，gem5 最终设计近端配的就是它）。
+- 错误路径（`BC_WPFLUSH=1` 清队列 / `=2` 再用撤销日志恢复标签）：mcf 上处理的标签写约三分之二来自错误路径，但三种做法周期差 < 0.3 %，不是问题。
+- 3 个诊断点上只比 L1 stride：BC stride 实例 + PC stride 对不预取 libquantum +20 %、xalancbmk +49 %，Berti +19 % / +37 %，h1 +34 % / +52 %。xalancbmk 的收益几乎全来自 PC stride（没有数据流步长），libquantum 上 h1 的全局步长（每次缺失连发 8 行）最强。
+
+**修正后的访存组 59 点**（相对 res_final）：
+
+| 配置 | gcc | mcf | libq | omnetpp | astar | xalanc | 几何平均 |
+|---|---|---|---|---|---|---|---|
+| h1 + Berti | +1.3 | +7.6 | +1.2 | 0.0 | +1.4 | 0.0 | **+1.88** |
+| h1 + BC（3 宽 16 项，NOOVL） | +0.3 | +4.9 | −1.8 | +0.1 | +1.3 | +1.0 | +0.92 |
+| BC + PC stride + h1 的 LLC 引擎（关 h1 步长） | +0.4 | +10.7 | −8.5 | +0.7 | +1.5 | −1.1 | +0.46 |
+
+结论：修正后 BC 只用 PC stride 作近端时 +0.46 %（修正前 −2.38 %），加在 h1 上 +0.92 %，仍不到 Berti 的一半；差距主要是 libquantum 这类单一大流（h1 / Berti 覆盖得更远）。BC 的间接部分在 mcf 上有效（单点 +2 %）。L2 部分（远端窗口、L2 填充触发）没有移植，是 gem5 上 GAP 收益的主要来源。
+
+### 第二阶段（2026-11-18）：3 GHz、MSHR 16、LLC tree PLRU；BC 的提前量和 BC_UNIFY
+
+**平台改动**（构建参数，模型代码在 `exp/pf-l1l2`）：`CPU_FREQ_MHZ=3000`（CPI 约为 1 GHz 的 1.51 倍）；L1D 和 LLC 的 MSHR 都是 16（`-DCFG_DCACHE_MSHR=16 -DCONFIG_AXI_LLC_MSHR_NUM=16`）；LLC 替换 `LLC_REPL` 默认改成 tree PLRU（`lru` = 时间戳 LRU，`rr` = 原来的"命中路 +1"轮换，即 main）。RTL 的 PLRU、MSHR 16 已记在 [TODO.md](TODO.md)。在这个平台上（相对 3 GHz、MSHR 8、轮换的 h1）：MSHR 16 +7.4 %，再加 PLRU 共 +10.8 %；LLC 用 LRU 在旧平台上 +3.48 %（omnetpp +14 %）；关 h1 的 LLC next-line 引擎 −5 %（但 mcf sp21 上它有害：35.4M → 23.2M 周期）。
+
+**方法**：下面所有数字是新平台、只开 L1 预取（`PF_LLC=0`）、**相对不开预取**（`q_none`），59 点，程序内按权重加 CPI、程序间几何平均。eda 集群，结果 `/nfs_global/S/houruyao/spec06_rv64gc/tm/res_pf43/<配置>/`，脚本 `tm/pf43_one_v20.sh` … `v29.sh`（每次新版本，不覆盖在跑的脚本），比较脚本是会话里的 `cmp43.py`（按权重 CPI）。
+
+**1. 提前量（BC stride 对 h1 / Berti）**：h1 步长 +18.91 %、Berti +6.25 %；BC 逐步改进（30 点 mcf / libq / xalanc）：
+- `BC_LATSRC=1`：距离用这条流自己预取请求的实测延迟（发出 → 填充，EWMA），不用全局缺失延迟（被 LLC 命中拉低）。libq 到 +120 %。
+- `BC_RAMP=1`（gem5）：流开始 / 跳转时把当前访问到窗口之间的行也发出去（每个新页开头）。
+- `BC_PERSRC=1`：周期用这个 PC 在 L1D 的实际访问节奏。
+- `BC_NOCUT=1`：不按循环边界截断（边界学错时提前停发；xalancbmk 12.9 → 15.3 %）。`BC_BOUND_BACK`（只从向后分支学边界）、`BC_CONTIG` 被它取代。
+- 调 `BC_LATSCALE` / `BC_MAXLA` 基本无效。
+- **`PF_RETRY=1` 是 libquantum 的关键**：按页位置统计（`BC_PGH=1`）热点流的每个新行，19 % 是 BC 根本没发出去的缺失，分布在整页，数量与 `probe_mshr_full`（21.6 万）一致——MSHR 全满（预留 0）时探测被丢掉且不重发（NOOVL 的近端指针已经越过）。重发后 libquantum sp25 CPI 0.784 → 0.648（加 PC stride 是 0.745）。h1 用不上 retry（它的突发只在 2 个步长之后，很少碰到 MSHR 满）。
+
+**2. Berti 为什么差**：原版历史表 8 组 × 16 路回溯不到一个延迟（3 GHz 下 320～430 拍），libquantum 90 % 的查找找不到及时的 delta；delta 表只有 16 项，冷 PC 把热点 PC 换出。`PF_BERTI_ALLOC=1`（只有找到及时 delta 的 PC 才分配表项）+ `PF_BERTI_HW=64`（每组 64 路）：libq +2.6 → +122.5 %，59 点 +22.48 %；代价是历史表 128 → 512 项，总存储约 2.5 KB → 4.7 KB（论文的 2.55 KB 是按记忆，未核对原文）。
+
+**3. 统计对比**（`PF_STATS=1`：`[PF-OUT]` 每个来源的去向，`[BERTI-HIST]` / `[BERTI-TAB]` 结构，`[BERTI-WARM]` / `[BC-WARM]` 学习时间；覆盖 = 本来会缺失的行里被预取到的，含 late；按程序权重平均，包含 10M 预热）：
+
+| 预取器 | 覆盖 gcc / mcf / libq / omnetpp / astar / xalanc | 准确率（同序） | 第一次预取前的访问次数 |
+|---|---|---|---|
+| Berti（16 路） | 2 / 11 / 0.6 / 0 / 7 / 20 % | 55 / 40 / 87 / 57 / 86 / 92 % | 412 ～ 138393 |
+| Berti（ALLOC + 64 路） | 4 / 12 / 79 / 0.4 / 8 / 22 % | 48 / 39 / 100 / 61 / 83 / 85 % | 55 ～ 4651 |
+| h1 | 1 / 0 / 96 / 0.4 / 1 / 32 % | 40 / 33 / 100 / 21 / 60 / 69 % | — |
+| BC + PC stride（下面第 4 项） | 13 / 29 / 96 / 1.2 / 13 / 42 % | BC 18 / 75 / 100 / 7.5 / 33 / 65 % | 2.2 ～ 729 |
+
+Berti 的结构问题：140～860 个 PC 抢 16 个 delta 表项，平均只有 0～4 个 PC 有可用的 delta，256 个 delta 槽最多 8 % 有状态；libquantum 89 % 的查找因为历史窗口短于延迟而落空。BC 覆盖最多、学得最快，但 gcc / omnetpp / astar 上准确率低。
+
+**4. 和 PC stride 的分工、gcc 的指针链**：
+- `PF_PCS_UNTAG=1`：PC stride 只训练 BC 没有 stride 标签的 PC（`9bc35dd`）。BC + retry + PCS_UNTAG：+24.25 %（libq +175.7，但 gcc +1.3、Berti +8.9）。
+- gcc 的差距全在一个点（sp47，权重 3.2 %，Berti +132 %、BC +4.9 %）：热点 load 在 `fixup_var_refs_insns` / `_insn` / `_1`，沿 obstack 顺序分配的 RTL 链表走——地址来自指针（BC 标签 0 % 仿射、~100 % 链），整体单调向前、步长不定，PC stride 学不到固定步长，Berti 学到 +2/+4/+6/+8 行。
+- `PF_PCS_DIR=1`（`3a7e0c7`）：没有固定步长但行号一直同向的 PC，往前发 1～4 行。BC + retry + PCS_UNTAG + PCS_DIR：**+27.46 %**（gcc +7.6、xalanc +20.6）。
+
+**5. BC_UNIFY：标签和采样按 PC 协同**（`c81fb10`、`023668e`）：每个 load PC 一项，两种步长来源共用 BC 的及时距离（延迟 ÷ 周期）：
+- **标签步长**：数据流标签给的仿射步长，一开始就可信（置信 2/3）；**按流判断**（PC 第一次访问、或地址跳出一页 / 与标签方向相反算新流）是否变了：相同 +1，不同 −1，到 0 换成新步长、置信 1。
+- **采样步长**：同一条流内相邻两次访问的地址差，4 个带计数的步长 + 一个滑动平均和方向置信（针对 gcc 那种同向但步长不定）。
+- **使用**：标签可信且本次标签一致 → 标签步长（原 BC 路径）；否则占优的采样步长（计数 ≥ 4 且占一半以上），再否则平均步长（方向置信 ≥ 3）。
+- **周期**：链式 load 继承生产者 load 的循环行（`Chain.row`）；`p = load(p + off)`（rd == rs1）的指针递推单独建一行；都没有时用这个 PC 自己的访问间隔。
+- `BC_LINECAP=1`：距离只按行封顶（`BC_MAXLA`），不再限 64 次迭代（gem5 的上限，|S| = 1～8 B 时只有 1～8 行；在 mcf / libq / xalanc 上 `BC_MAXIT=1024` 无变化，|S| < 16 的热点 PC 约 10 %）。
+- `BC_UFB=1/2`：按 PC 的有用性反馈（采样路径 / 两条路径都管）：每 16 次发出，用上 < 25 % 置信 −1、≥ 50 % +1（0..3，初值 2），到 0 停发，被拦 256 次后以置信 1 重新试探。
+- 没有反馈时 omnetpp −20 %（采样路径在 `0x5a1f4` / `0x5a202` 等 PC 上发 190 万次、准确率 3 %，几乎每次访问都是"新流"，每次都 ramp）。
+
+| 配置（相对不开预取） | gcc | mcf | libq | omnetpp | astar | xalanc | 几何平均 |
+|---|---|---|---|---|---|---|---|
+| h1 步长 | +0.99 | −0.00 | +139.15 | +0.03 | +0.66 | +16.23 | +18.91 |
+| Berti（16 路） | +8.90 | +5.94 | +2.57 | −0.10 | +4.87 | +16.04 | +6.25 |
+| Berti（ALLOC + 64 路） | +10.28 | +6.17 | +122.52 | +1.69 | +6.04 | +20.18 | +22.48 |
+| BC + retry + PCS_UNTAG + PCS_DIR | +7.63 | +10.52 | +176.04 | +1.60 | +6.60 | +20.60 | +27.46 |
+| BC_UNIFY（无反馈） | +8.61 | +24.52 | +174.62 | −20.17 | +1.95 | +18.89 | +23.76 |
+| BC_UNIFY + LINECAP + UFB=1 | +13.16 | +21.94 | +175.03 | +0.65 | +12.62 | +28.88 | +33.04 |
+| **BC_UNIFY + LINECAP + UFB=2** | +12.98 | +21.94 | +175.43 | +0.51 | +12.66 | +29.27 | **+33.08** |
+
+当前最优（不需要单独的 PC stride，也不需要 h1）：`PF_STRIDE=0 PF_LLC=0 PF_BC=1 BC_NOIND=1 BC_TQ_W=3 BC_TQ_N=16 BC_NOOVL=1 BC_RAMP=1 BC_LATSRC=1 BC_PERSRC=1 BC_NOCUT=1 PF_RETRY=1 BC_UNIFY=1 BC_LINECAP=1 BC_UFB=2`。gcc sp47 CPI 1.745 → 0.502（Berti 0.751）。最差点 xalancbmk sp41 −3.5 %（UFB=1 为 −7.7 %）。
+
+### 第三阶段（2026-11-18～19）：BC_CORE，删掉补丁只留核心
+
+**起因**：第二阶段的最优配置叠了十几个开关（LATSRC、RAMP、PERSRC、NOCUT、RETRY、PCS 系列、UNIFY、LINECAP、UFB……），多数是遇到问题时加的新机制，而不是改出问题的那条规则（例如有用性反馈其实是在掩盖采样步长的置信度从不下降、每条流开头无确认就 ramp）。按"每件事一条规则"重写成 `BC_CORE=1`（`fc05c5d`）：
+- **标签**：每个架构寄存器只存 {仿射, 步长}；`addi rd==rs1`（同一条指令）是归纳，`addi / slli / add / shNadd / add.uw / sub` 传递或缩放唯一的仿射操作数，其余写清标签。`r = r + rX` 不打标签，交给采样步长。
+- **流**：每个 load PC 一项：上次 VA 和时间、周期 = 访问间隔 EWMA、采样步长 = 地址差 EWMA；有标签步长用标签，否则用采样。
+- **距离**：D = ⌈延迟 ÷ 周期⌉；|S| < 64 B 按行、否则按步长，上限 `BC_MAXLA`=16；延迟 = 全局 DRAM 缺失延迟（≥ `BC_CORE_LATMIN`=120 拍、不含合并进在途行的缺失）。
+- **前沿**：一条规则代替 RAMP + NOOVL：每次触发发出 max(前沿, 当前) 之后到 当前 + D + W − 1 的单元，流开头自然从当前位置铺满，稳态每次一个。窗口宽度 W = clamp(2 × 步距离散度 EWMA, `BC_DEG`=4, 16)，跳出窗口（两侧）就从当前访问重启前沿。
+- **置信度 = 有用性**（0..3）：预取行第一次被需求用到 +1，未用就被 L1D 换出 −1（L1D 换出钩子）；≥ 2 发整个窗口，1 每次一个单元，0 每 `BC_CORE_PROBE` 次触发试探一个单元。窗口命中置信度试过（两侧命中、按离散度定宽、向后中性）分不开 gcc 有用的不规则前进和 omnetpp 的随机 PC，换成有用性后 gcc sp47 CPI 1.09 → 0.571。
+- **`PF_HOLD=1`**：所有 MSHR 都占满时预取队头在 FIFO 里等（反压），代替丢弃 + `PF_RETRY`；第 2 级抢不到最后一个 MSHR 的探测重新入队。
+
+| 配置（相对不开预取） | gcc | mcf | libq | omnetpp | astar | xalanc | 几何平均 |
+|---|---|---|---|---|---|---|---|
+| UNIFY + LINECAP + UFB=2（第二阶段最优） | +12.98 | +21.94 | +175.43 | +0.51 | +12.66 | +29.27 | +33.08 |
+| **BC_CORE，试探 1/16** | +11.53 | +12.88 | +183.81 | −0.99 | +10.61 | +22.41 | **+29.83** |
+| BC_CORE，试探 1/64 | +10.73 | +10.11 | +184.04 | −0.10 | +9.48 | +18.72 | +28.47 |
+
+配置：`PF_STRIDE=0 PF_LLC=0 PF_BC=1 BC_CORE=1 BC_TQ_W=3 BC_TQ_N=16 PF_HOLD=1 BC_CORE_PROBE=16`（脚本 `tm/pf43_one_v36.sh`，二进制 `tm/bin/sim64_pf43z16`）。libquantum 比复杂版好（HOLD + 全局 DRAM 延迟），gcc 基本追平且超过 Berti；差距在 mcf（12.9 对 21.9）、xalancbmk、astar。没验证的嫌疑：mcf 的 `r = r + rX` 交给采样路径后接不住；周期只用 PC 访问间隔（复杂版来自循环行 / PERSRC）；有用性置信度起步慢。试探 1/64 让 omnetpp 回到 0 附近，但其他程序有用 PC 重学变慢。
+
+**硬件评估**：难点有三：翻译（模型用 1024 项 VA→PA 页映射，仍有 4～64 % 的候选翻译失败）；按 PC 的表无上限（每点 600～4000 个 PC）；有用性要每行元数据（约 7 位 × 1024 行）。其余（标签、前沿、距离计算）规模不大。
+
+**还没做 / 待查**（2026-11-19 探索暂停）：BC_CORE 在 mcf / xalancbmk / astar 上的差距（先按 gcc 的方法找出错的规则，再原地改）；omnetpp 约 −1 %；BC_CORE 采纳后删掉旧开关（UNIFY、UFB、LINECAP、PCS 系列、RAMP、RETRY 等）；xalancbmk sp41 的损失原因；BC 的间接部分和 L2 部分在新平台上没有重新评估；表的规模和面积（按 PC 的统一表、采样步长、行号继承）没有按硬件定；RTL 未做。
 
 ## EXP-042 RTL 时序：TLB 口并行化、first_set 对数深度
 

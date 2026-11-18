@@ -26,6 +26,7 @@
 | LD/STA 合并、统一 FTQ 的规模确认 | 都只在小程序和 gate 上测过；store 密集程序、48 还是 64 项都没定 | quick SPEC 上对比；决定是否进入主线 |
 
 ## 待做：RTL 实现
+- **LLC 替换策略改为 tree PLRU（2026-11-17，用户定为标准）**：现在的 `axi_llc` 用每组一个"下一个牺牲路"指针、命中后指向命中路 + 1 的轮转替换（`axi_llc_resolve.sv` `next_way`、模型 `AXI_LLC.cpp`），3 GHz 访存组上换成 LRU 平均 +3.5%（omnetpp +14%）。trace-model `exp/pf-l1l2` 已把模型默认改为 tree PLRU（`LLC_REPL=rr` 恢复旧行为）；RTL 要把 `repl` 表从路号位宽改为每组 ways−1 位的 PLRU 树（16 路 15 位），命中 / 装入时更新，`axi_llc_waypick` 按树选牺牲路，然后对齐模型周期。见 EXPLORATION EXP-043。
 
 | 事项 | 为什么 | 做完的标准 |
 |---|---|---|
@@ -108,6 +109,7 @@ EXP-024 合入的是"STQ 内分组"的简化版 write buffer：4 个条目、每
 | 事项 | 为什么 | 做完的标准 |
 |---|---|---|
 | sdip（Breadcrumbs）预取器（EXP-026，`exp/sdip`）是否合入 | 模型完成：SPEC 全量 580 点 `PF_SDIP=2`（sdip 在前、h1 在后）几何平均 IPC +1.74%，`PF_SDIP=1`（替换 h1）只有 +0.10%（libquantum −11.9%）；RTL 没做 | 决定是否做 RTL；需要时先在最新 main 上重测（合入 EXP-027/028 后基线已变） |
+| EXP-043 BC_CORE L1 预取（`exp/pf-l1l2`，`fc05c5d`，2026-11-19 暂停） | 3 GHz、MSHR 16、PLRU 平台上访存组 59 点 +29.8 %（h1 +18.9、Berti 64 路 +22.5），机制最少；复杂版 +33.1 % 多出的主要在 mcf（12.9 对 21.9）、xalancbmk、astar；omnetpp −1 %；分支上还留着旧开关；硬件上翻译、按 PC 表的容量、每行有用性元数据没定 | 找出 mcf / xalancbmk 差距对应的核心规则并原地修；删掉被取代的旧开关；按硬件限制（PC 表项数、同页翻译 / 小 µTLB、元数据换小表）重测；然后决定是否替换 h1、做 RTL |
 | 旧的串联脚本 `scripts/gate_all.sh` | 头注释还写 trace-model gate 62 个测试，还在 `/tmp` 写日志，没有 XLEN=64 一档；最近几次合入的记录里都没有用到它（合入流程按 WORKFLOW 第 6 节的步骤） | 更新成当前的 gate（64 / `fm_gate.sh` 69）或删掉 |
 
 ## 待做：流程与工具
