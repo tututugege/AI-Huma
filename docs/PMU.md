@@ -19,8 +19,9 @@ slots = SLOT_FIRE + SLOT_KILLED + SLOT_FE_EMPTY + SLOT_BE   （SLOT_BE = 下面�
 
 - 派发出去的（FIRE）：最终提交的是 Retiring（`INSTRET`），没提交的是 Bad Speculation 里的“错误路径工作”（`FIRE − INSTRET`）。
 - 本拍被冲刷/误预测杀掉的有效槽（KILLED），以及重定向之后到第一条指令到达 dispatch 之前的空槽（`FE_RECOV_MISPRED/FLUSH`）也算 Bad Speculation。
-- 其余空槽是 Frontend Bound：ICache 缺失 / ITLB 缺失（取指延迟），其余（取指宽度、taken 分支气泡）是取指带宽。
-- 第一个被后端拒绝的槽起，该拍所有剩下的槽都是 Backend Bound（和 Intel 的做法一样），原因取第一个挡住它的资源：ROB 满 / ROB 头是冲刷类指令 / CSR-AMO 串行化 / LDQ 满 / STQ 满 / IQ 满。（重命名没有空闲物理寄存器时，指令到不了 dispatch，槽记为前端空槽。）
+- 重命名在等空闲物理寄存器（`SLOT_REN_NOPREG`）或 IDU 在等空闲分支标签（`SLOT_IDU_NOBRTAG`）时的空槽是 **Backend Bound**：指令已经取到，卡在一个要等提交 / 分支解决才释放的后端资源上（Intel 把分配阶段的资源停顿也算后端）。这两个事件属于 `SLOT_FE_EMPTY`（RTL 一级事件看不到原因），优先于 ICache / ITLB / 其他原因判定（2026-11-19 起；之前叫 `SLOT_FE_OTHER_NOPREG / _NOBRTAG`，算在取指带宽里，所以旧报告的 Frontend 偏大，如 SPEC06 均值 48%，其中 16 个百分点是这一项）。
+- 其余空槽是 Frontend Bound：ICache 缺失 / ITLB 缺失（取指延迟），其余（取指宽度、taken 分支气泡）是取指带宽。空槽的拆分逐拍检查：`FE_EMPTY = RECOV_* + REN_NOPREG + IDU_NOBRTAG + FE_ICACHE + FE_ITLB + FE_OTHER`。
+- 第一个被后端拒绝的槽起，该拍所有剩下的槽都是 Backend Bound（和 Intel 的做法一样），原因取第一个挡住它的资源：ROB 满 / ROB 头是冲刷类指令 / CSR-AMO 串行化 / LDQ 满 / STQ 满 / IQ 满。
 - Backend Bound 另有“看 ROB 头”的第二种切法（`SLOT_BE_HEAD_*`）：最老未完成指令是 L1D 缺失的访存、普通访存、非访存，或者头已完成（提交带宽 / ROB 行粒度限制）。访存 = Memory Bound，其余 = Core Bound。
 
 事件分组（完整列表和含义见 .def）：`cyc`/`commit`（INSTRET、按类型提交数、已提交的误预测按 BR/JALR/RET 分）、`slot`（上面的桶）、`flow`（误预测重定向、冲刷分类、恢复中的周期、mov 消除）、`front`（ICache/ITLB）、`mem`（L1D 命中/缺失、未完成缺失数用于 MLP、预取）、`occ`（ROB/LDQ/STQ 占用逐拍累加，平均占用 = 事件/周期）。
@@ -69,7 +70,7 @@ RTL tier 1（`rtl/pmu/pmu_ev_core.sv`，`core_top` 里实例化，事件总线 `
 | 重定向 | BR_MISPRED、FLUSH_EXCEPTION、FLUSH_OTHER | `out_mispred`（冲刷也会拉高，所以 BR_MISPRED = redirect 且非 flush）、`rob_bcast_flush/exception` |
 | **TMA 一级** | SLOT_FIRE、SLOT_KILLED、SLOT_FE_EMPTY、SLOT_FE_RECOV_MISPRED/FLUSH、SLOT_BE、CYC_RECOVERING | dispatch 新增输出 `slot_valid`（阶段寄存器里每槽是否有指令），`back_top` 导出 `dis2rob_dis_fire`；恢复状态是 2 个触发器 |
 
-一级公式（全部由这些计数器算出）：Retiring = INSTRET；Bad Speculation = (FIRE − INSTRET) + KILLED + RECOV_*；Frontend = FE_EMPTY − RECOV_*；Backend = SLOT_BE；总槽 = 8 × CYCLES。其中 `SLOT_BE`（后端拒绝的槽，从第一个没发射的有效槽起到最后）在 RTL 里只有总数，trace-model 里拆成 ROB 满 / IQ 满 / LDQ / STQ / 冲刷等待 / 串行化，并且这些子项的和等于 `SLOT_BE`。
+一级公式（全部由这些计数器算出）：Retiring = INSTRET；Bad Speculation = (FIRE − INSTRET) + KILLED + RECOV_*；Frontend = FE_EMPTY − RECOV_* − REN_NOPREG − IDU_NOBRTAG；Backend = SLOT_BE + REN_NOPREG + IDU_NOBRTAG（后两项是 trace-model 独有的事件：RTL 要算对，需要把重命名 / IDU 的停顿原因接出来，目前 RTL 的一级图里它们仍在 Frontend）；总槽 = 8 × CYCLES。其中 `SLOT_BE`（后端拒绝的槽，从第一个没发射的有效槽起到最后）在 RTL 里只有总数，trace-model 里拆成 ROB 满 / IQ 满 / LDQ / STQ / 冲刷等待 / 串行化，并且这些子项的和等于 `SLOT_BE`。
 
 **二级只拿现成的**：Bad Speculation 里“误预测恢复 vs 冲刷恢复”是免费的（上表）。需要 ICache/ITLB（取指延迟 vs 带宽）、ROB 头状态（Memory vs Core）、LSU 队列状态的二级拆分，要给 icache/rob/lsu 加输出端口，**暂不做，只在 trace-model**（`SLOT_FE_ICACHE`、`SLOT_BE_HEAD_*` 等）。其余 trace-model 独有的事件（前端、访存、占用、按类型的误预测）同理。
 

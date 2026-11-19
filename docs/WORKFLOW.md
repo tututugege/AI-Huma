@@ -46,7 +46,17 @@
 | 已退役（2026-11-04） | 模块边界 trace 回放、整程序实时锁步、随机 trace：随旧参考模型退役，脚本在 rtl 标签 `legacy-reference` |
 | 变异检查（可选，不是门禁） | 故意改坏 RTL，检查 harness 能否抓到。2026-11-04 起：**不要求把存活变异清零**（跑一遍太慢），改为把存活和未运行的变异、覆盖缺口、未验证项如实记录在 `rtl/docs/08-risk-register.md`，不得默认当作没问题 |
 
-### 3.3 通用要求
+### 3.3 默认就对：不靠记开关和环境（2026-11-19）
+
+同一天里三次因为"某个开关 / 环境 / 库没设对"浪费时间（模型的 LDQ/STQ 看门狗没关、链到旧的 RVC=0 function-model 库、RTL 脚本默认指向旧 rv32 程序），所以定下：
+
+- **模型的默认配置 = RTL 配置。** 模型里只有 RTL 没有的、会改变周期的机制，删掉（不是加一个"和 RTL 比时要设"的开关）。和 RTL 比、生成参考周期、跑 SPEC，都用不带任何环境变量的默认运行。PMU 默认开（不改周期）。
+- **依赖按版本和配置自己构建，不链共享产物。** trace-model 的 Makefile 和 rtl 的 `scripts/fm_lib.sh` 都从 function-model 仓库的固定版本 `FM_REV` 构建 `librefcpu`，目录名带版本和 XLEN/RVC；升级 function-model 就是两处一起改 `FM_REV`。
+- **脚本的默认路径指向本仓库自己构建的东西**（rtl：`build/progs`、`build/fm-*`），不指向别的 checkout 里可能过时的产物。
+- **会改参考数据的操作只有一个入口**：模型基线 `scripts/write_baseline.sh`，RTL 参考周期 `scripts/regen_refs.sh`。
+- 新加开关之前先问：它的另一个取值有人每天跑吗？没有就不要加（7.6）。
+
+### 3.4 通用要求
 
 - **新模块或新特性要同时带 harness。** 没有测试能区分对错的行为，不算验证过。
   - **新特性要补一个短 gate 测试程序**（2026-11-15）：能稳定触发这个特性的小程序，放 rtl `programs/directed/`，rv64，在 `build.sh` 里加一项，周期进 `scripts/ref_cycles*.txt`；判据是逐条检查无不一致 + 模型与 RTL 周期相同（预测器、前端类特性再加 PT/UP 指纹，`scripts/align_check.sh`）。写好后要在**没有该特性的旧实现上确认它会失败**，否则它没有区分力。

@@ -6,6 +6,8 @@
 
 | 编号 | 日期 | 题目 | 分支 | 状态 | 一句话结论 |
 |---|---|---|---|---|---|
+| [EXP-045](#exp-045-cache-替换策略llc-与-l1i-改为-srrip) | 2026-11-19 | cache 替换策略：LLC（rr / PLRU / LRU / SRRIP / BRRIP / DRRIP）、L1I（rr / PLRU / SRRIP）、TLB（rr / NRU / PLRU）在周期模型里实现并比较；LLC 和 L1I 的 SRRIP 写进 RTL | trace-model `exp/llc-plru`（`429172d`，工作区 `trace-model-llcplru`）、rtl `exp/llc-plru`（`aac554a`） | **已合入 main（2026-11-19，与 EXP-046 一起：trace-model `8fd0ae3`、rtl `b9fd0df`，未推送）** | 29 个 SPEC06 rv64gc 高权重点：LLC SRRIP +1.23%（omnetpp +9.0%）、再加 L1I SRRIP 合计 **+1.63%**；TLB ≤ +0.12%、不采用；RTL fm_gate 67/67、周期与模型逐个相等；深度 axi_llc 238 不变、icache 69 → 70 |
+| [EXP-046](#exp-046-写口发射时调度选择前查完成周期浮点写通道压缩) | 2026-11-19 | 写口：完成周期的检查移到选择之前（`CFG_WB_PRESEL`），完成周期忙表改成移位寄存器，浮点寄存器堆写通道按发射时的写口预约压缩 | trace-model `exp/wb-port`（`ff96476`、`60aa7e8`），rtl `exp/wb-presel`（`d093291`、`7957ec9`、`f2674cf`） | **已合入 main（2026-11-19，集成分支 trace-model `exp/wb-llc` `8fd0ae3`、rtl `exp/wb-llc-rtl` `b9fd0df`，未推送）** | 模型：67 个 RVC 程序周期 −0.49%，SPEC06 386 点 IPC +0.01%；RTL：isu 单元 −0.9%、深度 88→89，prf 单元 −37%、深度 36→27（单模块口径），整数写口 21→13、浮点 21→6；门禁 67/67、周期与模型相等 |
 | [EXP-044](#exp-044-rtl-降深度那一轮和-linux-窗口对齐) | 2026-11-19 | RTL 降深度那一轮：两个 INT 队列、合并访存队列、FLUSH_REG、前端 / BPU / LSU 的低深度改写，模型默认值 = RTL 配置，Linux 12 个窗口对齐 | rtl `exp/agu-share`、trace-model `exp/tlb-ports` | 已合入 main | 67 个程序周期 +1.92%、SPEC06 386 点 IPC −2.15%（hmmer −8.6%），12 个 Linux 窗口全部 PASS；整机深度没有最新数 |
 | [EXP-043](#exp-043-l1-berti--store-预取l2-streambreadcrumbs-l1-部分) | 2026-11-17 | 预取组合：L1 Berti、STA 时的 store 预取、LLC 里的 stream、Breadcrumbs（EXP-022 最终设计）的 L1 部分，rv64gc SPEC06 访存组 59 点 | trace-model `exp/pf-l1l2`（`9275c6c`、`215e466`、`39dfc71`，工作区 `trace-model-pfl1l2`） | 未合入 | 第一阶段（1 GHz）：h1 + Berti 最好（+1.9%）；store 预取 ≈ 0；BC L1 + h1 +0.9%。**第二阶段（2026-11-18，3 GHz、MSHR 16、LLC PLRU，只开 L1、相对不预取）：BC_UNIFY（标签步长 + 采样步长按 PC 协同，共用及时距离）+ 按行封顶 + 有用性反馈 +33.1%**，h1 +18.9%，Berti（64 路）+22.5%，原版 Berti +6.3%（`023668e`）。**第三阶段：只留核心规则的 BC_CORE（有用性置信度 + 前沿 + MSHR 反压）+29.8%**（`fc05c5d`），差距在 mcf；探索暂停 |
 | [EXP-042](#exp-042-rtl-时序tlb-口并行化first_set-对数深度) | 2026-11-17 | RTL 时序：DTLB/ITLB 的 8 口串行链改为并行，`ttg_first_set` 改为对数深度 | rtl `exp/tlb-par`（`1d8688e`、`261bd67`，基于 main `8abb7ab`） | **已合入 main（2026-11-17，rtl `261bd67`，未推送）** | `tlb_mmu` 深度代理 163 → 67（rv64），行为逐拍不变；fm_gate 67/67、Linux 窗口 3/3 与 main 逐字节相同 |
@@ -46,6 +48,90 @@
 | [EXP-001](#exp-001-面积优化三个方向) | 2026-11-04 | 面积优化：FTQ 合并、LSU 端口、LD/STA IQ 合并 | trace-model `exp/area-explore` | 未提交、未合入 | 三个方向都能省面积，性能代价 0–1% |
 
 ---
+
+## EXP-045 cache 替换策略：LLC 与 L1I 改为 SRRIP
+
+- **日期**：2026-11-19。**分支**：trace-model `exp/llc-plru`（工作区 `trace-model-llcplru`，基于 main `c795844`；`69661b9` LLC rr/plru/lru，`edf26f4` srrip/brrip/drrip、`LLC_PF_LOW`、`ICACHE_REPL`、`TLB_REPL`，`429172d` 默认改为 SRRIP + 写口冲突时丢弃分配更新）；rtl `exp/llc-plru`（`aac554a`，工作区 `rtl-llcplru`，基于 main `a26a102`）。**未合入**。
+- **问题**：EXP-014 的离线回放说替换策略的空间小（LLC DRRIP 缺失 −3.9%，L1I SRRIP −17%），当时只测空间、没有实现。这次把策略做进周期模型（与 RTL 结构一致：每组的替换状态和行表一起在查表解析时读改写），在真实时序下比较，采用的写进 RTL。负责人 2026-11-17 选过 PLRU 作为标准，本轮按实测改为 SRRIP。
+- **做法（模型）**：
+  - LLC（4 MiB 16 路）：替换行 8 字节，开关 `LLC_REPL=rr|plru|lru|srrip|brrip|drrip`（`rr` = 旧 main 的"最近被碰的路的下一个"指针）。命中在查表完成时更新该路；分配缺失在分配时更新受害路；重填和写提交不再写替换行。RTL 每拍只有一个行表写口，写提交（stage 2）占口时查表的写被挤掉，模型用 `lookup_tbl_busy_` 同样丢弃这次分配的替换更新。SRRIP：2 位 RRPV，命中置 0，受害路取 RRPV 最大的最低路，分配时整组变老到最大值 3 再把新行置 2；BRRIP 新行置 3（每 32 次有 1 次置 2）；DRRIP 用 set dueling（`set%32==0` SRRIP 领头组、`==1` BRRIP 领头组，10 位 PSEL）。LRU 存"年龄 XOR 路号"，复位全零也是合法状态。
+  - L1I（32 KiB 8 路）：`ICACHE_REPL=rr|plru|srrip`，每组 16 位状态在 `ICacheTop` 里，命中在 IDLE 查找后更新，回填在 `finish_refill` 更新，受害路在 `latch_mem_refill` 选。
+  - TLB（ITLB/DTLB 各 64 项全相联）：`TLB_REPL=rr|nru|plru`，先选无效项。
+  - `LLC_PF_LOW`（预取填充以低优先级插入）没有作用：默认配置没有 LLC 预取器。
+- **SPEC 测量**：29 个 rv64gc SPEC06 点（12 个程序各取权重最高的若干点，`pts_names.txt`），stub 检查点、10M 详细预热 + 10M 测量、`PF_ENABLE=1 PMU=1`、`RVC=1`，eda-06/08。按程序加权 CPI 求加速，再取 12 个程序的几何平均（`cmp2.py`）。
+
+| 配置（相对 rr） | 几何平均 | 主要变化 |
+|---|---|---|
+| LLC PLRU | +0.87% | |
+| LLC LRU | +0.99% | |
+| **LLC SRRIP** | **+1.23%** | omnetpp +9.0%、xalancbmk +3.75%、mcf +1.76%、perlbench +0.67% |
+| LLC DRRIP | +1.17% | 比 SRRIP 多 set dueling，收益不更高 |
+| LLC BRRIP | +0.78% | |
+| LLC SRRIP + L1I SRRIP（新默认） | **+1.63%** | gobmk +2.9%、perlbench +1.3%、gcc +0.6% |
+| 新默认 + TLB NRU | +1.65% | TLB 只多 +0.02% |
+
+  在 LLC PLRU 之上叠加：L1I SRRIP +0.42%（gobmk +3.2%）、L1I PLRU +0.19%、TLB NRU +0.12%、TLB PLRU +0.05%。L1D 本来就是 PLRU，EXP-014 显示没有空间，不动。2 个 rr 对照点在新旧二进制上周期逐个相同。
+
+- **结论**：LLC 和 L1I 改为 SRRIP（模型默认、RTL 实现）；TLB 收益在噪声量级（+0.02%~+0.12%），不值得在 TLB 里加替换状态和选择逻辑，不采用；DRRIP 不值得多出的 PSEL 和领头组逻辑。
+- **RTL**（文档先行：`docs/modules/axi_llc.md`、`docs/modules/icache.md`）：
+  - LLC：`axi_llc_pkg` 替换行宽 `RB = 2*WAYS`、函数 `rrip_hit` / `rrip_alloc`，删掉 `next_way`；`axi_llc_waypick` 改为"第一个无效的未占用路，否则 RRPV 最高级的第一个未占用路"（每级一个 `ttg_first_set`）；`axi_llc_resolve` 在命中 / 分配时写替换行（写提交占口时丢弃）；写提交和重填不再写替换行。
+  - L1I：`icache_arr` 加 `repl_q`（每组 16 位）、选路（每级一个 `ttg_first_set`）和命中 / 回填更新；`icache_swap` 在有效读时用 `repl_way`，否则仍用原轮转指针（非缓存访问不变）。
+  - `scripts/ref_cycles.txt` 3 个程序变化（dcache-conflict-writeback 6030 → 6018、memory-stress-small 343672 → 343459、pf-stress 618141 → 580756），旧表存为 `ref_cycles_repl_rr.txt`。
+- **验证**：
+  - trace-model：C gate 67/68（`fdoff` 没有基线项，原有）；`LLC_REPL=rr ICACHE_REPL=rr` 下 67 个 RTL 门禁程序周期与 main 的 `ref_cycles.txt` 逐个相同。
+  - RTL：`lint_chip.sh` 0 警告；`fm_gate.sh` **67/67**，周期与模型（新默认）逐个相等；Linux 检查点窗口 s00–s12（各 400 万周期）**13/13 PASS**，逐条检查 0 不一致，PT / UP 指纹与模型相同。没跑：RTL 从复位的完整 Linux、SPEC 全量。
+  - 综合（`synth_depth.sh`，`SYNTH_ABC="strash;balance;map"`，对 main `a26a102`）：axi_llc 深度 238 → 238、单元 470,031 → 470,717（+0.15%）；icache 深度 69 → 70，单元去掉反相器后 304,114 → 305,070（+0.3%；main 的网表多出 26 万个反相器，是 ABC 的映射差异）。替换状态是存储器，不在单元数里：LLC 每组 4 位指针 → 32 位（4096 组共 128 Kbit），L1I 每组 16 位（64 组共 1 Kbit）。
+  - **注意**：`scripts/env.sh` 默认的 `TTG_PROGS`（`trace-model/build`）里是旧的 rv32 程序，用它生成参考周期会对不上；本轮用 `TTG_PROGS=trace-model-simplify/build`（rv64，不带 C）。
+- **数据**：`~/personal/AI-Huma-data/llc_repl`（`all_res2.txt` 所有配置的逐点结果、`cmp2.py`、权重 `w.txt`、点表、eda 运行脚本、参考周期）。eda 上原始结果在 `/nfs_global/S/houruyao/spec06_rv64gc/tm/res_llc{1,2,3}`。
+
+## EXP-046 写口：发射时调度（选择前查完成周期、浮点写通道压缩）
+
+**问题**：用户问能不能在发射时就把写口调度好。main 其实已经在发射时按完成周期预约每个口的写回（EXP-035，`WbBusy`，冲突为 0），浮点寄存器堆也有发射时的写口限制（EXP-032，`FP_WB_PORTS = 2`）。剩下的三个问题：(1) 预约检查在选择之后，被拒的口这拍空着；(2) 忙表是 21 × 64 位的环；(3) 浮点寄存器堆仍然为每个口留一条写通道，没有利用"每拍最多 2 个浮点单元写回"这个保证。
+
+**分支**：trace-model `exp/wb-port`（工作区 `trace-model-wbport`，`ff96476` 计数器 + `CFG_WB_PRESEL`，`60aa7e8` 只查完成周期）（这两个提交的说明里写的是 EXP-045，与 cache 替换策略撞号，之后改为 EXP-046）；rtl `exp/wb-presel`（工作区 `rtl-wbp`，`d093291` isu、`7957ec9` prf 浮点写通道、`f2674cf` 写回总线按通道；trace-model `98e9d3a` 写回总线按通道）。都从各自 main 拉出，没有合入、没有推送。function-model 用 main（`55affa0`）的私有构建（`fm-wbport-rvc1`，RVC=1）。
+
+**开关**：模型 `CFG_WB_PRESEL`（`include/config.h`，默认 0 = main 行为，周期与基线逐个相同：67 个 RVC 程序 gate 全过）；1 = 选择时跳过完成周期已被占的 uop；2 = 再跳过执行单元不收的 uop（与 1 在 67 个程序上周期完全相同，不采用）。RTL `isu_pkg::WB_PRESEL`（分支上为 1）。
+
+**冲突统计**（模型新 PMU 事件 `ISS_REF_*` / `ISS_LOST_*`，只在模型里；62 个 RVC 程序共 156 万周期）：选中后因完成周期被占而被拒 55,643 次，其中 31,162 次当拍还有别的就绪 uop 能用这个口；因执行单元忙被拒 31,515 次但只有 21 次有替代；FP 写口拒 919 次、共享 AGU 拒 121 次。集中在 pf-stress、shuixianhua、fd-matmul、matrix-mul（乘法和浮点多的程序）。
+
+**性能**：
+
+| 负载 | `CFG_WB_PRESEL=1` 相对 0 |
+|---|---|
+| 67 个 RVC 程序（`run_gate_c.sh`） | 几何平均 −0.49% 周期（shuixianhua −25.8%、leap-year −1.7%、fd-matmul −0.7%、pf-stress +0.1%，其余不变） |
+| RTL 门禁的 67 个 rv64 程序 | coremark −1.4%、dhrystone +0.2%，14 个程序变化 |
+| SPEC06 rv64gc 386 点（eda，10M 预热 + 10M，PMU 开） | SimPoint 加权 IPC +0.01%，12 个程序都在 ±0.1% 内（=2 的版本同样 +0.01%） |
+
+**RTL 改动**（`rtl-wbp`，文档 `docs/modules/isu.md`、`prf.md` 已同步）：
+1. `isu_wb_gate`：忙表从 21 × 64 位环 + 拍号改成每口一个"距今几拍"的移位寄存器，长度 = 该口最长完成偏移 − 1（共 95 位）。一个口按拍发射，完成周期只会被更早发射、偏移更长的 uop 占，所以每口偏移最长的类、单类口的所有类编译期恒空（`cls_blockable`）。这一步单独看周期与 main 完全相同。
+2. 选择前查完成周期：每个槽入队时寄存会被占的完成类位（`slot_cls_q`），选择候选再与上 `~(类位 & ~cls_free)`；`wb_ok` 闸恒 1。
+3. `prf`：浮点写通道 21 → 6（4 条 load + 浮点单元 / I2F 的写回按口序取前 `FP_WB_PORTS` 个压成 2 条），浮点结果只为能写浮点寄存器的 9 个口暂存。前提"写回级每拍最多 2 个浮点单元写浮点寄存器"用仿真检查 `[FPWB]` 验证，67 个程序 0 次。
+4. **写回总线按通道编号**（用户指出"21 个写口"迷惑）：原来模型和 RTL 的写回数组按发射口编号（21 条），STA / STD / BR 口占着永远不写寄存器的位置，这是照搬模型结构的遗留，没有好处。现在模型 `config.h` 定义 `WB_LANES = 13`（ALU 6 + load 4 + 浮点口 3，`WB_ALU_BASE / WB_LD_BASE / WB_FP_BASE`），模型 `exe2prf.entry`、RTL `exu_ctrl_wb_prf` → `prf` 的写回级、写口、写回旁路、load 唤醒都按通道；STA 的完成只进 ROB。整数寄存器堆写口 21 → 13，浮点 6。周期不变（模型两个程序集、RTL 门禁）。`ttg_cfg_pkg.sv` 手工加了这 4 个常量：现在提交的包本来就和生成器输出不一致（重新生成会丢掉 `XLEN_BITS`、`IQ_MEM_SIZE` 等，isu.md 第 9 节已记为待办）。
+5. `tests/wb_gate`：main 上已经编译不过（驱动已删的 `off` 输入），改成按完成类驱动并检查每口每类的 `cls_free`，随机 3 万拍 0 不一致，植入错误后 24,140 拍不一致。
+
+**综合**（单模块，`synth_depth.sh`，`SYNTH_ABC="strash;balance;map"`，yosys 通用门，相对数）：
+
+| 模块 / 版本 | 单元 | 深度 |
+|---|---|---|
+| isu main | 957,032 | 88 |
+| isu 只改忙表 | 945,443（−1.2%） | 88 |
+| isu 选择前查（第一版，每槽解码类） | 1,015,056（+6.1%） | 100 |
+| isu 选择前查（最终，入队时寄存类位） | 948,874（−0.9%） | 89 |
+| prf main | 1,077,848 | 36 |
+| prf 浮点写通道压缩 | 867,357（−19.5%） | 36 |
+| prf 再加写回总线按通道（整数写口 21 → 13） | 679,466（−37%） | 27 |
+
+prf 的单元数含单模块的边界效应：只暂存 9 个口的那部分（触发器 3570 → 2546）在整芯片展平时本来会被常量传播去掉；实打实的节省是浮点单元的 5 条写通道压成 2 条（96 个浮点寄存器的写口比较和 12 个浮点读口的写回级旁路）。没有做整芯片综合。
+
+**验证**：RTL `fm_gate` 67/67 逐条对函数模型无不一致，周期对模型（同一批 rv64ima 程序，`build_tests.sh` 构建，`LSU_PIPE_NOWD=1`）67/67 相等。（早先记录"crc32 RTL 2196 / 模型 2199，main 原有差异"是错的：生成参考周期时没有关模型的 LDQ / STQ 看门狗，RTL 没有这个看门狗；`rtl/scripts/tm_cycles.sh` 现在默认 `LSU_PIPE_NOWD=1`。）`lint_chip` 0 告警。模型 `CFG_WB_PRESEL=0` 时 RVC gate 67/67 周期不变。
+
+**模型近似**：模型没有数据通路，浮点写通道压缩只在 RTL 里，靠 RTL 仿真检查确认前提；PMU 的"本可替代"计数是上界（替代者可能被后面的口拿走）。
+
+**复现**：模型 `scripts/wb_build.sh <dir> "-DCFG_WB_PRESEL=1"`、`scripts/run_gate_c.sh`、`scripts/wb_refuse_stats.sh`、`scripts/wb_cmp.py`；SPEC 用 eda NFS `tm/wbp_one.sh`（cfg 0 / 1 / w）+ `cmp_ev5.py`，结果 `tm/res_wbp0`、`res_wbp1`、`res_wbpw`（第 2 份任务因启动命令卡住被重复启动过一次，4 个点跑了两次，每个点都有完整结果）。RTL：`tb/soc/build.sh`（`SOC_FM=1`）+ `scripts/fm_gate.sh`（`REF_CYCLES` = 模型 `tm_cycles.sh` 生成的表），`tests/wb_gate/run.sh`，`scripts/synth_depth.sh`。
+
+**合入 main（2026-11-19）**：与 EXP-045（LLC / L1I SRRIP）一起，经集成分支 trace-model `exp/wb-llc`、rtl `exp/wb-llc-rtl`。合入时：删掉探索开关 `CFG_WB_PRESEL` / `WB_PRESEL`（选择前查完成周期是唯一行为，与带开关的版本周期逐个相同）；删掉模型里 RTL 没有的 LDQ / STQ 看门狗和 `LSU_PIPE_NOWD`（默认运行 = 以前 `LSU_PIPE_NOWD=1` 的运行，三套程序逐个相同）；trace-model Makefile 和 rtl `scripts/fm_lib.sh` 从固定版本 `FM_REV` 自动构建 function-model；rtl 脚本默认值改对（`build/progs`、`regen_refs.sh`，见 WORKFLOW 3.3）；合入 `exp/fdoff`（测试处理程序的 rv64 修复）。验证：模型门禁 62/62、62/62（关预取）、C 68/68；RTL `fm_gate` 67/67、周期与 `ref_cycles.txt` 全部相同（不设任何环境变量的默认流程）；Linux 子窗口 s00–s12 共 13 个全部 PASS（约 6400 万条指令逐条检查，PT / UP 指纹与模型相同）。全量 SPEC06（386 点）：合并版（SRRIP + 本实验）相对旧 main IPC +1.66%，LRU 版 +1.39%（libquantum sp44 在 SRRIP 下 −21.6%，原因是 DRAM 读排队，待查）。
+
+**结论**：发射时调度写口本身在 SPEC 上几乎不带来性能（+0.01%），乘法 / 浮点密集的小程序有收益；它的价值在硬件：忙表改写和浮点写通道压缩都是周期不变的面积节省，选择前查的代价是 isu 深度 +1 层。**未覆盖**：整芯片综合、Linux 窗口、SPEC FP（检查点只有整数程序）。
 
 ## EXP-044 RTL 降深度那一轮和 Linux 窗口对齐
 
