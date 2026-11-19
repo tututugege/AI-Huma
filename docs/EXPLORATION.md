@@ -6,6 +6,8 @@
 
 | 编号 | 日期 | 题目 | 分支 | 状态 | 一句话结论 |
 |---|---|---|---|---|---|
+| [EXP-048](#exp-048-best-offset-预取bopl1--llc对比-h1) | 2026-11-19 | Best-Offset 预取（BOP）放在 L1 替代 h1、放在 LLC、两者都放，与 h1 / 不预取比较，每种再 fork MSHR 8/12/16 | trace-model `exp/dse-fork`（`7d64b91`，同 EXP-047，已推送） | 未合入 | 7 个访存点：关预取 −21.4%（h1 很有用）；L1 BOP 替代 h1 −6.0%（bzip2 +10%，libquantum −22%、xalancbmk −13%）；**h1 + LLC BOP +1.75%，再加 MSHR 16 +3.2%**；只有 LLC BOP −12%。第二轮：L1 + LLC MSHR 都 16 时 h1 + LLC BOP +5.37%，Berti + LLC BOP +2.81%。后续：Berti 输在物理页边界；**Berti 用虚拟地址 + 预取触发的 DTLB 遍历 + LLC BOP +10.08%**（libquantum +38.7%）；全量 SPEC06 整数 386 点（DTLB 端口计费，两级 MSHR 16）**+6.53%**（mcf +27%、libquantum +39%） |
+| [EXP-047](#exp-047-快速后端-dse运行时容量上限--预热后-fork) | 2026-11-19 | 快速后端 DSE：ROB / PRF / 分支标签 / LDQ / STQ / L1D MSHR / 各 IQ 改为运行时容量上限，精确预热只跑一次、预热末尾按配置 fork；在 exp/wb-llc 上扫 37 个配置 | trace-model `exp/dse-fork`（`7d64b91`，基于 main `8fd0ae3`，已推送） | 未合入 | 上限与编译期尺寸逐周期相同；24 点 × 37 配置 12 分钟跑完。**ROB/PRF 同时放大现在有收益（160/160 +1.4%、192/192 +2.0%、256/256 +3.3%）**；PRF 160 单独 +0.7%；MSHR 12 +0.85%；LDQ 64→32、INT IQ 32→24、MEM IQ 64→32、BR IQ 32→16、分支标签 32→24 基本无损；STQ ≤32、STD IQ 8、MSHR ≤6 有损 |
 | [EXP-045](#exp-045-cache-替换策略llc-与-l1i-改为-srrip) | 2026-11-19 | cache 替换策略：LLC（rr / PLRU / LRU / SRRIP / BRRIP / DRRIP）、L1I（rr / PLRU / SRRIP）、TLB（rr / NRU / PLRU）在周期模型里实现并比较；LLC 和 L1I 的 SRRIP 写进 RTL | trace-model `exp/llc-plru`（`429172d`，工作区 `trace-model-llcplru`）、rtl `exp/llc-plru`（`aac554a`） | **已合入 main（2026-11-19，与 EXP-046 一起：trace-model `8fd0ae3`、rtl `b9fd0df`，未推送）** | 29 个 SPEC06 rv64gc 高权重点：LLC SRRIP +1.23%（omnetpp +9.0%）、再加 L1I SRRIP 合计 **+1.63%**；TLB ≤ +0.12%、不采用；RTL fm_gate 67/67、周期与模型逐个相等；深度 axi_llc 238 不变、icache 69 → 70 |
 | [EXP-046](#exp-046-写口发射时调度选择前查完成周期浮点写通道压缩) | 2026-11-19 | 写口：完成周期的检查移到选择之前（`CFG_WB_PRESEL`），完成周期忙表改成移位寄存器，浮点寄存器堆写通道按发射时的写口预约压缩 | trace-model `exp/wb-port`（`ff96476`、`60aa7e8`），rtl `exp/wb-presel`（`d093291`、`7957ec9`、`f2674cf`） | **已合入 main（2026-11-19，集成分支 trace-model `exp/wb-llc` `8fd0ae3`、rtl `exp/wb-llc-rtl` `b9fd0df`，未推送）** | 模型：67 个 RVC 程序周期 −0.49%，SPEC06 386 点 IPC +0.01%；RTL：isu 单元 −0.9%、深度 88→89，prf 单元 −37%、深度 36→27（单模块口径），整数写口 21→13、浮点 21→6；门禁 67/67、周期与模型相等 |
 | [EXP-044](#exp-044-rtl-降深度那一轮和-linux-窗口对齐) | 2026-11-19 | RTL 降深度那一轮：两个 INT 队列、合并访存队列、FLUSH_REG、前端 / BPU / LSU 的低深度改写，模型默认值 = RTL 配置，Linux 12 个窗口对齐 | rtl `exp/agu-share`、trace-model `exp/tlb-ports` | 已合入 main | 67 个程序周期 +1.92%、SPEC06 386 点 IPC −2.15%（hmmer −8.6%），12 个 Linux 窗口全部 PASS；整机深度没有最新数 |
@@ -48,6 +50,184 @@
 | [EXP-001](#exp-001-面积优化三个方向) | 2026-11-04 | 面积优化：FTQ 合并、LSU 端口、LD/STA IQ 合并 | trace-model `exp/area-explore` | 未提交、未合入 | 三个方向都能省面积，性能代价 0–1% |
 
 ---
+
+## EXP-048 Best-Offset 预取（BOP）：L1 / LLC，对比 h1
+
+**日期**：2026-11-19。**分支**：trace-model `exp/dse-fork`（`7d64b91`，同 EXP-047，已推送）。**代码**：`MemSubSystem/include/Bop.h`（行为模型，L1 / LLC 共用）；L1：`PF_KIND=1` 时 `DataPrefetcher` 用 BOP 替代 h1（训练 = L1D 缺失和预取行第一次使用，L1D 填充写 RR）；LLC：`LLC_BOP=1`（训练 = L1D 读在 LLC 缺失和预取行第一次使用，LLC 填充写 RR；预取发起放宽为留 2 个 MSHR 给需求、最多 4 个预取在途，原 LLC 预取要求全部 MSHR 空闲）。参数按 Michaud 原版：偏移 2^i·3^j·5^k 且 <64（页内，26 个），RR 256 项，100 轮 / 得分 31 结束一个阶段，最高分 ≤1 时关闭，不跨 4 KiB 页，每次触发 1 个预取。不设开关时周期不变（dhrystone 148937）。数据 eda `tm/dse/bop_<方案>/`，表格 `~/personal/AI-Huma-data/dse_fork/bop_report.txt`。
+
+**设置**：7 个访存点（mcf sp44、libquantum sp25 / sp5、omnetpp sp6、xalancbmk sp5、astar sp27、bzip2 sp31），每个方案单独精确预热 1000 万 + 测 300 万，每点 fork MSHR 8 / 12 / 16；二进制 `sim64_bop1`。
+
+### 结果（IPC 相对 h1 + MSHR 8，6 个程序几何平均；libquantum 两点按权重合并）
+
+| 方案 | MSHR 8 | MSHR 12 | MSHR 16 | bzip2 | mcf | libquantum | omnetpp | astar | xalancbmk（均 MSHR 8） |
+|---|---|---|---|---|---|---|---|---|---|
+| h1（基线） | 0 | +1.81 | +1.91 | 0 | 0 | 0 | 0 | 0 | 0 |
+| 关预取 | −21.39 | −21.42 | −21.42 | −29.5 | +4.4 | −37.7 | −4.5 | −1.4 | −45.3 |
+| L1 BOP（替代 h1） | −6.01 | −6.09 | −6.12 | +10.3 | −7.3 | −22.3 | +0.4 | −0.9 | −12.8 |
+| 只有 LLC BOP | −12.15 | −12.23 | −12.26 | −1.7 | +9.1 | −32.1 | +1.6 | +0.4 | −38.1 |
+| **h1 + LLC BOP** | **+1.75** | **+3.15** | **+3.20** | +4.6 | −0.2 | +2.2 | +3.1 | 0 | +1.0 |
+| L1 BOP + LLC BOP | −4.00 | −3.21 | −2.87 | +13.3 | −4.7 | −20.4 | +2.0 | +0.2 | −10.8 |
+
+### 分析
+
+1. **h1 整体很有用**：关掉 −21.4%（xalancbmk −45%、libquantum −38%、bzip2 −30%）。它的问题是：只有一个全局步长项，多流程序（bzip2）跟不住；mcf 上没用而且有害（关掉 mcf +4.4%，只用 LLC BOP 时 mcf +9.1%），每 300 万条发 44 万个预取（大部分是下一行到 LLC），都占 L1D MSHR。
+2. **L1 BOP 替代 h1 不行（−6.0%）**：bzip2 上明显更好（L1D 缺失率 10.5% → 2.3%，学到偏移 2，同时覆盖多个流），但 libquantum / xalancbmk 学到的偏移只有 6，每次触发只发 1 个，跟不上 h1 一次连发 8 个、领先 2 个步长的深度（libquantum L1D 缺失率 24% → 33%）；mcf 上 1365 个阶段只有 201 个关闭，发了 300 万个候选，−7.3%。
+3. **LLC 上的 BOP 学到了长偏移**：libquantum 45、xalancbmk 24（L1 上同样的程序是 6），LLC 预取有用率高（libquantum 发 78780 个、用上 72767 个；mcf 发 93.6 万、用上 59.6 万，但 mcf IPC 不变，瓶颈在 h1 / L1）。
+4. **最好的组合是 h1 + LLC BOP**：+1.75%，MSHR 16 时 +3.2%（libquantum +10%）。MSHR 的收益与预取器有关：h1 + LLC BOP 下 MSHR 8→12 +1.4%，L1 BOP 下 MSHR 不起作用。
+
+### 第二轮：Berti L1、LLC MSHR 16（2026-11-19）
+
+之前的"MSHR"只是 L1D MSHR（`CFG_DCACHE_MSHR`），LLC MSHR 是另一个参数（`CONFIG_AXI_LLC_MSHR_NUM`，默认 8，编译期）。第二轮二进制 `sim64_bop2`：LLC MSHR 16；L1 BOP 之外加 Berti（`PF_KIND=2`，从 EXP-043 `exp/pf-l1l2` 移植，默认 = EXP-043 最好的 ALLOC + 每组 64 路历史；load 的 PC 从 LSU 经 `LoadReq.pc` 传到 L1D）。同 7 个点，基准仍是 h1 + L1 MSHR 8 + LLC MSHR 8。表格 `~/personal/AI-Huma-data/dse_fork/l16_report.txt`。
+
+| 方案（LLC MSHR 16） | L1 MSHR 8 | L1 MSHR 16 | bzip2 | mcf | libquantum | omnetpp | astar | xalancbmk（均 L1 MSHR 16） |
+|---|---|---|---|---|---|---|---|---|
+| h1 | +0.01 | +3.87 | +0.2 | +1.2 | +21.4 | −0.1 | −0.1 | +2.2 |
+| **h1 + LLC BOP** | +2.48 | **+5.37** | +5.1 | +0.3 | +21.2 | +4.8 | −0.7 | +3.0 |
+| Berti | −3.08 | +0.30 | +8.6 | +4.5 | +8.5 | −3.0 | −1.1 | −13.8 |
+| Berti + LLC BOP | +0.47 | +2.81 | +10.7 | +9.1 | +8.7 | +1.6 | −0.4 | −11.1 |
+| Berti + LLC BOP（LLC 在途 8） | +1.09 | +2.46 | +11.7 | +9.2 | +7.5 | +1.9 | −0.6 | −12.9 |
+
+- **两级 MSHR 要一起加**：只加 LLC MSHR 到 16 是 0（+0.01%），只加 L1 到 16 是 +1.9%，两个都 16 是 +3.9%（libquantum +21%）。
+- **最好的仍是 h1 + LLC BOP，两级 MSHR 16：+5.37%**。
+- **Berti 和 h1 互补**：Berti 在 bzip2（+9～+12%）、mcf（+4.5～+9%，去掉了 h1 的无用下一行预取）上赢，在 xalancbmk（−11～−14%）和 libquantum（比 h1 少约 13 个点）上输。Berti + LLC BOP +2.8%，低于 h1 + LLC BOP。
+
+### 第三轮：Berti 为什么差（2026-11-19）
+
+在差的点（libquantum sp25 / sp5、xalancbmk sp5、omnetpp sp6）上逐项诊断；新增诊断（`PF_STATS=1`）：`[PF-PROBE]` 候选 / 探测的去向，`[PF-PCMISS]` 每个 load PC 的 L1D 缺失和预取行第一次使用，`[PF-PAGEPOS]` 缺失 / 预取行第一次使用在 4 KiB 页内的位置；`DS3_STATS=1` 恢复 DRAMsim3 的统计（每个 fork 子进程一份，测量窗口内）。表格 `~/personal/AI-Huma-data/dse_fork/berti_fix_report.txt`。
+
+1. **移植没问题**：EXP-043 原结果里这几个点 Berti 也输 h1（Berti / h1 周期：libquantum sp25 1.116 对现在 1.108，xalancbmk sp5 1.133 对 1.186）。
+2. **根因：物理页边界**。Berti 学到的及时 delta 大（libquantum 9～27 行，xalancbmk 6～54 行，步长 6 行），只能在页内预取，新页开头没有覆盖。libquantum sp25 Berti 的缺失按页内 8 行分段：37.3k / 22.1k / 1.3k / 0.03k / 0.2k / 0.3k / 0.5k / 0.4k（h1：17.3k～33.8k 分布在整页）；第一段的预取行第一次使用为 0。Berti 缺失率 11.1%（h1 34.2%）却慢 10%：页首缺失都是完整 DRAM 延迟、集中出现，程序本就卡在物理寄存器 / ROB 上（重命名缺寄存器 49～51% 的槽）。h1 跨页时置信度 3→2 仍≥门槛，新页第一次缺失就从近处连发，缺失多但多是迟到（部分延迟）。DRAM 统计排除了带宽 / 行缓冲：读次数、行命中（98.9%）、平均读延迟基本相同。论文的 Berti 用虚拟地址可以跨页。
+3. **排除的怀疑**：迟到预取的延迟按"需求到填充"算导致学到短 delta——改用完整延迟（`PF_BERTI_LATEFIX`）+2.81 → +2.53%，无效；重复候选——"最近发过的行"过滤器（`PF_BERTI_RFILT`）16 项 +1.11%、32 项 −0.87%、64 项 −2.71%，越大越差（挡掉了被丢弃探测的补发）；发放顺序——远 delta 先发（`PF_BERTI_FAR`）+1.97%、追加不顶掉（`PF_BERTI_APPEND`）+2.61%，无效。omnetpp：指针追逐，Berti 88% 的查找找不到 delta，h1 的收益来自下一行到 LLC。
+4. **修法**（7 点，LLC MSHR 16，L1 MSHR 16，相对 h1 + MSHR 8 / 8）：
+
+| 方案 | 几何平均 | bzip2 | mcf | libquantum | omnetpp | astar | xalancbmk |
+|---|---|---|---|---|---|---|---|
+| h1 + LLC BOP | +5.37 | +5.1 | +0.3 | +21.2 | +4.8 | −0.7 | +3.0 |
+| Berti + LLC BOP | +2.81 | +10.7 | +9.1 | +8.7 | +1.6 | −0.4 | −11.1 |
+| **Berti + 页首补位（`PF_BERTI_RAMP=8`）+ LLC BOP** | **+5.60** | +12.6 | +9.0 | +20.3 | +2.0 | −0.7 | −7.2 |
+| **h1 + Berti（`PF_KIND=3`）+ LLC BOP** | **+5.72** | +12.3 | +0.4 | +20.0 | +4.7 | −0.3 | −1.1 |
+| h1 + Berti，无 LLC 预取 | +4.86 | +11.4 | +1.1 | +19.5 | +0.3 | −0.5 | −1.0 |
+
+页首补位：需求缺失时先发 X+1 .. X+(最小及时 delta − 1)（≤8 行，同页）。xalancbmk 仍 −7%：步长 6 行，逐行补的 X+1～X+5 不被访问，补位应按学到的步长走。
+
+### 第四轮：L1 预取用虚拟地址 + 查 DTLB（2026-11-19）
+
+`PF_BERTI_VA=1`：load 的虚拟地址经 `LoadReq.vaddr` → L1D 槽 → `PfAccess.va` 送到预取器；Berti 用虚拟行训练 / 求目标，延迟和填充仍按物理行配对；目标与触发同页时用触发行的物理页，跨页时经 `g_pf_translate`（LSU 登记，DTLB `peek_translate`：只查不填、不遍历）翻译，每拍 `PF_BERTI_XLATE`（默认 1）个。表格 `~/personal/AI-Huma-data/dse_fork/berti_va_report.txt`。
+
+| 方案（LLC BOP，两级 MSHR 16） | 几何平均 | bzip2 | mcf | libquantum | omnetpp | xalancbmk |
+|---|---|---|---|---|---|---|
+| Berti 物理地址 | +2.81 | +10.7 | +9.1 | +8.7 | +1.6 | −11.1 |
+| Berti 虚拟地址，每拍 1 次翻译 | +3.12 | +12.5 | +9.1 | +8.1 | +1.1 | −10.0 |
+| Berti 虚拟地址，每拍 2 次 | +2.48 | +12.0 | +9.1 | +7.8 | +0.8 | −12.6 |
+| **h1 + Berti 虚拟地址** | **+6.04** | +13.7 | +0.4 | +19.8 | +4.8 | −0.6 |
+
+跨页候选：libquantum sp25 翻译成功 1、DTLB 未命中 29300（端口不够 219385）；xalancbmk sp5 成功 9290、未命中 46510。流式访问的下一页还没被 load 碰过，DTLB 里没有它，只查不填的翻译在需要跨页时几乎都失败，页首缺失分布和物理地址版相同。要真正跨页，预取必须能触发（低优先级的）页表遍历，即顺带预取翻译。
+
+### 第五轮：预取触发的 DTLB 页表遍历（2026-11-19）
+
+`PF_BERTI_WALK=1`：跨页候选 DTLB 未命中时，目标页进一个 4 项队列；LSU 在 `tlb_out()` 末尾，若有本拍没人用的 load 端口且遍历器空闲（`TlbMmu::walk_busy()`），把一个预取翻译放到该端口（其响应没有 load / STA 读取）：命中丢弃，未命中发起遍历（完成后照常写回 DTLB），fault 丢弃（`set_pf_page`：预取页的遍历以 fault 结束时由 DTLB 消化，否则会一直占着遍历器）。遍历器只读页表（A=0 报权限错，不回写），预取遍历不改内存。表格 `~/personal/AI-Huma-data/dse_fork/berti_walk_report.txt`。
+
+| 方案（LLC BOP，两级 MSHR 16） | 几何平均 | bzip2 | mcf | libquantum | omnetpp | astar | xalancbmk |
+|---|---|---|---|---|---|---|---|
+| h1 | +5.37 | +5.1 | +0.3 | +21.2 | +4.8 | −0.7 | +3.0 |
+| Berti 物理地址 | +2.81 | +10.7 | +9.1 | +8.7 | +1.6 | −0.4 | −11.1 |
+| Berti 虚拟地址（只查 DTLB） | +3.12 | +12.5 | +9.1 | +8.1 | +1.1 | −0.2 | −10.0 |
+| **Berti 虚拟地址 + 预取遍历** | **+10.08** | +13.2 | +9.1 | **+38.7** | +1.6 | +0.7 | +1.6 |
+| h1 + Berti 虚拟地址 + 预取遍历 | +8.71 | +14.3 | +0.4 | +30.5 | +5.6 | +0.7 | +3.7 |
+
+libquantum sp25：L1D 缺失率 34%（h1）/ 11%（Berti 物理）→ 6.0%；页首第一段缺失 37.7k → 2.7k，各段预取行第一次使用都在 1 万左右；跨页候选翻译成功 41699、DTLB 未命中 3652；预取翻译 7421 次，其中 5574 次发起遍历，0 次 fault。xalancbmk sp5 缺失率 12.4% → 3.5%。mcf 没有跨页候选（Berti 在 mcf 上的 +9% 来自不发 h1 的无用预取）。
+
+局限：跨页候选的翻译用 `peek_translate`，每拍限 1 次（`PF_BERTI_XLATE`），但没有占 DTLB 端口（偏乐观）；预取遍历占的是真实的空闲端口和遍历器。只测了 7 点、每点 300 万条。
+
+### 第六轮：24 点确认（2026-11-19）
+
+s1 的 24 点（12 个整数程序各取权重最高的 2 点，程序内按权重），相对 s1 `base`（h1，L1 / LLC MSHR 8，同样 1000 万预热 + 300 万测量）。二进制 `sim64_bop11`（LLC MSHR 16）。表格 `~/personal/AI-Huma-data/dse_fork/w24_report.txt`。
+
+| 方案（LLC MSHR 16） | L1 MSHR 8 | L1 MSHR 16 | bzip2 | mcf | libquantum | omnetpp | astar | xalancbmk（L1 MSHR 16） |
+|---|---|---|---|---|---|---|---|---|
+| h1 | +0.09 | +1.89 | +0.1 | +0.7 | +21.4 | +0.1 | −0.1 | +1.1 |
+| h1 + LLC BOP | +1.28 | +2.58 | +3.0 | +2.1 | +21.2 | +3.9 | +0.3 | +1.4 |
+| **Berti 虚拟地址 + 预取遍历 + LLC BOP** | +2.11 | **+4.40** | +7.7 | +6.0 | +38.7 | +2.4 | +1.0 | +1.3 |
+
+其余 6 个程序（perlbench、gcc、gobmk、hmmer、sjeng、h264ref）各方案都在 ±0.7% 以内。结论：7 点上的排序在 24 点上保持；Berti 方案对 12 程序几何平均 +4.40%（h1 + LLC BOP +2.58%），仍然只有 24 点、每点 300 万条。
+
+### 第七轮：跨页翻译按 DTLB 端口计（2026-11-19）
+
+`PF_BERTI_XPORT=1`：跨页候选（虚拟行）进 8 项队列，LSU 每拍把所有没人用的 load 端口分给它，一个端口一次真实的 DTLB 查找：命中→物理行交回预取器（下一拍优先进请求 FIFO），未命中→遍历器空闲时发起遍历（候选丢弃，`set_pf_page` 处理 fault），fault 丢弃。取代第五轮的"每拍 1 次免费 peek + 遍历队列"。二进制 `sim64_bop12`，24 点，表格 `~/personal/AI-Huma-data/dse_fork/w24_xport_report.txt`。
+
+| 方案（LLC BOP，LLC MSHR 16） | L1 MSHR 8 | L1 MSHR 16 | bzip2 | mcf | libquantum | omnetpp | astar | xalancbmk（L1 MSHR 16） |
+|---|---|---|---|---|---|---|---|---|
+| h1 | +1.28 | +2.58 | +3.0 | +2.1 | +21.2 | +3.9 | +0.3 | +1.4 |
+| Berti VA，免费 peek + 遍历 | +2.11 | +4.40 | +7.7 | +6.0 | +38.7 | +2.4 | +1.0 | +1.3 |
+| **Berti VA，按端口翻译** | +2.61 | **+4.48** | +7.8 | +5.8 | +41.0 | +2.6 | +0.6 | +0.2 |
+
+端口计费没有吃掉收益：空闲 load 端口足够多，一拍能翻译不止 1 个（libquantum sp25：入队 27.7 万、发出 21.0 万、命中 19.5 万、未命中（发起遍历）1.5 万、队列满丢 6.6 万；L1D 缺失率 3.1%）。xalancbmk 从 +1.3 降到 +0.2，其余持平或略升。
+
+### 第八轮：全量 SPEC06 整数（386 点，2026-11-19）
+
+`jobs95.txt` 的 386 点（约 95% 权重），精确预热 1000 万 + 测量 1000 万（同 res_final 流程），程序内按 SimPoint 权重、12 程序几何平均；每点 fork L1 MSHR 8 / 16。基准 `full_base`：`sim64_dsebig3`，h1，LLC MSHR 8（= main 默认）；新方案 `full_bxp`：`sim64_bop12`，Berti 虚拟地址 + DTLB 端口翻译（`PF_BERTI_XPORT`）+ LLC BOP，LLC MSHR 16。eda-04/06/07/08/09/10，66 个 worker，约 40 分钟。数据 eda `tm/dse/full_base`、`full_bxp`，表格 `~/personal/AI-Huma-data/dse_fork/full386_report.txt`。
+
+| 配置 | 几何平均 | perlbench | bzip2 | gcc | mcf | libquantum | omnetpp | astar | xalancbmk |
+|---|---|---|---|---|---|---|---|---|---|
+| h1，L1 MSHR 16，LLC 8 | +1.00 | +0.0 | +0.2 | +0.4 | −0.3 | +11.6 | −0.2 | +0.3 | +0.5 |
+| 新方案，L1 MSHR 8，LLC 16 | +4.17 | +1.2 | +1.9 | +6.9 | +25.4 | +10.7 | +1.9 | +2.4 | +0.9 |
+| **新方案，L1 / LLC MSHR 16** | **+6.53** | +1.5 | +2.0 | +8.2 | **+27.0** | **+39.1** | +2.0 | +3.2 | +1.0 |
+
+gobmk、hmmer、sjeng、h264ref 各配置都在 ±1% 以内。比 24 点估计（+4.48%）高：mcf 全部 45 点 +27%（24 点集 +6%），gcc +8%。缺一个对照：h1 + 两级 MSHR 16（24 点上 +1.89%），全量 SPEC 上未跑。
+
+### 下一步候选
+
+- RTL 代价评估（Berti 表：历史 8×64 / delta 16×16、翻译队列、DTLB 端口仲裁、预取遍历）；Berti 历史表 16 路在 1 GHz 下是否够用（`PF_BERTI_HW=16`）；全量 SPEC 补 h1 + 两级 MSHR 16 对照；把 Berti 的模型级结构（延迟 map 等）改成硬件形式后再确认。
+- 页首补位改为按学到的步长补（xalancbmk），目标同时拿到 h1 + Berti 的 libquantum / xalancbmk 和纯 Berti 的 mcf；然后在 s1 的 24 点上确认。
+- h1 与 Berti 并存（h1 管单一大步长流，Berti 管多流 / 按 PC 的流），目标是同时拿到 xalancbmk / libquantum（h1）和 bzip2 / mcf（Berti）的收益。
+- 给 h1 加有害检测（mcf：准确率低时关掉下一行到 LLC 引擎，或不占 L1D MSHR），收益约 mcf +4%～+9%。
+- L1 BOP 加深度（`PF_BOP_DEG`）或与 h1 并存（BOP 只处理 h1 不覆盖的流），保住 bzip2 的 +10%。
+
+### 局限
+
+只有 7 个点、每点 300 万条；BOP 是行为模型（RR 存完整行号，没有 RTL 代价）；没扫 BOP 参数。
+
+## EXP-047 快速后端 DSE：运行时容量上限 + 预热后 fork
+
+**日期**：2026-11-19。**分支**：trace-model `exp/dse-fork`（工作区 `trace-model-dsefork`，基于 main `8fd0ae3`），提交 `7d64b91`，已推送，未合入 main。机制说明 trace-model `docs/DSE_FORK.md`。数据 eda `/nfs_global/S/houruyao/spec06_rv64gc/tm/dse/s1/`，表格副本 `~/personal/AI-Huma-data/dse_fork/`。
+
+**做法**：
+- **运行时容量上限**（`include/DseCap.h`）：ROB、整数/浮点物理寄存器、分支标签、LDQ、STQ、L1D MSHR、INT/MEM/STD/BR/FP 各 IQ。只改分配时的"满 / 空闲项数"判断，数组、环形指针、位宽保持编译尺寸。默认值 = 编译尺寸，不设 `DSE_CONFIGS` 时行为不变。一个按最大尺寸编译的二进制（`sim64_dsebig3`：ROB/PRF 256、FPRF 192、分支标签 64、MSHR 16、INT IQ 64、MEM IQ 96、STD IQ 32、BR IQ 48、FP IQ 64；LDQ/STQ 受 LSU 限制仍为 64）覆盖所有更小的配置。
+- **预热后 fork**（`driver/DseFork.cpp`）：父进程按配置文件第一行（基线）的上限跑精确预热，到预热结束前 `DSE_SETTLE`（20 万）条时每个配置 fork 一个子进程，子进程设上限、跑完剩余预热（队列排空到新上限）后照常测量。
+- **验证**：上限 = 编译该尺寸，逐周期相同（dhrystone：默认尺寸 148937 = 148937，ROB64/PRF80/LDQ16/STQ16/MSHR4/INT IQ16/MEM IQ24/分支标签 12 为 138772 = 138772；Linux 检查点 150 万条 1218577 = 1218577）；运行中途 fork 的基线子进程 = 默认二进制普通运行（Linux 检查点 1196979 = 1196979）。第一版预热不设上限（按大尺寸预热），mcf sp44 基线差 0.019%，因此改为按第一行配置预热。
+- **坑**：在 iprc-jump（AMD Zen 5）上用 `-march=native` 编出的静态二进制在 eda-04（Intel Cascade Lake）上 SIGILL；trace-model 和 librefcpu 都改用 `-march=x86-64-v3`（`~/rv64spec/llcplru1/jbuild_dse2.sh`）。
+
+**s1 设置**：rv64gc SPEC06 整数 12 个程序，各取权重最高的 2 个点（24 点，程序内按权重归一），精确预热 1000 万条 + 测量 300 万条，PF 开、PMU 开；37 个配置，一次只动一个参数（基线 ROB128/PRF128/分支标签 32/LDQ64/STQ64/MSHR8/INT IQ 32×2/MEM IQ 64/STD IQ 16/BR IQ 32）。eda-04、08、09、10 上 7 个 worker，**全部 24 点 × 37 配置 12 分钟跑完**（以前每个配置单独预热，同样的量约 24×37 次完整运行）。xalancbmk 一个点（预热 + 37 个配置测量）约 1 分钟、最大 RSS 0.5 GB；mcf 约 12 分钟。
+
+### 结果（12 个程序几何平均 IPC，相对基线 1.9745）
+
+| 参数 | 取值 → 变化 | 主要来源 |
+|---|---|---|
+| ROB（PRF 128） | 64 −6.91%，96 −1.38% | hmmer −18%、h264ref −15%、omnetpp −12% |
+| PRF（ROB 128） | 96 −3.66%，112 −0.97%，160 +0.71%，192 +0.74% | h264ref、bzip2 |
+| ROB+PRF | 160/160 +1.39%，192/192 +2.03%，256/256 +3.26% | h264ref +11%、omnetpp +9%、bzip2 +7%、libquantum +5%；xalancbmk、gcc ≈ 0 |
+| LDQ | 16 −0.33%，24 +0.25%，32 +0.03%，48 +0.01% | ldq16：astar −3.0%、perlbench −1.6%，gcc +2.0% |
+| STQ | 16 −4.22%，24 −1.12%，32 −0.38%，48 +0.03% | h264ref（24 时 −8%）、hmmer、perlbench |
+| L1D MSHR | 4 −6.31%，6 −1.85%，12 +0.85%，16 +0.91% | libquantum（4 时 −37%，16 时 +11%）、mcf、xalancbmk |
+| INT IQ（×2） | 16 −0.09%，24 0，48/64 +0.03% | |
+| MEM IQ | 32 −0.01%，48/96 0 | |
+| STD IQ | 8 −1.25%，32 −0.11% | h264ref −8.6%、hmmer −7%（STD 8） |
+| BR IQ | 16 +0.11%，48 0 | |
+| 分支标签 | 16 −0.27%，24 −0.03%，48/64 +0.03% | xalancbmk −4.7%（16） |
+
+### 结论
+
+1. **窗口放大现在有收益**：EXP-016（旧 main）ROB/PRF 同时放大到 192/192 只有 +0.47%，现在 +2.03%，256/256 +3.26%，单调增加，EXP-016 里 sjeng/astar/libquantum 的回退不再出现（这次 sjeng +0.95%、astar +2.15%、libquantum +4.72%）。说明之后的改动（RVC 前端、EXP-044 两个 INT 队列、SRRIP 等）让窗口能被用上。值得做的下一步：PRF 160 单独 +0.71% 且 192 不再增加，ROB 128 时 PRF 是瓶颈；ROB/PRF 160 是面积和收益的折中点。
+2. **可缩减（几乎无损）**：LDQ 64→32（+0.03%，甚至 24 +0.25%）、INT IQ 32→24（0）、MEM IQ 64→32（−0.01%）、BR IQ 32→16（+0.11%）、分支标签 32→24（−0.03%）。
+3. **不能缩**：STQ（32 已 −0.38%，h264ref 敏感）、STD IQ 16→8（−1.25%）、MSHR 8→6（−1.85%）。
+4. **MSHR 8→12 +0.85%**，再到 16 只多 +0.06%；几乎全是 libquantum（MLP 受限）。
+
+### 局限
+
+- 每个程序只有 2 点（权重覆盖 6%–32%），测量 300 万条，只反映趋势；只扫了整数程序，FP IQ / FPRF 没扫。
+- 一次只动一个参数，没扫组合（除 ROB+PRF）；没有面积数据。
+- LLC MSHR 没有运行时上限（缩小时进行中的请求会从扫描循环里消失），发射/提交宽度、端口数需要重新编译。
+- 小 LDQ 在 gcc 上反而更快（ldq16 +2.0%），可能是错误路径访存变少，没有单独核实。
 
 ## EXP-045 cache 替换策略：LLC 与 L1I 改为 SRRIP
 
