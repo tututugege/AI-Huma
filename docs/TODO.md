@@ -25,6 +25,21 @@
 | 覆盖率 | 没有覆盖数据，不知道哪些逻辑从未被测到 | Verilator toggle 覆盖（line 覆盖对 assign 风格无意义），每模块出报告，汇总数字入库 |
 | LD/STA 合并、统一 FTQ 的规模确认 | 都只在小程序和 gate 上测过；store 密集程序、48 还是 64 项都没定 | quick SPEC 上对比；决定是否进入主线 |
 
+## 待做：RTL 综合时序/深度优化清单（2026-11-20 全模块 Yosys 综合基线，`rtl` `6e2d188`）
+
+口径：`SYNTH_LIGHT=1 SYNTH_MEM=1 SYNTH_LTP=1 SYNTH_ABC="strash;balance;map"`（无 `dc2`，详见 [rtl/docs/09-synthesis-report.md](../rtl/docs/09-synthesis-report.md) 第 12 节）。以下模块逻辑级数超过 100 层红线，按优先级排序：
+
+| 模块 | 当前深度 / 单元数 | 关键路径线索 | 优化方向 / 做完标准 |
+|---|---|---|---|
+| **`dcache_pf`**（EXP-048 硬件 Berti） | **384 层** / 67,431（拆测：`berti_tab` **362 层**、`berti_gen` **172 层**、`berti_hist` 77 层） | `berti_tab`: `srch_pc` → `trig_go`；`berti_gen`: `gen_mask_q[0]` → `gen_mask_q[8]` | 精准优化 `dcache_pf_berti_tab`（362 层）与 `dcache_pf_berti_gen`（172 层），压回 100 层以内 |
+| **`axi_llc_bop`**（EXP-048 LLC BOP）→ 拉高 **`axi_llc`** / **`axi_subsys`** | **291 层** / 5,608（拉高 `axi_llc` 238→**350**、`axi_subsys` 238→**353**） | `best_q` → `replace_alu` → `q_line_q` | 拆解 BOP 候选地址生成与入队路径（可打一拍寄存），先把 `axi_llc_bop` 压回 100 层以内，让 `axi_llc` / `axi_subsys` 回到 238 层及以下 |
+| **`back_top`**（后端整块） | **142 层** / 3,998,654 | `u_lsu.u_pipe.u_core.u_ldq.g_e[17].u_ent.st_q` → `u_lsu...u_rp.srp_ptr_q` | 排查 `lsu` 内部 LDQ 状态到 `u_rp.srp_ptr_q` 跨模块组合路径（单模块 `lsu` 为 101 层，整块拉到 142 层） |
+| **`bpu`**（分支预测器） | **134 层** / 549,458 | `u_spec.aras_q[5]` → `u_spec.spec_d[49]` | 排查 `bpu_spec` 推测 RAS/状态更新链，压回 100 层以内 |
+| **`dcache_mshr`**（EXP-048 MSHR 8→16） | **123 层** / 91,934（其余 `dcache` 核心子模块均 13–49 层） | `ax_req_accepted` → `ax_req_line[25]` | 16 项 MSHR 下 AXI 请求选择/出队组合链过长，压回 100 层以内 |
+| **`ren`**（重命名） | **111 层** / 474,613 | `inst_q` → `u_fp.u_ckpt.entry_q` | 优化 FP 重命名检查点写入与 mov 消除判定链，压回 100 层以内 |
+| **`lsu`**（单模块） | **101 层** / 1,227,891 | `pl12_q` → `u_ldq.g_e[30].u_ent.st_d` | 贴近 100 层红线，随 `back_top` 路径一并压低 |
+| **`dcache` / `mem_top` / `front_top`**（未出数） | `dcache`/`mem_top` 超 64 GB RSS；`front_top` 超 3600s | `dcache.sv:76` 已修、已加 `SYNTH_NO_MEMPRIO=1` | `dcache` 建议拆子模块（`dcache_s1`/`s2_*`/`mshr`/`wb`/`resp`）或放宽看门狗至 128 GB+ 测；`front_top` 放宽至 7200s |
+
 ## 待做：RTL 实现
 - **LLC 替换策略改为 tree PLRU（2026-11-17，用户定为标准）**：现在的 `axi_llc` 用每组一个"下一个牺牲路"指针、命中后指向命中路 + 1 的轮转替换（`axi_llc_resolve.sv` `next_way`、模型 `AXI_LLC.cpp`），3 GHz 访存组上换成 LRU 平均 +3.5%（omnetpp +14%）。trace-model `exp/pf-l1l2` 已把模型默认改为 tree PLRU（`LLC_REPL=rr` 恢复旧行为）；RTL 要把 `repl` 表从路号位宽改为每组 ways−1 位的 PLRU 树（16 路 15 位），命中 / 装入时更新，`axi_llc_waypick` 按树选牺牲路，然后对齐模型周期。见 EXPLORATION EXP-043。
 

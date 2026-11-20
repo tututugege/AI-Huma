@@ -10,6 +10,8 @@
 
 | 日期 | 仓库 / 分支 | commit | 做了什么 | 验证 | 结论 |
 |---|---|---|---|---|---|
+| 2026-11-20 | 总仓库 `main` | 本行所在提交 | 新增项目级规则 `GEMINI.md` 与 4 个按需 Skills（`.agents/skills/ai-huma-{eda,exp,rtl-dev,merge-main}`）；`docs/TODO.md` 新增 2026-11-20 全模块 Yosys 综合超 100 层时序优化清单；更新 `rtl` 子模块指针至 `1913518` | `rtl` 40 个逻辑模块（28 顶层/原子 + 12 `dcache` 子模块）Yosys 实测通过；`eda` 集群与 `iprc-jump` 链路验证通过 | 已推送 `origin/main` |
+| 2026-11-20 | rtl / `main` | `1913518` | `dcache.sv` `retry_busy` 声明顺序修复；`scripts/synth_module.sh` 新增 `SYNTH_NO_MEMPRIO=1`；`09-synthesis-report.md` 第 12 节记录 Yosys 参数规范（去 `dc2`）与全模块/子模块实测；更新 12 份 `docs/modules/*.md` 深度并重生成 `05-module-tracker.md` | `lint_chip.sh` `dcache` 0 警告；`eda-04..07` 28 顶层/原子 + 12 `dcache` 子模块 Yosys 综合出数（`dcache_pf` 384 / `berti_tab` 362 / `berti_gen` 172、`axi_llc_bop` 291 / `axi_llc` 350、`back_top` 142、`bpu` 134、`dcache_mshr` 123、`ren` 111、`lsu` 101） | 已推送 `origin/main` |
 | 2026-11-19 | trace-model / main（快进自 exp/wb-llc） | `8fd0ae3` | EXP-045 SRRIP + EXP-046 写口（开关删除）+ TMA 分类修正 + 删 LDQ/STQ 看门狗 + Makefile 自建 function-model + fdoff 修复；RVC=1、PMU 默认开 | 门禁 62/62、62/62、C 68/68 | 已合入 main，未推送 |
 | 2026-11-19 | rtl / main（快进自 exp/wb-llc-rtl） | `b9fd0df` | EXP-046 isu / prf（预约表移位寄存器、选择前查完成周期、浮点写通道压缩、写回总线按通道）+ EXP-045 SRRIP；`fm_lib.sh`、`build_progs.sh`、`regen_refs.sh`，脚本默认值 | `fm_gate` 67/67 周期全等；Linux 子窗口 13/13 PASS；lint 0 | 已合入 main，未推送 |
 | 2026-11-19 | 总仓库 `main` | 本行所在提交 | 文档：MAIN_RECORDS 一行和「变化」（EXP-044）、EXPLORATION（EXP-044）、TODO（这一轮的遗留更新：已合入、已修的项删掉、更正两条判断）、WORKFLOW（第 7 节 RTL 开发流程：文档先行、提交前核对；模型时序改动合入前要跑 Linux 启动）、README（当前状态、配置）；子模块指针：trace-model `c795844`、rtl `a26a102` | — | 随合入一起提交 |
