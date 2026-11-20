@@ -363,3 +363,24 @@
 **已知回退**：coremark +2.9% 周期、quick SPEC −0.5% IPC（gcc −1.3%），换取约 17% 的门数和 27% 的触发器。
 
 **对应记录**：[EXPLORATION.md](EXPLORATION.md) EXP-001…005；[LOG.md](LOG.md) 2026-11-05 各行。
+
+---
+
+### 2026-11-20（EXP-048：L1 硬件 Berti + LLC BOP + MSHR 16/16）
+
+- **版本**：trace-model `6df4312`、rtl `6e2d188`、function-model `55affa0`。
+- **正确性**：RTL `lint_chip.sh`（Verilator 5.052）0 警告；`fm_gate.sh` 64/64 PASS（0 FM 不一致、与默认 `trace-model` 0 周期差）；trace-model 单次从复位启动 rv64gc Linux 5.15.170 直达 `rv64 login:` PASS（135M 指令，IPC `0.8594`）；27 窗 5M 步长 rv64gc Linux（`s00..s26`，每窗 ≥5.1M 指令，无缝覆盖 `0 → 135.1M` 共 1.377 亿条指令）RTL vs `trace-model` **27/27 `PT`/`UP` 指纹逐周期相等、0 FM 不一致**（`s00` 仅 PMU 恢复计数归类差异，执行流零分歧）。
+- **性能**：
+  - **SPEC CPU2006 INT（12 程序 386/386 点）**：`11.37 → 12.11 /GHz`（**`+0.75 分/GHz`，`+6.58%`**，零回退；`462.libquantum +37.14%`、`429.mcf +28.14%`、`403.gcc +7.90%`、`473.astar +3.35%`、`471.omnetpp +2.33%`、`401.bzip2 +2.13%`）。
+  - **固定负载（默认 `trace-model` = RTL，0 周期差）**：`coremark` `290,676`（0.00%）、`dhrystone` `109,797`（+0.82%）、`memory-stress-small` `343,714`（+0.07%）、`pf-stress` `487,806`（−15.6%）、`dcache-conflict-writeback` `4,533`（−24.7%）、`dcache-mshr-pressure` `1,487`（−5.1%）。
+- **综合**：未做（后续统一切换 DC 综合）。
+
+**变化**
+- **配置变化**：`DCACHE_MSHR_ENTRIES` `8 → 16`；`AXI_LLC_MSHR` `8 → 16`；`AXI_LLC VQD` `8 → 32`（`NVL` `27 → 51`）；L1 预取 `h1 → 硬件 Berti (PF_KIND=4, DTLB 跨页翻译)`；LLC 预取 `关 → Best-Offset (LLC_BOP=1)`；`trace-model` 默认配置同步对齐 RTL（无需 `-D` 与环境变量）。
+- **设计改动与修掉的 bug**：
+  - RTL M1/M2/M3（`a48d2ec` / `b6f56ea` / `bc42c5e`）：16/16 MSHR、`axi_llc_bop`、`dcache_pf_berti_*` 及 DTLB 空闲口跨页翻译、`dcache_s1` 隐藏重试保留 `rty_pc_q`/`rty_va_q`；
+  - `axi_llc_pkg.sv`：`VQD` 8→32，消除 16-MSHR + BOP 下 `s01`/`s07` victim queue 满断言；
+  - `idu_ctrl_decode.sv` + `InstDecode.cpp`：补全 RV64IM+Zba/Zbb `OP-32` 精确合法性检查，消除 `s03` 错误路径非法 `OP-32` 改写寄存器分歧；
+  - `LsuPipeInternal.h`：`ms_load_value` 删除 `off + lw > XB` 早退并按 RTL `lsu_pkg.sv:extract_data` 统一右移 `8*off` 扩展，消除 `s20` 跨 dword 非对齐陈旧 load 分歧。
+- **验证范围**：跑了全量 SPEC06 INT 386/386、RTL `lint_chip.sh` + `fm_gate.sh` 64/64、trace-model 单次从 0 启动 Linux 到 `rv64 login:`、27 窗全量 Linux 对齐；未跑综合（换 DC）及 3 个缺 `vm/` 构建的裸机程序（`fence-i-self-modify`、`unalign`、`wanshu`）。
+- **对应记录**：[EXPLORATION.md](EXPLORATION.md) EXP-048；[LOG.md](LOG.md) 2026-11-20；[LINUX_ALIGN.md](../trace-model/docs/LINUX_ALIGN.md)。

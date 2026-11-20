@@ -24,7 +24,7 @@ AI-Huma/                     总仓库：全项目文档（本目录）
 | 把探索结论合入 main | [WORKFLOW.md](WORKFLOW.md) 第 6 节（步骤清单，含 6.1 文档整理） | [MAIN_RECORDS.md](MAIN_RECORDS.md) 的格式 |
 | 查某个环境变量（运行时开关）的含义和默认值 | trace-model [docs/ENV_VARS.md](../trace-model/docs/ENV_VARS.md)（全部 103 个） | trace-model [docs/PROJECT.md](../trace-model/docs/PROJECT.md) |
 | 构建 / 运行 rv64（`XLEN=64`） | [../README.md](../README.md) “复现”的 rv64 段 | rtl [scripts/README.md](../rtl/scripts/README.md)、[EXPLORATION.md](EXPLORATION.md) EXP-029 |
-| 在云服务器上跑 SPEC | [SERVER.md](SERVER.md) | [PMU.md](PMU.md)（TMA 口径） |
+| 在集群 / 服务器上跑 SPEC | [SERVER.md](SERVER.md) | [PMU.md](PMU.md)（TMA 口径） |
 | 构建、跑 trace-model 和它的 gate | trace-model [README.md](../trace-model/README.md) | trace-model [docs/PROJECT.md](../trace-model/docs/PROJECT.md)（架构、gate、参数开关） |
 | 改核参数（IQ 大小、端口数……） | trace-model [docs/PROJECT.md](../trace-model/docs/PROJECT.md) “Configuration knobs” | rtl [scripts/README.md](../rtl/scripts/README.md)（`make cfg`、`lint_chip.sh`） |
 | 写或改 RTL | rtl [docs/README.md](../rtl/docs/README.md) | [01 编码规范](../rtl/docs/01-rtl-coding-standard.md)、[modules/](../rtl/docs/modules/) 里该模块的笔记 |
@@ -45,7 +45,7 @@ AI-Huma/                     总仓库：全项目文档（本目录）
 | [TODO.md](TODO.md) | **唯一的**待办清单（进行中 / 待做：验证、RTL 实现、各次合入后的收尾、流程与工具） | 随时；做完删除并在 LOG 留一行 |
 | [LOG.md](LOG.md) | 每个 commit 一行：做了什么、怎么验证、结论 | 每次提交 |
 | [EXPLORATION.md](EXPLORATION.md) | 每次架构/性能探索一节（EXP-编号）：问题、方法、模型近似、结果、结论；不论是否合入 | 每次探索 |
-| [SERVER.md](SERVER.md) | 云服务器怎么用：`fleet.sh`、发源码、起 SPEC 任务、取结果、现成的 main 结果 | 换服务器或流程变化时 |
+| [SERVER.md](SERVER.md) | 服务器与集群怎么用：`iprc-jump`（9950X3D 跳板/短编译）、`login-inband`、`eda` 计算集群、NFS SPEC checkpoint 与批跑流程 | 换服务器或流程变化时 |
 | [PMU.md](PMU.md) | 性能监控单元：事件表、TMA 口径、硬件计数器块、trace-model 分析层、接进 RTL 的计划 | PMU 设计变化时 |
 | [MAIN_RECORDS.md](MAIN_RECORDS.md) | 每次合入 main 一行（版本、正确性、性能、RTL 周期、综合）+ 一节“变化”；**当前数字的权威来源** | 每次合入 main |
 

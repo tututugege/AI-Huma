@@ -63,7 +63,7 @@ git submodule update --init          # 取出 function-model、trace-model、rtl
 - [docs/TODO.md](docs/TODO.md)：全项目唯一的待办清单。
 - [docs/MAIN_RECORDS.md](docs/MAIN_RECORDS.md)：每次合入 main 的性能、面积和“变化”；**当前数字以这里为准**。
 - [docs/EXPLORATION.md](docs/EXPLORATION.md)：架构探索记录；[docs/LOG.md](docs/LOG.md)：每个 commit 一行。
-- [docs/PMU.md](docs/PMU.md)：性能监控单元与 TMA；[docs/SERVER.md](docs/SERVER.md)：云服务器怎么跑 SPEC。
+- [docs/PMU.md](docs/PMU.md)：性能监控单元与 TMA；[docs/SERVER.md](docs/SERVER.md)：`iprc-jump` 与 `eda` 集群怎么编译、跑 SPEC。
 - [trace-model/docs/ENV_VARS.md](trace-model/docs/ENV_VARS.md)：时序模型的全部环境变量（默认值、用途）；[trace-model/docs/SCHEDULING.md](trace-model/docs/SCHEDULING.md)：模块写法、接口声明、调度生成和工具看不见的共享状态（[MODULE_CONTRACT.md](trace-model/docs/MODULE_CONTRACT.md) 是过程记录）。
 
 ## 核心原则

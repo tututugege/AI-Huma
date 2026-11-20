@@ -6,6 +6,7 @@
 
 | 编号 | 日期 | 题目 | 分支 | 状态 | 一句话结论 |
 |---|---|---|---|---|---|
+| [EXP-048](#exp-048-l1-硬件-berti--llc-bop--mshr-1616-预取体系与-rtl-全程对齐) | 2026-11-20 | L1 硬件 Berti（`PF_KIND=4` + DTLB 跨页翻译）+ LLC Best-Offset（`LLC_BOP=1`）+ L1D/LLC MSHR 16/16，三阶段（M1/M2/M3）写入 RTL 并完成全量 rv64gc Linux 对齐 | trace-model `exp/dse-fork`、rtl `exp/pf-berti-bop` | **已合入 main（2026-11-20：trace-model `6df4312`、rtl `6e2d188`）** | 全量 SPEC06 INT 386 点几何平均 **+6.58%**（libquantum +37.14%、mcf +28.14%、gcc +7.90%、astar +3.35%，零回退）；trace-model 单次从 0 启动 Linux 到 `rv64 login:` PASS；27 窗（0→130M）RTL 对齐修掉 3 类根因（`VQD=32`、非法 `OP-32` 译码、跨 dword 非对齐 load 污点） |
 | [EXP-045](#exp-045-cache-替换策略llc-与-l1i-改为-srrip) | 2026-11-19 | cache 替换策略：LLC（rr / PLRU / LRU / SRRIP / BRRIP / DRRIP）、L1I（rr / PLRU / SRRIP）、TLB（rr / NRU / PLRU）在周期模型里实现并比较；LLC 和 L1I 的 SRRIP 写进 RTL | trace-model `exp/llc-plru`（`429172d`，工作区 `trace-model-llcplru`）、rtl `exp/llc-plru`（`aac554a`） | **已合入 main（2026-11-19，与 EXP-046 一起：trace-model `8fd0ae3`、rtl `b9fd0df`，未推送）** | 29 个 SPEC06 rv64gc 高权重点：LLC SRRIP +1.23%（omnetpp +9.0%）、再加 L1I SRRIP 合计 **+1.63%**；TLB ≤ +0.12%、不采用；RTL fm_gate 67/67、周期与模型逐个相等；深度 axi_llc 238 不变、icache 69 → 70 |
 | [EXP-046](#exp-046-写口发射时调度选择前查完成周期浮点写通道压缩) | 2026-11-19 | 写口：完成周期的检查移到选择之前（`CFG_WB_PRESEL`），完成周期忙表改成移位寄存器，浮点寄存器堆写通道按发射时的写口预约压缩 | trace-model `exp/wb-port`（`ff96476`、`60aa7e8`），rtl `exp/wb-presel`（`d093291`、`7957ec9`、`f2674cf`） | **已合入 main（2026-11-19，集成分支 trace-model `exp/wb-llc` `8fd0ae3`、rtl `exp/wb-llc-rtl` `b9fd0df`，未推送）** | 模型：67 个 RVC 程序周期 −0.49%，SPEC06 386 点 IPC +0.01%；RTL：isu 单元 −0.9%、深度 88→89，prf 单元 −37%、深度 36→27（单模块口径），整数写口 21→13、浮点 21→6；门禁 67/67、周期与模型相等 |
 | [EXP-044](#exp-044-rtl-降深度那一轮和-linux-窗口对齐) | 2026-11-19 | RTL 降深度那一轮：两个 INT 队列、合并访存队列、FLUSH_REG、前端 / BPU / LSU 的低深度改写，模型默认值 = RTL 配置，Linux 12 个窗口对齐 | rtl `exp/agu-share`、trace-model `exp/tlb-ports` | 已合入 main | 67 个程序周期 +1.92%、SPEC06 386 点 IPC −2.15%（hmmer −8.6%），12 个 Linux 窗口全部 PASS；整机深度没有最新数 |
@@ -46,6 +47,40 @@
 | [EXP-003](#exp-003-rob-与-prf-扩大到-256) | 2026-11-04 | ROB/PRF 扩大到 192、256 | trace-model `exp/area-explore` | 未提交、未合入 | 都翻倍到 256 只快约 0.8%（coremark 3%），ROB 128 合理 |
 | [EXP-002](#exp-002-全核面积浪费排查) | 2026-11-04 | 全核面积浪费排查：各 IQ、ibuf、front2back、分支资源、ALU/BRU 端口 | trace-model `exp/area-explore` | 未提交、未合入 | IQ 总项数 384→192、BRU 4→2 等组合后无性能损失；BPU 存储需大负载评估（“ROB 是瓶颈”的说法已被 EXP-003 否定） |
 | [EXP-001](#exp-001-面积优化三个方向) | 2026-11-04 | 面积优化：FTQ 合并、LSU 端口、LD/STA IQ 合并 | trace-model `exp/area-explore` | 未提交、未合入 | 三个方向都能省面积，性能代价 0–1% |
+
+---
+
+## EXP-048 L1 硬件 Berti + LLC BOP + MSHR 16/16 预取体系与 RTL 全程对齐
+
+- **日期**：2026-11-20。**分支**：trace-model `exp/dse-fork`（基于 `main` `8fd0ae3`）；rtl `exp/pf-berti-bop`（基于 `main` `b9fd0df`）。**状态**：**已合入 `main`**（2026-11-20：trace-model `6df4312`、rtl `6e2d188`）。
+- **问题**：`main` 基线使用 8/8 MSHR（L1D 8、LLC 8）与 L1 `h1` 预取、无 LLC 预取。全量 SPEC06 INT 访存密集程序（mcf、libquantum、gcc、astar、omnetpp）存在大量 L1D/LLC miss 与 MLP 受限，需要一套面积可控、严格单拍/硬件可实现（1-op/cycle）的 L1+LLC 预取组合并完整写入 RTL。
+- **方案（三阶段落地）**：
+  - **M1（MSHR 16/16 + `VQD=32`）**：L1D MSHR `8 → 16`、LLC MSHR `8 → 16`（及 AXI 互连读槽 `16`），LLC 受害行写回队列 `VQD = 8 → 32`（`NVL = 51`，与模型 `AXI_LLC.h` 深度一致，避免 16 MSHR + BOP 并发换出满队列）。
+  - **M2（LLC Best-Offset 预取，`LLC_BOP=1`）**：在 `axi_llc` 中实现硬件 BOP（Recent-Request 表 + 26 偏移轮询评分 + 候选 FIFO，受 MSHR 保留槽与在飞上限反压）。
+  - **M3（L1 硬件 Berti，`PF_KIND=4` + DTLB 跨页翻译）**：在 `dcache` 中实现 1-op/cycle 硬件忠实版 Berti（`dcache_pf_berti_*.sv`，16 路历史表 + 按 PC 步长置信度表 + 候选队列 + `dcache_s1` 隐藏重试保留 `rty_pc_q`/`rty_va_q`），跨页虚拟地址候选通过真实 DTLB 空闲端口翻译（零额外 TLB 端口）。
+- **开关与默认值**：实验期通过 `PF_KIND=4`、`LLC_BOP=1` 及 `CFG_DCACHE_MSHR=16` / `CONFIG_AXI_LLC_MSHR_NUM=16u` 控制；合入 `main` 前对齐为默认配置（不依赖环境变量与 `-D`）。
+- **性能结果（全量 SPEC06 INT，12 程序 386 个 SimPoint 检查点，386/386 完成，0 失败）**：
+
+| Benchmark | Pts | `main` h1(8/8) | sw b16(16/16) | vs h1 | RTL BertiHw(8/16) | vs h1 | **RTL BertiHw(16/16)** | **vs h1** | hw/b16 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 400.perlbench | 24 | 2.876 | 2.906 | +1.04% | 2.909 | +1.16% | **2.916** | **+1.38%** | +0.34% |
+| 401.bzip2 | 48 | 2.325 | 2.373 | +2.09% | 2.370 | +1.97% | **2.374** | **+2.13%** | +0.05% |
+| 403.gcc | 34 | 1.431 | 1.544 | +7.93% | 1.529 | +6.84% | **1.544** | **+7.90%** | −0.03% |
+| 429.mcf | 45 | 0.309 | 0.389 | +26.02% | 0.389 | +26.24% | **0.395** | **+28.14%** | +1.68% |
+| 445.gobmk | 29 | 2.193 | 2.195 | +0.09% | 2.195 | +0.09% | **2.194** | **+0.04%** | −0.05% |
+| 456.hmmer | 23 | 5.256 | 5.272 | +0.31% | 5.276 | +0.39% | **5.277** | **+0.40%** | +0.09% |
+| 458.sjeng | 27 | 2.285 | 2.306 | +0.95% | 2.307 | +0.99% | **2.307** | **+0.99%** | +0.04% |
+| 462.libquantum | 36 | 1.543 | 2.131 | +38.10% | 1.723 | +11.64% | **2.116** | **+37.14%** | −0.70% |
+| 464.h264ref | 35 | 3.975 | 3.982 | +0.17% | 3.981 | +0.16% | **3.982** | **+0.18%** | +0.01% |
+| 471.omnetpp | 25 | 0.919 | 0.938 | +2.08% | 0.940 | +2.27% | **0.940** | **+2.33%** | +0.24% |
+| 473.astar | 26 | 1.148 | 1.184 | +3.16% | 1.176 | +2.50% | **1.186** | **+3.35%** | +0.18% |
+| 483.xalancbmk | 34 | 1.863 | 1.882 | +1.07% | 1.887 | +1.30% | **1.897** | **+1.84%** | +0.76% |
+| **GEOMEAN** | **386** | **11.37 /GHz** | — | — | — | **+4.40%** | **12.11 /GHz** | **+6.58%** | **+0.22%** |
+
+- **Linux 验证与逐周期对齐**：
+  - `trace-model`（`sim64_bop14`，`PF_KIND=4 LLC_BOP=1`）单次从复位启动 rv64gc Linux 5.15.170 直达 `rv64 login:`（1.35 亿条指令，IPC `0.8594`，L1 Berti 准确率 `29.6%`、DTLB 跨页命中率 `98.8%`、LLC BOP 准确率 `73.1%`，0 报错）。
+  - 27 个 5M 步长 rv64gc Linux 检查点窗口（`s00..s26`，每窗 `SOC_TB_MAX_INSTS=5100000`，无缝覆盖 `0 → 135.1M` 共 1.377 亿条指令）全量 RTL vs `trace-model` **27/27 PT/UP 逐周期相等、0 FM 不一致**，修掉 3 类根因（详见 `trace-model/docs/LINUX_ALIGN.md`）：① `axi_llc_pkg.sv` `VQD = 8 → 32`；② 双边 `OP-32` 非法指令译码（`idu_ctrl_decode.sv` + `InstDecode.cpp`）；③ 模型 `ms_load_value` 跨 dword 非对齐 load 对齐 RTL `extract_data`（`LsuPipeInternal.h`）。
+- **综合**：本轮暂不做综合（后续统一切换 DC 综合）。
 
 ---
 
