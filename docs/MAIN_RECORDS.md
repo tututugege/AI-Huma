@@ -10,6 +10,7 @@
 
 | 日期 | 版本（总仓库 / function-model / trace-model / rtl） | 正确性 | dhrystone 周期 (IPC) | coremark 周期 (IPC) | memory-stress-small 周期 (IPC) | RTL 周期 | 综合（工具 / 频率 / 面积 / WNS） | 说明 |
 |---|---|---|---|---|---|---|---|---|
+| 2026-11-21 | 本行所在提交 / 未动（`55affa0`）/ `ef61350` / `a4dcfb9` | **EXP-050（块级 1-Ahead FTB + S2 Block-TAGE/ITT 分支预测器，里程碑 A）+ `LsuPipeInternal.h` 污染 store 旧物理地址 STLF 修复**。trace-model（零环境变量，实验开关已删）：`comb_graph.py --check` 0 隐患；门禁 62/62、62/62（`PF_ENABLE=0`）、C 68/68（新基线，含 `build_tests.sh` 对 Ubuntu clang-18/lld-18 的 `.data/.sdata` 与 `unalign` 修复）；`rv64gc` Linux 5.15.170 从复位启动到 `rv64 login:`（0 oops/panic）。RTL：`lint.sh rtl/frontend/bpu`（15 文件）与 `lint_chip.sh` 均 0 警告/0 错误；`fm_gate.sh` **67/67 PASS、0 FAIL、0 SKIP、0 FM 不一致、周期与 `ref_cycles.txt` 0 处不同**；**`rv64gc` + `Sv39` Linux 26 段检查点窗口（`s01..s26`，每段 400 万周期，合计 1.04 亿周期、132,473,668 条指令）26/26 PASS、0 FM 不一致、PT（103,974 bins）与 UP（103,144 bins）指纹全程 0 差异** | 102,229 (2.53)，−6.13% | 275,332 (2.29)，−5.28% | 343,584 (3.05)，+0.04% | RTL = trace-model（`ref_cycles.txt` 67/67 全部相同；`itt-dispatch` 208,168 −3.36%、`dhrystone` −6.13%、`coremark` −5.28%） | 未做工艺库/WNS；`eda-06` Yosys 通用门（`SYNTH_LIGHT=1 SYNTH_MEM=1 SYNTH_LTP=1 SYNTH_NO_MEMPRIO=1 strash;balance;map`）：`bpu` **549,458 → 274,811 单元（−50.0%）**、深度 **134 → 131 层**（最长路径仍在原有 `u_spec.aras_q → spec_d`）；`front_top` **898,333 单元 / 153 层**（原超 3600s 未出数） | 全量 SPEC06 INT 386 点（SimPoint 加权，vs `main 6df4312`）：**+8.48%（`12.11 → 13.14 分/GHz`）**，12/12 程序全正零回退（sjeng +23.65%、hmmer +16.00%、perlbench +15.18%、gcc +13.37%、gobmk +13.11%）；`FE.bw 31.23% → 22.85% (−8.38 pp)`。删 22 个旧 16-bank BPU SV 文件，零外部端口改动。RTL 未跑 SPEC，未跑从复位 1.4 亿周期全程指纹对比。见下文「变化」、EXPLORATION EXP-050、[BPU_OPT_PLAN.md](BPU_OPT_PLAN.md) |
 | 2026-11-19 | 本行所在提交 / 未动（`55affa0`，trace-model 与 rtl 现在都按固定版本 `FM_REV` 自己构建）/ `8fd0ae3` / `b9fd0df` | EXP-045（LLC / L1I SRRIP）+ EXP-046（选择前查完成周期、完成周期忙表移位寄存器、浮点写通道 21→6、写回总线按通道 13 条）+ 默认配置 = RTL（删 LDQ/STQ 看门狗）+ fdoff 修复。trace-model：门禁 62/62、62/62（关预取）、C 68/68（新基线）；删开关 / 删看门狗前后在 C、标准、RTL 三套程序上周期逐个相同。RTL：`lint_chip` 0；`fm_gate.sh` 67/67、周期与 `ref_cycles.txt`（`regen_refs`/`tm_cycles` 生成）0 处不同、0 个函数模型不一致，不设任何环境变量（`fm_lib.sh`、`build/progs`）；`tests/wb_gate` 0 不一致；Linux 子窗口 s00–s12 共 13 个全部 PASS（约 6400 万条指令逐条检查，PT / UP 指纹全程相等） | 108,907 (2.37)，+0.16% | 290,676 (2.17)，−1.43% | 343,459 (3.05)，−0.06% | RTL = trace-model（`ref_cycles.txt` 67 个程序全部相同；67 个程序里 14 个周期变化，coremark −1.43%、shuixianhua −23%） | 未做整芯片综合；单模块 yosys 通用门（`synth_depth.sh`，`strash;balance;map`）：`isu` 957,032 → 948,874 单元、深度 88 → 89；`prf` 1,077,848 → 679,466 单元（单模块口径，含恒 0 通道的边界效应）、深度 36 → 27 | SPEC06 rv64gc 全量 386 点（eda，PMU 开）：IPC 相对旧 main +1.66%（omnetpp +9.9%、xalancbmk +3.4%、mcf +2.9%，libquantum −1.2%）；其中 EXP-046 本身 +0.01%，SRRIP 是主要来源。PMU 的 TMA 分类修正（重命名 / IDU 停顿算 Backend）同批合入。见 EXPLORATION EXP-045 / EXP-046、WORKFLOW 3.3 |
 | 2026-11-19 | 本行所在提交 / 未动（`55affa0`）/ `c795844` / `a26a102` | RTL：`lint_chip` 0；`fm_gate.sh` 67/67、周期与 `ref_cycles.txt` 0 处不同、0 个函数模型不一致；Linux 检查点窗口 s00–s11 共 12 个全部 PASS（约 5900 万条指令逐条检查，PT / UP 指纹全程相等）。trace-model：RVC=0 门禁 62/62（新基线）、RVC=1 C 门禁 67/67（新基线）、67 个程序周期 = RTL；Linux 从复位启动到 `rv64 login:`（无 oops / panic）。SPEC06 rv64gc 386 点（eda 集群）新旧两个配置各跑一遍，0 失败 | 108,732 (2.38)，相对上一版 main 的 100,722 +7.95% | 294,895 (2.14)，相对 286,265 +3.0% | 343,672 (3.05)，相对 343,381 +0.08% | RTL = trace-model：dhrystone 108,732、coremark 294,895、memory-stress-small 343,672（`ref_cycles.txt`，67 个程序几何平均 +1.92%） | 未做整芯片综合（整芯片要一次一个、耗时几十分钟到数小时，这一轮只做了单模块；yosys 通用门深度代理，无工艺库 / 无 WNS）：`bpu_ub_track_ser` 528 → 97、`bpu_ub_look` 75 → 29、`mul_unit` 209 → 90；整机 `back_top` 135 / `front_top` 132 是后来又改了几处之前的数，`ren` 110、`axi_llc` 238 仍超过 100 层（见 TODO） | **有意的性能回退**：67 个程序周期 +1.92%，SPEC06 386 点 IPC 几何平均 −2.15%（hmmer −8.6%），换来压低综合深度的结构（两个 INT 队列、合并访存队列、FLUSH_REG 等，[EXPLORATION.md](EXPLORATION.md) EXP-044）。这一行的固定负载用 rv64 的 `big/dhrystone.bin`、`big/coremark.bin`（RTL 门禁里的版本），与前几行 trace-model 列的数字（另一版程序）不可直接比；相对上一版用 RTL 的 `ref_cycles.txt` 比 |
 | 2026-11-17 | 本行所在提交 / 未动 / 未动 / `261bd67` | RTL TLB 口并行化 + first_set 对数深度 + 测试平台自带 fpr.h、构建提速（[RTL_TLB_PAR.md](RTL_TLB_PAR.md)）：`tests/tlb_par` 300 万拍新旧 TLB 核心 0 不一致；lint_chip 0；fm_gate 67/67 周期 0 差异；Linux 窗口 s03/s07/s11 3/3 PASS（trace-model `5b95b35`、function-model `55affa0`），与 rtl main 逐字节相同 | 未动（trace-model 未改） | 未动 | 未动 | 不变：dhrystone 100,722、coremark 286,265、memory-stress-small 343,381（与 `ref_cycles.txt` 相同） | yosys 通用门深度代理（无工艺库 / 无 WNS）：`tlb_mmu` 163 → 67、单元 84,088 → 80,255；`lsu_stlf_match` 139 → 97、`isu_iq_select` 69 → 46（rtl `docs/09-synthesis-report.md` 第 11 节） | 只改结构不改周期；rv64 Linux 测试平台构建 111 s → 89 s |
@@ -38,6 +39,29 @@
 | 2026-11-04 | `6210e46` / `4f99467` / `41a5cdd` / `dc46f6d`（rtl 工作区有未提交修改） | gate 62/62；RTL gate+vm 64 个程序逐条对比一致 | 150,838 (1.935) | 226,991 (2.371) | 189,128 (5.718) | 待补 | **未做**：还没有综合流程（见 README"下一步"第 2 条） | 起始记录（本表从这里开始） |
 
 ## 变化
+
+### 2026-11-21 EXP-050 块级 1-Ahead FTB 分支预测器（里程碑 A）与 LSU_MS_DATA 污染 store 前递修复
+
+将原有 16-bank 逐指令槽 BPU 整体替换为**块级 1-Ahead FTB + S2 Block-TAGE/ITT + 1-branch/cycle 提交训练队列（`ah1_4k_a2k1k` + `FTB_BRQ=2`）**，消除 `of2` 同拍组合环，模型全量 SPEC06 INT 提升 **+8.48%（`12.11 → 13.14 分/GHz`）** 且 RTL `bpu` 单元数直接减半（**−50.0%**），并补齐 `LsuPipeInternal.h` 污染地址 store 前递缺口实现 26 段 rv64gc Linux 检查点 100% 0 差异。
+
+**配置与接口变化**
+
+| 项目 | 旧值（16-bank BPU） | 新值（EXP-050 里程碑 A，默认即唯一实现） |
+|---|---|---|
+| BPU 预测组织 | 16-bank 逐槽 Type + BTB + TAGE + 3 表 ITT | 块级 S0 uFTB（256×4）+ S1 Main FTB（4K×4，4 槽禁交换，含 1b `carried`）+ 1-Ahead FTB（2K×8）/ Block-TAGE（1K×4 表）/ Block-ITT（256 项）+ S2 兜底 Block-TAGE（4K×4 表）/ Block-ITT（256 项） |
+| 外部端口与参数包 | `bpu.sv` 既有端口；`ttg_cfg_pkg.sv` | **零外部端口改动**（10 位 `blk_id` 经既有 `out_tage_idxs[*][0]` 透传）；`include/config.h` 与 `ttg_cfg_pkg.sv` 不变 |
+| 实验开关清理 | `exp/ftb-bpu` (`375b080`) 保留 19 个 `BPU_FTB`/`FTB_*` DSE 开关 | 按 WORKFLOW 7.6 全部删除，默认即 RTL 配置（零环境变量）；保留 `DS3_CONFIG` |
+| 基线与参考表 | `results/baseline/baseline{,_nopf,_c}.csv`、`ref_cycles{,_nopf}.txt` | 全部用默认零环境变量模型重生成（`baseline` 62、`nopf` 62、`baseline_c` 68、`ref_cycles` 67） |
+
+**设计改动与修掉的问题**
+- **RTL（`a4dcfb9`）**：删除 22 个旧 16-bank BPU SV 文件，新增 `bpu_types_pkg.sv`、`bpu_ftb_tab.sv`、`bpu_ftb_tage.sv`、`bpu_ftb_itt.sv`、`bpu_ftb_brq.sv`、`bpu_ftb_arrays.sv` 并重写 `bpu.sv`（更新 `bpu_stage_pkg.sv`、`bpu_ctl.sv`、`bpu_pdq.sv`、`tb/soc/{pmu_public.vlt,soc_tb.cpp}`）；全核 RTL 文件 283 个 / 36,360 行（`05-module-tracker.md`）。
+- **trace-model（`ef61350`）**：`BpuFtb.h` / `BPU_pipe.h` 精简为唯一块级 1-Ahead 实现；修复 `back-end/Lsu/LsuPipeInternal.h::ms_load_value` 对 `m.atnt=1`（地址污染）老 store 跳过 STLF 前递的问题——当其旧物理地址 `t.paddr`（`t.pa_v && !t.pf && !t.mmio`）命中年轻 load 时正确前递旧值，一次消除 `s10`/`s15` 两处 Linux 检查点分叉；修复 `scripts/build_tests.sh` 在 Ubuntu `clang-18`/`ld.lld-18` 下 `.data/.sdata` 溢出及 `unalign` 缺少 `-fmax-type-align=1` 的问题。
+
+**验证范围**
+- **跑了**：`comb_graph.py --check` 0 隐患；trace-model `run_gate.sh` 62/62、`PF_ENABLE=0` 62/62、`run_gate_c.sh` 68/68、`linux_check.sh`（rv64gc Linux 5.15.170 到 `rv64 login:`，0 oops/panic）；RTL `lint.sh rtl/frontend/bpu` & `lint_chip.sh` 0 警告/0 错误、`fm_gate.sh` **67/67 PASS、0 FM 不一致、0 周期偏差**；`eda-08`/`eda-09` rv64gc Linux 26 段检查点（`s01..s26`，4M 周期/段，132,473,668 条指令）**26/26 PASS、0 FM 不一致、103,974 PT bins / 103,144 UP bins 全程 0 差异**；`eda-06` Yosys 综合 `bpu`（`274,811 cells` / `131` 层，−50.0% 单元）与 `front_top`（`898,333 cells` / `153` 层）；SPEC06 INT 386 点（`+8.48%`，12/12 全正）。
+- **没跑**：RTL SPEC06；RTL 从复位 1.4 亿周期连续 Linux 指纹对比；工艺库时序综合（Synopsys DC / WNS）。
+
+**对应** EXP-050；总仓库本行所在提交 / function-model `55affa0`（未动）/ trace-model `ef61350` / rtl `a4dcfb9`。
 
 ### 2026-11-19 RTL 降深度那一轮：两个 INT 队列、合并访存队列、FLUSH_REG、低深度改写，模型默认值 = RTL 配置（EXP-044）
 

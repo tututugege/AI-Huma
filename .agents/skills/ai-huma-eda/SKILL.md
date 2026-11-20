@@ -2,53 +2,45 @@
 name: ai-huma-eda
 description: >-
   Use this skill whenever running large-scale tests, SPEC06 evaluations, multi-config DSE,
-  long RTL/Linux simulations, or large-module synthesis on the iprc-jump and eda compute cluster,
-  or when cross-compiling binaries from iprc-jump for eda nodes.
+  long RTL/Linux simulations, or Yosys/DC synthesis on the eda compute cluster from the local
+  iprc-jump dev machine, or when cross-compiling static binaries on iprc-jump for eda nodes.
 ---
 
-# AI-Huma 集群与大规模测试指南（iprc-jump + eda）
+# AI-Huma 集群与大规模测试指南（开发机 `iprc-jump` → `eda` 集群）
 
-完整权威说明见 [docs/SERVER.md](../../../docs/SERVER.md)。本机只做日常编辑、lint 和小规模 gate；所有大规模评估统一上 `eda` 集群。
+完整权威说明见 [docs/SERVER.md](../../../docs/SERVER.md)。当前已直接在 `iprc-jump`（9950X3D）运行 `agy`，日常编辑、短编译、lint 和小规模 gate 直接在本机做；所有大规模评估与综合统一经 `login-inband` 上 `eda` 集群。
 
 ## 1. 节点拓扑与分工
 
 ```text
-本机 / WSL ──▶ iprc-jump (100.116.179.124) ──▶ login-inband (10.208.120.12) ──▶ eda-00 ~ eda-10
+iprc-jump（当前开发机，ubuntu） ──▶ login-inband (10.208.120.12) ──▶ eda-04 ~ eda-10
 ```
 
-- **`iprc-jump`**（9950X3D，16C/32T，60 GiB）：跳板机，用于短编译、快速构建与静态打包。根盘余量有限（约 90 GB），勿长期堆积大产物。
-- **`login-inband`**（`10.208.120.12`）：仅用于中转、查看 NFS、分发任务；**禁止跑重任务**。
+- **`iprc-jump`（本机，9950X3D，16C/32T，60 GiB）**：代码编辑、短编译、快速构建、lint、小规模 gate 与给 `eda` 静态打包。根盘 1.8T（余量约 270 GB），勿长期堆积临时大产物。
+- **`login-inband`**（`10.208.120.12`）：本机已配好免密直连（`~/.ssh/config`），仅用于中转、查看 NFS、分发任务；**禁止跑重任务**。
 - **`eda-04` ~ `eda-10`**：挂载 `/nfs_global/S/houruyao`（注意 **`eda-01` ~ `eda-03` 不挂载 `/nfs_global`**）。大任务优先在 `eda-04` ~ `eda-10` 间平摊。
 
 ## 2. 选节点与连接前检查
 
-1. **WSL Tailscale 冷启动预热**（自动化脚本开头必加）：
-   ```bash
-   for i in $(seq 1 15); do
-     tailscale ping -c 1 --timeout=2s 100.116.179.124 >/dev/null 2>&1 && break
-     sleep 1
-   done
-   ```
-   同步源码用 `rsync -az` 或 `tar -czf` + `scp`，不要用 `tar | ssh` 管道。
+起任务前先通过 `login-inband` 一次性并行查 `eda-04` ~ `eda-10` 负载与空闲内存（`04`~`10` 默认都挂 `/nfs_global`，无需反复测 NFS）：
+```bash
+ssh -o ConnectTimeout=5 -o BatchMode=yes login-inband 'for n in eda-04 eda-05 eda-06 eda-07 eda-08 eda-09 eda-10; do
+  (out=$(ssh -n -o ConnectTimeout=3 -o BatchMode=yes $n "uptime | sed \"s/.*load average/load/\" | tr -d \"\n\"; free -g | awk \"NR==2{printf \\\" avail=%sG\\\", \\\$7}\"" 2>/dev/null) || out="unreachable"
+   echo "$n: $out") &
+done; wait' | sort
+```
+- **派发原则**：从 `eda-04` ~ `eda-10` 中挑空闲节点，**在不 OOM 和不过载的前提下尽力多发**（`mcf` / `gcc` 单进程约占 3 GB RSS，按可用内存与剩余核数给足 `-P` 并发度并跨节点平摊）。
+- **传输产物**：直接在本机用 `scp` / `rsync -az` 传到 `login-inband:/nfs_global/S/houruyao/...`（不再经过 WSL / Tailscale）。
 
-2. **起任务前先通过 `login-inband` 一次性并行查 `eda-04` ~ `eda-10` 负载与空闲内存**（`04`~`10` 默认都挂 `/nfs_global`，无需反复测 NFS；不要在本机串行三跳 `ProxyJump`）：
-   ```bash
-   ssh -o ConnectTimeout=5 -o BatchMode=yes login-inband 'for n in eda-04 eda-05 eda-06 eda-07 eda-08 eda-09 eda-10; do
-     (out=$(ssh -n -o ConnectTimeout=3 -o BatchMode=yes $n "uptime | sed \"s/.*load average/load/\" | tr -d \"\n\"; free -g | awk \"NR==2{printf \\\" avail=%sG\\\", \\\$7}\"" 2>/dev/null) || out="unreachable"
-      echo "$n: $out") &
-   done; wait' | sort
-   ```
-   - **派发原则**：从 `eda-04` ~ `eda-10` 中挑空闲节点，**在不 OOM 和不过载的前提下尽力多发**（`mcf` / `gcc` 单进程约占 3 GB RSS，按可用内存与剩余核数给足 `-P` 并发度并跨节点平摊）。
+## 3. 跨机编译红线（本机 `iprc-jump` → `eda`）
 
-## 3. 跨机编译红线（`iprc-jump` → `eda`）
-
-- **指令集兼容**：`iprc-jump` 是 AMD Zen 5，`eda` 是 Intel Xeon Cascade Lake。编译给 `eda` 跑的程序必须把 `-march=native` / `-mtune=native` 改为 **`-march=x86-64-v3 -mtune=generic`**，否则触发 `SIGILL`。
-- **glibc 兼容**：`iprc-jump`（Ubuntu）glibc 高于 `eda`（CentOS 7 / Rocky），给 `eda` 的二进制必须**静态链接**（`-static`），或拷源码到 NFS 后直接在 `eda` 节点编译。
-- **Verilator 路径**：`iprc-jump` 非交互 SSH 不读 `~/.bashrc`，构建 RTL TB 前必须显式：
+- **指令集兼容**：本机 `iprc-jump` 是 AMD Zen 5，`eda` 是 Intel Xeon Cascade Lake。编译给 `eda` 跑的程序必须把 `-march=native` / `-mtune=native` 改为 **`-march=x86-64-v3 -mtune=generic`**，否则触发 `SIGILL`。
+- **glibc 兼容**：本机（Ubuntu）glibc 高于 `eda`（CentOS 7 / Rocky），给 `eda` 的二进制必须**静态链接**（`-static`），或拷源码到 NFS 后直接在 `eda` 节点编译。
+- **Verilator 路径**：本机系统 `/usr/bin/verilator` 是 5.020（编不过），且默认 `PATH` 未包含新版，构建 RTL TB 或跑 lint 前必须显式：
   ```bash
   export PATH="$HOME/rv64spec/verilator_src/bin:$PATH"
   ```
-  （使用 5.052，系统 `/usr/bin/verilator` 5.020 编不过。）
+  （使用 5.052。）
 - **Python 兼容**：`eda` 节点默认 `python3` 是 **Python 3.6.8**，脚本中禁止使用 `:=`、`match` 等 3.8+ 语法。
 
 ## 4. NFS 关键目录与 SPEC06 运行口径

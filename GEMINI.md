@@ -14,11 +14,12 @@ AI-Huma 是一个乱序 RISC-V（`rv64gc` + `Sv39`）CPU 设计项目，由总�
 - **未经用户明确要求，禁止 `git commit` 和 `git push`**。提交作者统一为 `tututugege <903306512@qq.com>`，每个 commit 只做一件事，附带实测验证结果（禁止写“应该没问题”）。
 - **`main` 仅维护 `rv64gc`**（`XLEN=64`、`FP=1`、`RVC=1`）；`rv32` 已归档在 `rv32-legacy` 分支，不要在 `main` 上新增 `rv32` 门禁。
 
-## 2. 计算资源分工（本机 vs 集群）
+## 2. 计算资源分工（当前开发机 `iprc-jump` vs `eda` 集群）
 
-- **本机**：仅做日常代码编辑、阅读、小规模 gate（`run_gate.sh` / `fm_gate.sh`）和 `lint.sh` / `lint_chip.sh`。
-- **`iprc-jump`（9950X3D 跳板机）**：短编译、快速构建、轻量调试与静态打包。
-- **`eda` 计算集群（`eda-04` ~ `eda-10`，挂载 `/nfs_global`）**：**所有大规模测试必须上 `eda` 集群**——包括 SPEC06（386 / 535 点）、多配置 DSE、长时间 RTL/Linux 仿真（`linux_segments_cmp.sh` / `linux_gate.sh`）和大模块综合。
+- **当前开发机（`iprc-jump`，9950X3D，16C/32T，60 GiB RAM）**：日常代码编辑、阅读、短编译/快速构建、轻量调试、`lint.sh` / `lint_chip.sh`、小规模 gate（`run_gate.sh` / `run_gate_c.sh` / `fm_gate.sh`）以及给 `eda` 静态打包。
+  - 跑任何 Verilator 命令前**必须**显式切换 Verilator 5.052：`export PATH="$HOME/rv64spec/verilator_src/bin:$PATH"`（系统 `/usr/bin/verilator` 是 5.020，编不过）。
+  - 给 `eda` 集群编译二进制时须改为 `-march=x86-64-v3 -mtune=generic` 并静态链接（`-static`），避免 AMD Zen 5 / Ubuntu glibc 与 `eda` 不兼容。
+- **`eda` 计算集群（`eda-04` ~ `eda-10`，经 `login-inband` 免密直连，挂载 `/nfs_global`）**：**所有大规模测试与综合必须上 `eda` 集群**——包括 SPEC06（386 / 535 点）、多配置 DSE、长时间 RTL/Linux 仿真（`linux_segments_cmp.sh` / `linux_gate.sh`）以及 Yosys / Synopsys DC 综合（本机未装 Yosys）。
 - **严禁在 `login-inband` 跑重任务**（仅作中转与 NFS 管理）；**严禁同时跑 Yosys 综合与 Verilator 编译/仿真**（防止 OOM），综合最多 2 个并行，大模块（`lsu`、`bpu`、`front_top`、`back_top`、整芯片）一次只能跑 1 个。
 
 ## 3. 配置、开关与文档铁律
@@ -38,7 +39,7 @@ AI-Huma 是一个乱序 RISC-V（`rv64gc` + `Sv39`）CPU 设计项目，由总�
 ## 4. 项目专用 Skills（按需加载）
 
 遇到以下任务时，先加载 `.agents/skills/` 中对应的 Skill：
-- `ai-huma-eda`：连接 `iprc-jump` / `eda` 集群、跨机静态编译、提交 SPEC06 或长跑 RTL/Linux 任务。
+- `ai-huma-eda`：直连 `login-inband` / `eda` 集群、从本机（`iprc-jump`）跨机静态编译、提交 SPEC06、长跑 RTL/Linux 或 Yosys/DC 综合任务。
 - `ai-huma-exp`：在 `trace-model` 上做架构/性能探索、调度检查与撰写 `EXPLORATION.md`。
 - `ai-huma-rtl-dev`：按文档先行流程开发/修改 RTL、写等价测试、跑 lint / `fm_gate` / Yosys 深度综合。
 - `ai-huma-merge-main`：将实验结论同步并合入三仓 `main`，更新基线、参考周期与全套文档。

@@ -29,10 +29,10 @@ description: >-
 ## 3. 分层验证
 
 1. **开关关闭（回归基线）**：
-   - 本机跑 gate：`bash scripts/run_gate.sh build/simulator results/gate`（及 `RVC=1` 的 `run_gate_c.sh`），周期必须与基线逐个相等。
+   - 本机（`iprc-jump`）跑 gate：`bash scripts/run_gate.sh build/simulator results/gate` 及 `run_gate_c.sh`（当前默认 `RVC=1`），周期必须与基线逐个相等。
 2. **开关开启（功能与时序自检）**：
-   - gate 全量 difftest Success，打开实验自带的不变量检查（如 `ME_CHECK=1` 等）。
-   - **必跑 Linux 启动**：改动涉及时序/访存/前端行为时，运行 `trace-model/scripts/linux_check.sh <模拟器> <镜像>`（67 个小程序抓不到 wrong-path 类时序回归）。
+   - gate 全量 difftest Success，打开实验自带的不变量检查。
+   - **必跑 Linux 启动**：改动涉及时序/访存/前端行为时，运行 `trace-model/scripts/linux_check.sh <模拟器> ~/rv64spec/linux_j.bin`（67 个小程序抓不到 wrong-path 类时序回归）。
 3. **大规模性能评估（上 `eda` 集群）**：
    - 激活 `ai-huma-eda` Skill，在 `eda-04` ~ `eda-10` 跑 SPEC06（先 59 点/抽样，再 386 点 `jobs95.txt`），**必须带 `PMU=1`** 输出 TMA 一级指标。
    - 对比已有 `main` 基线（先查记录和 NFS `res_*`，不重跑未变基线）。

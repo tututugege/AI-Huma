@@ -24,15 +24,17 @@ description: >-
 
 ## 3. 验证与门禁
 
-按顺序执行（本机做 lint 与小门禁；长跑 Linux 窗口和大模块综合上 `eda` 集群，见 `ai-huma-eda`）：
+按顺序执行（本机 `iprc-jump` 做 lint、短构建与小门禁，跑任何 Verilator 命令前**必须**先 `export PATH="$HOME/rv64spec/verilator_src/bin:$PATH"` 切到 5.052；长跑 Linux 窗口和 Yosys/DC 综合上 `eda` 集群，见 `ai-huma-eda`）：
 
 1. **Lint（0 警告）**：
    ```bash
+   export PATH="$HOME/rv64spec/verilator_src/bin:$PATH"
    cd rtl && bash scripts/lint.sh && bash scripts/lint_chip.sh
    ```
    改参数前先用 `CFG=<配置包> bash scripts/lint_chip.sh` 预查写死位宽。
 2. **整核逐条对比门禁**：
    ```bash
+   export PATH="$HOME/rv64spec/verilator_src/bin:$PATH"
    SOC_FM=1 SOC_OUT=$PWD/build/soc_fm bash tb/soc/build.sh
    bash scripts/fm_gate.sh $PWD/build/soc_fm/obj/soc_tb $PWD/build/gate
    ```
@@ -41,11 +43,11 @@ description: >-
    - **新特性短测试**：在 `rtl/programs/directed/` 补一个 rv64 短程序，接入 `build.sh` 与 `ref_cycles*.txt`，并**确认它在没有该特性的旧实现上会失败**。
    - **组合逻辑降深度改写**：在 `rtl/tb/` 编写“新旧并排”随机等价测试（同随机输入比全部输出），并**植入一个已知 bug 验证测试能抓到**，不要留在 `/tmp`。
 4. **Linux 检查点窗口快速对齐**（行为改动后必跑）：
-   - 使用 `rtl/scripts/linux_segments_cmp.sh` 对比逐条检查与 PT/UP 指纹。
+   - 使用 `rtl/scripts/linux_segments_cmp.sh` 对比逐条检查与 PT/UP 指纹（全量 27 窗建议静态打包后上 `eda` 集群并行跑）。
    - 若出现分叉，结合 `FPR=<bin>`、`FPR_DUMP`、`drill_pmu.sh` 和 `SOC_TB_VCD=<起>:<止>:<文件>` + `scripts/vcd_query.py` 定位。
-5. **Yosys 面积与深度代理综合**：
+5. **Yosys / DC 面积与深度综合**（在 `eda-04` ~ `eda-10` 执行，本机未装 Yosys）：
    - **防 OOM 红线**：严禁与 Verilator 编译/仿真同时跑；综合最多 2 个并行，大模块（`lsu`、`bpu`、`front_top`、`back_top`、整芯片）一次 1 个。
-   - 改了组合逻辑必须重跑 `scripts/synth_depth.sh` / `scripts/synth_cfg.sh`，更新模块文档 `depth:` 行与第 6 节。
+   - 改了组合逻辑必须重跑 `scripts/synth_depth.sh`（带 `SYNTH_ABC="strash;balance;map"`，大存储模块加 `SYNTH_NO_MEMPRIO=1`）/ `scripts/synth_cfg.sh`，更新模块文档 `depth:` 行与第 6 节。
 
 ## 4. 提交前核对清单（`WORKFLOW.md` §7.3）
 

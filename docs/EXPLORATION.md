@@ -6,6 +6,7 @@
 
 | 编号 | 日期 | 题目 | 分支 | 状态 | 一句话结论 |
 |---|---|---|---|---|---|
+| [EXP-050](#exp-050-块级-ftb--1-ahead2-ahead-bpu里程碑-a-模型探索) | 2026-11-21 | 块级 FTB（S0 uFTB + S1/S2 Block-FTB/Block-TAGE/单块 Block-ITT）+ 硬件忠实 1-ahead / 2-ahead 流水（`ah1_4k_a2k1k` + `FTB_BRQ=2`，零 `of2` 组合环） | trace-model `exp/ftb-bpu`（归档 `375b080`）→ `merge/ftb-bpu`；rtl `rtl/ftb-bpu` | **已合入 main（2026-11-21：trace-model `ef61350`、rtl `a4dcfb9`）** | 全量 SPEC06 INT（386 点，12 程序全正零回退）：1-ahead（`ah1_4k_a2k1k`，零组合环）达 **+8.48%（`12.11 → 13.14 分/GHz`）**、`FE.bw 31.23% → 22.85%`；RTL 删 22 个旧 16-bank 文件零外部端口改动，Yosys `bpu` **549,458 → 274,811 单元（−50.0%）**、深度 134→131 层；`fm_gate` **67/67 0 周期偏差**，rv64gc Linux **26/26 段（1.325 亿指令）0 FM 不一致、PT/UP 指纹 0 差异** |
 | [EXP-048](#exp-048-l1-硬件-berti--llc-bop--mshr-1616-预取体系与-rtl-全程对齐) | 2026-11-20 | L1 硬件 Berti（`PF_KIND=4` + DTLB 跨页翻译）+ LLC Best-Offset（`LLC_BOP=1`）+ L1D/LLC MSHR 16/16，三阶段（M1/M2/M3）写入 RTL 并完成全量 rv64gc Linux 对齐 | trace-model `exp/dse-fork`、rtl `exp/pf-berti-bop` | **已合入 main（2026-11-20：trace-model `6df4312`、rtl `6e2d188`）** | 全量 SPEC06 INT 386 点几何平均 **+6.58%**（libquantum +37.14%、mcf +28.14%、gcc +7.90%、astar +3.35%，零回退）；trace-model 单次从 0 启动 Linux 到 `rv64 login:` PASS；27 窗（0→130M）RTL 对齐修掉 3 类根因（`VQD=32`、非法 `OP-32` 译码、跨 dword 非对齐 load 污点） |
 | [EXP-045](#exp-045-cache-替换策略llc-与-l1i-改为-srrip) | 2026-11-19 | cache 替换策略：LLC（rr / PLRU / LRU / SRRIP / BRRIP / DRRIP）、L1I（rr / PLRU / SRRIP）、TLB（rr / NRU / PLRU）在周期模型里实现并比较；LLC 和 L1I 的 SRRIP 写进 RTL | trace-model `exp/llc-plru`（`429172d`，工作区 `trace-model-llcplru`）、rtl `exp/llc-plru`（`aac554a`） | **已合入 main（2026-11-19，与 EXP-046 一起：trace-model `8fd0ae3`、rtl `b9fd0df`，未推送）** | 29 个 SPEC06 rv64gc 高权重点：LLC SRRIP +1.23%（omnetpp +9.0%）、再加 L1I SRRIP 合计 **+1.63%**；TLB ≤ +0.12%、不采用；RTL fm_gate 67/67、周期与模型逐个相等；深度 axi_llc 238 不变、icache 69 → 70 |
 | [EXP-046](#exp-046-写口发射时调度选择前查完成周期浮点写通道压缩) | 2026-11-19 | 写口：完成周期的检查移到选择之前（`CFG_WB_PRESEL`），完成周期忙表改成移位寄存器，浮点寄存器堆写通道按发射时的写口预约压缩 | trace-model `exp/wb-port`（`ff96476`、`60aa7e8`），rtl `exp/wb-presel`（`d093291`、`7957ec9`、`f2674cf`） | **已合入 main（2026-11-19，集成分支 trace-model `exp/wb-llc` `8fd0ae3`、rtl `exp/wb-llc-rtl` `b9fd0df`，未推送）** | 模型：67 个 RVC 程序周期 −0.49%，SPEC06 386 点 IPC +0.01%；RTL：isu 单元 −0.9%、深度 88→89，prf 单元 −37%、深度 36→27（单模块口径），整数写口 21→13、浮点 21→6；门禁 67/67、周期与模型相等 |
@@ -47,6 +48,52 @@
 | [EXP-003](#exp-003-rob-与-prf-扩大到-256) | 2026-11-04 | ROB/PRF 扩大到 192、256 | trace-model `exp/area-explore` | 未提交、未合入 | 都翻倍到 256 只快约 0.8%（coremark 3%），ROB 128 合理 |
 | [EXP-002](#exp-002-全核面积浪费排查) | 2026-11-04 | 全核面积浪费排查：各 IQ、ibuf、front2back、分支资源、ALU/BRU 端口 | trace-model `exp/area-explore` | 未提交、未合入 | IQ 总项数 384→192、BRU 4→2 等组合后无性能损失；BPU 存储需大负载评估（“ROB 是瓶颈”的说法已被 EXP-003 否定） |
 | [EXP-001](#exp-001-面积优化三个方向) | 2026-11-04 | 面积优化：FTQ 合并、LSU 端口、LD/STA IQ 合并 | trace-model `exp/area-explore` | 未提交、未合入 | 三个方向都能省面积，性能代价 0–1% |
+
+---
+
+## EXP-050 块级 FTB + 1-ahead/2-ahead BPU（里程碑 A 模型探索）
+
+- **日期**：2026-11-20 ~ 2026-11-21。**分支**：trace-model `exp/ftb-bpu`（DSE 归档 `375b080`）→ `merge/ftb-bpu`（`ef61350`）；rtl `rtl/ftb-bpu`（`a4dcfb9`）。**状态**：**已合入 `main`（2026-11-21：trace-model `ef61350`、rtl `a4dcfb9`，均已推送 `origin/main`）**。
+- **问题**：`main` 现行 BPU 为 16-bank 逐指令槽架构（Type 30 KB + BTB 155 KB + TAGE 110 KB + ITT 29 KB ≈ **325 KB**，RTL `bpu` 高达 549,458 单元 / 134 层），每拍空转 >85% 读口，且 S1 无分支历史导致海量 2 拍 S2 覆写气泡，前端带宽损失（`FE.bw`）高达 `31.2%`。
+- **方案（分两阶段在 `BpuFtb.h` / `BPU_pipe.h` 实现，全部由 `BPU_FTB=1` 默认关开关控制）**：
+  - **Phase 1（块级 FTB + S1 主力预测 / S2 兜底）**：
+    - 以取指块起点 `base_pc` 索引，单 bank 取代 16-bank Type + BTB + TAGE + ITT：
+      - **S0（0 气泡）**：uFTB（256 × 4 路，20b 压缩目标，`BR_RET` 走 RAS 不受目标宽度限制）；
+      - **S1**：Main FTB（2K/4K × 4 路，每项 **4 槽 `FTB_SLOTS=4`、禁止槽交换**以保持 TAGE 槽归属稳定，含 1b `carried` 标记正确处理 RVC 跨块 4B `CALL` 返回地址 `base+2` 与 `hist_sym(base-2, tgt)`）+ 可选 S1 mini-TAGE（256 × 4 表）；
+      - **S2（兜底）**：4-slot Block-TAGE（2K/4K × 4 表，10-bit tag）+ 单块 3 表 Block-ITT（256 项共享）+ RAS；
+      - **精确块训练**：通过 FTQ 透传 `blk_id` 与 `ftq_is_last` 到提交侧，经 `ftb_rec_[2048]` 恢复预测时刻的精确 `(base, fh)`，将 `tag_mismatch` 降为 **0**、`train_drops = 0`。
+    - 迭代中定位并修复了 4 个关键根因：① 提交侧猜测块起点漂移（`tag_mm` 6.2% → 0）；② 2-slot FTB 在非截断 32B RVC 块中发生 3 分支颠簸（`FTB_SLOTS=2→4`，`evict3` 250k → ~1.7k）；③ `upsert_branch` 槽位交换打乱 TAGE 归属；④ RVC 跨块 4B `CALL` 在槽 0 压栈地址偏 2 字节导致 `COMMIT_MISPRED_RET` 暴增（加 `carried` 位后 `xalancbmk sp5` `RET_MP 38,425 → 9`）。
+  - **Phase 2（硬件忠实 1-ahead / 2-ahead，零组合旁路 `FTB_OVR_FAST=0`）**：
+    - `FTB_AHEAD=1`（1 拍纯 SRAM 流水）与 `FTB_AHEAD=2`（2 拍纯 SRAM 流水）：提前 1/2 拍用已寄存的 `(pc_{t-k}, H_{t-k})` 读 Ahead FTB（`aftb_`，22b 组合 tag 区分多后继）+ Ahead Block-TAGE（`atage_`，复用 `aftb_` 槽计数器作基表，无基表混叠）+ Ahead Block-ITT，到 S0 时仅做寄存器输出 tag 比较与选路，**完全消除同拍组合环（无需 `of2`）**；
+    - 配合 `FTB_AH_ONLY=1` 删掉 `S1 mini-TAGE`（仅在重定向后 2% 冷启动拍退回 uFTB/Main FTB），S2 保留精确 PC/精确历史 Block-TAGE + Block-ITT 兜底（零精度回退）；Ahead 训练同样经 `ftb_rec_` 透传预测时刻 `(ah_key_base, ah_key_fh)`，保证零历史错位。
+- **性能结果（全量 SPEC06 INT 12 程序 SimPoint 加权，vs `main` `6df4312`；376/386 点已收齐、0 失败，Phase 1 四组为完整 386/386）**：
+
+| Benchmark | `main` 基线 IPC | P1 `2K_noof` (133 KB) | P1 `4K_noof` (250 KB) | P1 `4K_of2*` (250 KB) | **P2 `ah1_2k_a1k5`** (**174 KB**, `of2=0`) | **P2 `ah1_4k_a2k1k`** (**333 KB**, `of2=0`) | **P2 `ah2_4k_a2k1k`** (**333 KB**, `of2=0`) |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `400.perlbench` | 2.908 | +11.23% | +12.77% | +14.10% | +13.31% | **+15.18%** | +14.82% |
+| `401.bzip2` | 2.374 | +5.45% | +5.58% | +5.85% | +5.67% | **+5.93%** | +5.73% |
+| `403.gcc` | 1.546 | +10.03% | +11.41% | +13.33% | +11.69% | **+13.37%** | +13.17% |
+| `429.mcf` | 0.410 | +0.52% | +0.61% | +0.69% | +0.66% | **+0.77%** | +0.78% |
+| `445.gobmk` | 2.195 | +0.81% | +7.78% | +11.91% | +4.42% | **+13.11%** | +12.34% |
+| `456.hmmer` | 5.278 | +10.24% | +9.91% | +10.08% | +15.90% | **+16.00%** | +15.97% |
+| `458.sjeng` | 2.307 | +13.75% | +15.63% | +22.49% | +20.08% | **+23.65%** | +22.56% |
+| `462.libquantum` | 2.117 | +1.14% | +1.18% | +1.26% | +1.40% | **+1.39%** | +1.44% |
+| `464.h264ref` | 3.983 | +2.41% | +2.62% | +3.34% | +3.15% | **+3.40%** | +3.30% |
+| `471.omnetpp` | 0.940 | +1.60% | +1.70% | +1.70% | +1.30% | **+1.64%** | +1.71% |
+| `473.astar` | 1.383 | +0.97% | +2.74% | +4.25% | +2.33% | **+4.66%** | +3.91% |
+| `483.xalancbmk` | 1.895 | +3.45% | +3.93% | +5.33% | +4.36% | **+5.32%** | +4.80% |
+| **12 程序几何平均** | **12.11 /GHz** | **+5.02% (12.72)** | **+6.17% (12.86)** | **+7.61% (13.03)** | **+6.85% (12.94)** | **+8.48% (13.14)** | **+8.17% (13.10)** |
+
+- **TMA 变化（`ah1_4k_a2k1k` vs `main`）**：`Retiring 28.39% → 31.28% (+2.89 pp)`，`Frontend Bound 32.91% → 24.64% (−8.26 pp)`，`FE.bw 31.23% → 22.85% (−8.38 pp)`；`456.hmmer` 达到 `6.03 IPC`（`Retiring 75.36%`）。剩余 `22.85%` 的 `FE.bw` 留待里程碑 B（`2-fetch` + `2-taken`）消化。
+- **小负载标杆（`rtl/programs/big/`）**：`dhrystone.bin` `109,797 → 102,249`（`ah1`, +7.38%）/`102,033`（`ah2`, +7.61%）；`coremark.bin` `290,676 → 275,757`（`ah1`, +5.41%）/`276,560`（`ah2`, +5.11%）。
+- **验证**：131/131 本地门禁（rv64 + RVC，`FTB_AHEAD=0/1/2` 全部 PASS）；`rv64gc` Linux 5.15.170（`FTB_AHEAD=0/1/2` 均顺利到达 `rv64 login:`，0 Oops/panic，`tag_mm=0`、`drop=0`）；`BPU_FTB=0` 与 `sim64_base`（`main 6df4312`）逐拍相等；`comb_graph.py --check` 0 新增 hazard。
+- **里程碑 A RTL 落地与验证（`rtl/ftb-bpu`，`ah1_4k_a2k1k` + `FTB_BRQ=2`）**：
+  - 零外部端口改动：通过既有 `out_tage_idxs[*][0]`（10 位）透传 `blk_id`，删 22 个旧 16-bank 文件，新增 `bpu_types_pkg.sv`、`bpu_ftb_tab.sv`、`bpu_ftb_tage.sv`、`bpu_ftb_itt.sv`、`bpu_ftb_brq.sv`、`bpu_ftb_arrays.sv` 并重写 `bpu.sv`（更新 `bpu_stage_pkg.sv`、`bpu_ctl.sv`、`bpu_pdq.sv` 与 `docs/modules/bpu.md`）；
+  - **Lint**：`scripts/lint.sh rtl/frontend/bpu` 与 `scripts/lint_chip.sh` 均 **0 warnings / 0 errors**；
+  - **裸机等价（`fm_gate.sh`）**：**67/67 PASS，0 FAIL，0 SKIP，0 FM 不一致，0 周期偏差**（`coremark` `275,332 == 275,332`，较 `main` −5.28%；`dhrystone` `102,229 == 102,229`，−6.13%；`itt-dispatch` `208,168 == 208,168`，−3.36%；`coremark` `PT`/`UP` 指纹 276/276 bins 全等）；
+  - **`rv64gc` + `Sv39` Linux 26 段检查点对齐（`eda-08`/`eda-09`，`s01..s26`，每段 400 万周期，合计 1.04 亿周期）**：累计验证 **132,473,668 条真实指令**，**26/26 段全部 PASS、0 FM 不一致、全程 `PT`（103,974/103,974 bins）与 `UP`（103,144/103,144 bins）指纹 0 差异**（一并补齐 `LsuPipeInternal.h::ms_load_value` 对 `m.atnt=1` 污染地址 store 的旧物理地址 STLF 前递，一次性消除原 `s10`/`s15` 两处分叉）；
+  - **Yosys 综合（`eda-06`，`SYNTH_ABC="strash;balance;map" SYNTH_NO_MEMPRIO=1`）**：`bpu` **`549,458 → 274,811 cells`（−50.0%）**，深度 **`134 → 131` 层**（最长路径仍在原有 `u_spec.aras_q → spec_d`，新块级逻辑未引入新关键路径）；`front_top` **`898,333 cells` / `153` 层**。
+- **结论**：里程碑 A 采用 **块级 FTB + 1-Ahead + S2 兜底（`ah1_4k_a2k1k` + `FTB_BRQ=2`，无 `of2` 组合环、无 `S1 mini-TAGE`）**，全量 SPEC06 INT **+8.48%（`13.14 分/GHz`）** 且 RTL `bpu` 单元数直接减半（**−50.0%**）。数据在 NFS `/nfs_global/S/houruyao/spec06_rv64gc/tm/res_ftb*` 与 `/nfs_global/S/houruyao/rtl_ftb/`。
 
 ---
 

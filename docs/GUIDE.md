@@ -4,11 +4,12 @@ AI-Huma 由总仓库和三个子仓库组成，文档分两层：**总仓库 `do
 已退役的文档挪进各仓库的 `docs/history/`，只供查阅。
 
 ```
-AI-Huma/                     总仓库：全项目文档（本目录）
-├── function-model/          功能模型：架构行为的标准；SPEC BBV/SimPoint/检查点
-├── trace-model/             时序模型：周期的标准；核参数的唯一来源（include/config.h）；架构探索
-└── rtl/                     SystemVerilog 实现 + 整核测试平台
-~/personal/AI-Huma-data/     生成的数据（不进仓库）：spec-rv32imab/、linux/、linux_rv64/、tools/ 等
+AI-Huma/                                  总仓库（开发机 iprc-jump：~/AI-Huma）：全项目文档（本目录）
+├── function-model/                       功能模型：架构行为的标准；SPEC BBV/SimPoint/检查点
+├── trace-model/                          时序模型：周期的标准；核参数的唯一来源（include/config.h）；架构探索
+└── rtl/                                  SystemVerilog 实现 + 整核测试平台
+~/rv64spec/                               本机（iprc-jump）工具与本地镜像：verilator_src(5.052)、linux_j.bin 等
+/nfs_global/S/houruyao/（eda-04..10）     集群共享数据与工具：spec06_rv64gc/、linux_ckpt_rv64gc/、tools/oss-cad-suite/
 ```
 
 ## 1. 我要……看哪份
@@ -22,7 +23,7 @@ AI-Huma/                     总仓库：全项目文档（本目录）
 | 查某次改动做了什么、怎么验证的 | [LOG.md](LOG.md) | 对应仓库的 git log |
 | 做一次架构/性能探索 | [WORKFLOW.md](WORKFLOW.md) 第 4、5.1 节 | [EXPLORATION.md](EXPLORATION.md)（先看有没有人做过） |
 | 把探索结论合入 main | [WORKFLOW.md](WORKFLOW.md) 第 6 节（步骤清单，含 6.1 文档整理） | [MAIN_RECORDS.md](MAIN_RECORDS.md) 的格式 |
-| 查某个环境变量（运行时开关）的含义和默认值 | trace-model [docs/ENV_VARS.md](../trace-model/docs/ENV_VARS.md)（全部 103 个） | trace-model [docs/PROJECT.md](../trace-model/docs/PROJECT.md) |
+| 查某个环境变量（运行时开关）的含义和默认值 | trace-model [docs/ENV_VARS.md](../trace-model/docs/ENV_VARS.md)（全部 16 个；默认配置 = RTL） | trace-model [docs/PROJECT.md](../trace-model/docs/PROJECT.md) |
 | 构建 / 运行 rv64（`XLEN=64`） | [../README.md](../README.md) “复现”的 rv64 段 | rtl [scripts/README.md](../rtl/scripts/README.md)、[EXPLORATION.md](EXPLORATION.md) EXP-029 |
 | 在集群 / 服务器上跑 SPEC | [SERVER.md](SERVER.md) | [PMU.md](PMU.md)（TMA 口径） |
 | 构建、跑 trace-model 和它的 gate | trace-model [README.md](../trace-model/README.md) | trace-model [docs/PROJECT.md](../trace-model/docs/PROJECT.md)（架构、gate、参数开关） |
@@ -45,8 +46,9 @@ AI-Huma/                     总仓库：全项目文档（本目录）
 | [TODO.md](TODO.md) | **唯一的**待办清单（进行中 / 待做：验证、RTL 实现、各次合入后的收尾、流程与工具） | 随时；做完删除并在 LOG 留一行 |
 | [LOG.md](LOG.md) | 每个 commit 一行：做了什么、怎么验证、结论 | 每次提交 |
 | [EXPLORATION.md](EXPLORATION.md) | 每次架构/性能探索一节（EXP-编号）：问题、方法、模型近似、结果、结论；不论是否合入 | 每次探索 |
-| [SERVER.md](SERVER.md) | 服务器与集群怎么用：`iprc-jump`（9950X3D 跳板/短编译）、`login-inband`、`eda` 计算集群、NFS SPEC checkpoint 与批跑流程 | 换服务器或流程变化时 |
+| [SERVER.md](SERVER.md) | 开发机与集群怎么用：当前开发机 `iprc-jump`（9950X3D）、`login-inband`、`eda` 计算集群、NFS SPEC/Linux checkpoint 与综合/批跑流程 | 换服务器或流程变化时 |
 | [PMU.md](PMU.md) | 性能监控单元：事件表、TMA 口径、硬件计数器块、trace-model 分析层、接进 RTL 的计划 | PMU 设计变化时 |
+| [BPU_OPT_PLAN.md](BPU_OPT_PLAN.md) | BPU 与前端微架构优化路线图：按块 FTB（S1 主力 / S2 兜底）→ 2-ahead → 2-fetch → 2-taken | 阶段规划变化时 |
 | [MAIN_RECORDS.md](MAIN_RECORDS.md) | 每次合入 main 一行（版本、正确性、性能、RTL 周期、综合）+ 一节“变化”；**当前数字的权威来源** | 每次合入 main |
 
 ### function-model
@@ -61,13 +63,14 @@ AI-Huma/                     总仓库：全项目文档（本目录）
 | [scripts/spec/README.md](../function-model/scripts/spec/README.md) | 现行 SPEC 检查点流程（rv32imab、Linux 镜像、ref 输入、参数、耗时；rv64 的 SPEC 流程还没做） |
 | [linux/README.md](../function-model/linux/README.md) | Linux 镜像（OpenSBI + 内核 + initramfs）的生成 |
 
-### trace-model（英文）
+### trace-model
 
 | 文档 | 管什么 |
 |---|---|
-| [README.md](../trace-model/README.md) | 是什么、构建、gate |
+| [README.md](../trace-model/README.md) | 是什么、建模方式、代码风格、构建、gate |
 | [docs/PROJECT.md](../trace-model/docs/PROJECT.md) | 架构、来历、gate 和大程序标准周期、参数开关（`CFG_*`）、验证手段 |
-| [docs/ENV_VARS.md](../trace-model/docs/ENV_VARS.md) | 运行时读取的全部环境变量（103 个），按用途分组，含默认值；比周期必须设 `LSU_PIPE_NOWD=1` |
+| [docs/SCHEDULING.md](../trace-model/docs/SCHEDULING.md) | 一拍的调度：模块契约、自动生成的 `SimCpu::cycle()`、共享状态与核对脚本 |
+| [docs/ENV_VARS.md](../trace-model/docs/ENV_VARS.md) | 运行时读取的全部环境变量（16 个），默认配置 = RTL 配置，比周期无需任何环境变量 |
 | [docs/LSU_PIPE.md](../trace-model/docs/LSU_PIPE.md)、`docs/LSU_PIPE_IPC.md` | 分级 LSU 的设计和 IPC 修复记录 |
 | `front-end/*.md` | 上游带来的前端写法规范和训练函数清单（前端代码的参考） |
 | `docs/history/` | 蒸馏计划 `PLAN.md` 和各阶段记录（P0–P3），已完成 |

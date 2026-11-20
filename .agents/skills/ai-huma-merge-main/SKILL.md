@@ -27,16 +27,16 @@ description: >-
 
 - **`trace-model`**：
   - `python3 scripts/comb/comb_graph.py --check` 0 隐患。
-  - `RVC=0`（`run_gate.sh`）与 `RVC=1`（`run_gate_c.sh`）门禁全部通过且周期等于新基线。
+  - `run_gate.sh`（默认 `RVC=1` 非 C 程序）与 `run_gate_c.sh`（带 C 程序）门禁全部通过且周期等于新基线。
   - 大程序（`dhrystone`、`coremark`、`memory-stress`、`smc-*`）核对通过。
-  - **必跑 Linux 启动**：`scripts/linux_check.sh <模拟器> <镜像>` 到 `rv64 login:` 无 oops/panic。
-- **`rtl`**：
+  - **必跑 Linux 启动**：`scripts/linux_check.sh <模拟器> ~/rv64spec/linux_j.bin` 到 `rv64 login:` 无 oops/panic。
+- **`rtl`**（本机跑 Verilator 前须先 `export PATH="$HOME/rv64spec/verilator_src/bin:$PATH"` 切到 5.052）：
   - `scripts/lint.sh`、`scripts/lint_chip.sh` 0 警告。
   - `scripts/fm_gate.sh` 全部通过（0 不一致，周期与 `ref_cycles.txt` 0 处不同，串口输出核对一致）。
   - Linux 检查点窗口 `scripts/linux_segments_cmp.sh` 全部 PASS（PT/UP 指纹全程相等，逐条检查 0 不一致），合入前最终确认完整从复位启动 `scripts/linux_gate.sh`（上 `eda` 集群）。
 - **性能与面积**：
-  - 固定负载（dhrystone 64 次、coremark 2 次、memory-stress-small）+ `eda` 集群 SPEC06（带 `PMU=1`；旧基线先查记录不重跑）。
-  - 受影响模块 Yosys 前后综合对比（遵守防 OOM 红线）。
+  - 固定负载（dhrystone 64 次、coremark 2 次、memory-stress-small）+ `eda` 集群 SPEC06（默认带 `PMU=1`；旧基线先查记录不重跑）。
+  - 受影响模块在 `eda` 集群做 Yosys（或 DC）前后综合对比（遵守防 OOM 红线）。
 
 ## 4. 同步文档（同一合入提交内完成）
 

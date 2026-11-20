@@ -7,6 +7,7 @@
 
 | 事项 | 状态 | 做完的标准 |
 |---|---|---|
+| 前端优化路线图 里程碑 B（`2-fetch` + `2-taken`，见 [BPU_OPT_PLAN.md](BPU_OPT_PLAN.md)） | 里程碑 A（EXP-050：块级 1-Ahead FTB + S2 Block-TAGE/ITT）已合入 `main`（SPEC06 INT +8.48%、`bpu` 单元 −50.0%、Linux 26/26 0 差异）；剩余 `FE.bw 22.85%` 待里程碑 B 消化 | 模型在 SPEC06 INT 386 点验证 `2-fetch + 2-taken` 净收益并定型（无组合环），同步 RTL 并通过 `fm_gate` 与全量 Linux 窗口对齐 |
 | LD/STA IQ 合并、统一 FTQ 的 RTL 试做结果入档 | 两个 RTL 试做都已完成（工作区 `rtl-ldsta`/`trace-model-ldsta`、`rtl-uftq`/`trace-model-uftq`，未提交）：门禁 66/66，66 个程序周期与各自的 trace-model 全部一致 | 在 [EXPLORATION.md](EXPLORATION.md) 记为新实验（含综合数字和未覆盖项）；工作区改动提交到各自的 `exp/` 分支 |
 
 ## 待做：验证
@@ -34,11 +35,12 @@
 | **`dcache_pf`**（EXP-048 硬件 Berti） | **384 层** / 67,431（拆测：`berti_tab` **362 层**、`berti_gen` **172 层**、`berti_hist` 77 层） | `berti_tab`: `srch_pc` → `trig_go`；`berti_gen`: `gen_mask_q[0]` → `gen_mask_q[8]` | 精准优化 `dcache_pf_berti_tab`（362 层）与 `dcache_pf_berti_gen`（172 层），压回 100 层以内 |
 | **`axi_llc_bop`**（EXP-048 LLC BOP）→ 拉高 **`axi_llc`** / **`axi_subsys`** | **291 层** / 5,608（拉高 `axi_llc` 238→**350**、`axi_subsys` 238→**353**） | `best_q` → `replace_alu` → `q_line_q` | 拆解 BOP 候选地址生成与入队路径（可打一拍寄存），先把 `axi_llc_bop` 压回 100 层以内，让 `axi_llc` / `axi_subsys` 回到 238 层及以下 |
 | **`back_top`**（后端整块） | **142 层** / 3,998,654 | `u_lsu.u_pipe.u_core.u_ldq.g_e[17].u_ent.st_q` → `u_lsu...u_rp.srp_ptr_q` | 排查 `lsu` 内部 LDQ 状态到 `u_rp.srp_ptr_q` 跨模块组合路径（单模块 `lsu` 为 101 层，整块拉到 142 层） |
-| **`bpu`**（分支预测器） | **134 层** / 549,458 | `u_spec.aras_q[5]` → `u_spec.spec_d[49]` | 排查 `bpu_spec` 推测 RAS/状态更新链，压回 100 层以内 |
+| **`bpu`**（EXP-050 块级 1-Ahead FTB） | **131 层** / 274,811（较旧 16-bank 549,458 **−50.0%**，深度 134→131） | `u_spec.aras_q[5]` → `u_spec.spec_d[49]` | 排查 `bpu_spec` 推测 RAS/状态更新链，压回 100 层以内 |
+| **`front_top`**（前端整块，含 EXP-050 `bpu`） | **153 层** / 898,333（原超 3600s 未出数，现可正常综合） | 待拆解 `front_top` 顶层与 `bpu`/`pre_idu` 跨模块路径 | 随 `bpu_spec` 压低一并把 `front_top` 压回 100 层以内 |
 | **`dcache_mshr`**（EXP-048 MSHR 8→16） | **123 层** / 91,934（其余 `dcache` 核心子模块均 13–49 层） | `ax_req_accepted` → `ax_req_line[25]` | 16 项 MSHR 下 AXI 请求选择/出队组合链过长，压回 100 层以内 |
 | **`ren`**（重命名） | **111 层** / 474,613 | `inst_q` → `u_fp.u_ckpt.entry_q` | 优化 FP 重命名检查点写入与 mov 消除判定链，压回 100 层以内 |
 | **`lsu`**（单模块） | **101 层** / 1,227,891 | `pl12_q` → `u_ldq.g_e[30].u_ent.st_d` | 贴近 100 层红线，随 `back_top` 路径一并压低 |
-| **`dcache` / `mem_top` / `front_top`**（未出数） | `dcache`/`mem_top` 超 64 GB RSS；`front_top` 超 3600s | `dcache.sv:76` 已修、已加 `SYNTH_NO_MEMPRIO=1` | `dcache` 建议拆子模块（`dcache_s1`/`s2_*`/`mshr`/`wb`/`resp`）或放宽看门狗至 128 GB+ 测；`front_top` 放宽至 7200s |
+| **`dcache` / `mem_top`**（未出数） | `dcache`/`mem_top` 超 64 GB RSS | `dcache.sv:76` 已修、已加 `SYNTH_NO_MEMPRIO=1` | `dcache` 建议拆子模块（`dcache_s1`/`s2_*`/`mshr`/`wb`/`resp`）或放宽看门狗至 128 GB+ 测 |
 
 ## 待做：RTL 实现
 - **LLC 替换策略改为 tree PLRU（2026-11-17，用户定为标准）**：现在的 `axi_llc` 用每组一个"下一个牺牲路"指针、命中后指向命中路 + 1 的轮转替换（`axi_llc_resolve.sv` `next_way`、模型 `AXI_LLC.cpp`），3 GHz 访存组上换成 LRU 平均 +3.5%（omnetpp +14%）。trace-model `exp/pf-l1l2` 已把模型默认改为 tree PLRU（`LLC_REPL=rr` 恢复旧行为）；RTL 要把 `repl` 表从路号位宽改为每组 ways−1 位的 PLRU 树（16 路 15 位），命中 / 装入时更新，`axi_llc_waypick` 按树选牺牲路，然后对齐模型周期。见 EXPLORATION EXP-043。
