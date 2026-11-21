@@ -182,10 +182,9 @@ EXP-024 合入的是"STQ 内分组"的简化版 write buffer：4 个条目、每
 - CSR 异常原因优先级：RTL 非法指令排在断点之前，模型相反（只有两者同时发生才有区别）；`mstatus` 输出没有 SD 位，CSR 存 19 个寄存器，模型 22 个。
 - `peripheral_axi_fmt` 对 lb / lh / lw 做 64 位符号扩展，模型 `extract_read_data` 对高 32 位零扩展（只影响没建模的 AXI 路径，没查 LSU 会不会再扩展）。
 - `ptw_walk` 静默丢掉 32 位物理地址以上的 PPN，模型 `exit(2)`；RTL 没有"I-Cache 取指组 pc 与 PTAB pc 一致"的检查（模型非成对路径有 `fatal`）；路由号 RTL 只留 4 位、模型 32 位。
-- `dispatch` 同时接 4 路 PRF load 唤醒和 22 路 `iss_awake`，`isu_wake_src` 已经把前者并进后者（重复；模型是 30 路）；`ldq_alloc_valid` 在 `dispatch_lsu_alloc` 里没用，模型用。
+- `ldq_alloc_valid` 在 `dispatch_lsu_alloc` 里没用，模型用。
 - ROB 自己算 F/D 的 `fs_need` / `fs_off` / `fs_dirty` / `fflags`，模型从 trace bridge 取；`lp_mdp` 一个训练口、`RTL_MEMSPEC_NOTES.md` 写两个；LSU 没有对应模型 `PLdq.illegal` 的 F/D 字段。
 - `fp_core` 在 `SYNTHESIS` 下返回 0，所以任何综合结果里都没有 FP 运算的面积和深度。
-- **模型里这 13 个 `CFG_*` 配置宏**（`CFG_AGU_SHARED`、`CFG_MEM_IQ_ENQ_WIDTH`、`CFG_ISSUE_OLDEST_FIRST`、`CFG_ISSUE_OLDEST_QUEUES`、`CFG_IQ_SAME_CYCLE_REUSE`、`CFG_INT_CLUSTERS`、`CFG_INT_IQ_SIZE`、`CFG_INT_IQ_ENQ_WIDTH`、`CFG_LSU_SLOT_FIXED`、`CFG_LSU_STAEV_REG`、`CFG_FLUSH_REG`、`CFG_LSU_WBMERGE_REG`、`CFG_FE_OVR_REG`）现在默认就是 RTL 配置（trace-model `7ced459`），但旧路径和宏还在；按 WORKFLOW 7.6（采纳优化就删旧开关）同样适用于模型：要删掉旧路径、旧默认值和这些宏，只保留 RTL 配置，删完用 67 程序周期（对 `ref_cycles.txt`）、12 个 Linux 窗口和 Linux 启动回归。
 
 ### 死代码与清理
 - **2026-11-18 已清掉**：行式 ROB（`ROB_COMPACT` 和 7 个文件）、旧 LSU（30 个 `lsu_*` 文件、`LSU_PIPE` 常量和 `lsu.sv` 的旧分支、测试台的 `SOC_LSU_PIPE` 开关、`gen_cfg_pkg.py` 里生成 `LSU_PIPE` 的那行）、`csr_fu.sv`、`core_top.sv` 里空的 `always_comb`、`lp_pkg::NDC`、`lp_stq_ent` 里 `dr_pick ? rw13 : rw13`、`scripts/fe_refs/`、`scripts/ref_cycles_legacy_lsu*.txt`。
