@@ -6,6 +6,7 @@
 
 | 编号 | 日期 | 题目 | 分支 | 状态 | 一句话结论 |
 |---|---|---|---|---|---|
+| [EXP-052](#exp-052-rv64gc-cmv-规范化与组内-1-hop-关键链移动消除--ren-降深度) | 2026-11-21 | RV64GC `c.mv`（`add rd, x0, rs2`）规范化 + 组内 1-hop 关键链移动消除（`ren_elim_sel` 并行根分解 + `head_after`/`head_next` 移出握手关键路径） | trace-model `exp/move-elim-eval`；rtl `rtl/move-elim-1hop` | **已合入 `main`（2026-11-22：trace-model `1939bd1`、rtl `9798eb7`）** | 修复此前 `is_move_shape` 漏掉全部 16-bit `c.mv`（`MOVE_ELIMINATED = 0%`）的缺陷，并增加组内 1-hop 生产链消除；全量 SPEC06 INT **386/386 点（0 失败）Geomean `+0.55%`**（12 程序全正零回退：`xalancbmk +1.62%`、`omnetpp +1.22%`、`sjeng +0.79%`、`h264ref +0.74%`、`gobmk +0.68%`、`mcf +0.43%`、`bzip2 +0.39%`、`astar +0.31%`、`gcc +0.30%`），`coremark +0.99%`；RTL `ren` 深度不升反降 **99 → 97 层**（`475,533` cells，+0.18%）、`idu` 66 层；`tests/ren_elim_sel/run.sh` 100k 随机 0 不一致、`lint_chip` 0、`fm_gate` **68/68（0 周期偏差）**、Linux 27 窗 1.377 亿指令 0 FM 不一致（26/27 PT/UP 全等） |
 | [EXP-051](#exp-051-前端-2-fetch--2-taken--真-axi-fdip里程碑-b-模型探索) | 2026-11-21 | 前端 `2-fetch` / `2-taken`（零 S0 串行 SRAM 的 2-Ahead B + 无截断 `NT=1` + 4-Bank 1R1W ICache + 2 读口 ITLB）+ 真 AXI/LLC/DRAM S2 确认 2-slot FDIP + `HistRing 1024b` + 内部 `rec_q[256]` + `BRQ_W=1` | trace-model `exp/fe-2fetch-2taken` → `merge/fe-2fetch-2taken`；rtl `rtl/fe-2fetch-2taken` | **已合入 `main`（2026-11-21：trace-model `5b67500`、rtl `3fa98cd`）** | 全量 SPEC06 INT **386/386 点（0 失败）**：探索版帕累托冠军 `fe2f_b4_it2_ah1k` 达 **+2.30%（`13.44 分/GHz`）**，合入 RTL 对齐版（1-pop/cycle FDIP + `BRQ_W=1` + L1D/WB 脏行嗅探）达 **+2.18%（`13.42 分/GHz`，较 EXP-050 前累计 +10.76%）**，`FE.bw 22.77% → 18.60%`、`coremark −15.77%`；RTL `fm_gate` **68/68 0 周期偏差**，rv64gc Linux **26/26 段（1.326 亿指令）+ `s00` 0 FM/PT/UP 差异**，顺手修复跨 4KB 页 RVC 32 位指令第二半字取指缺页 `stval = pc + 2` 缺陷 |
 | [EXP-050](#exp-050-块级-ftb--1-ahead2-ahead-bpu里程碑-a-模型探索) | 2026-11-21 | 块级 FTB（S0 uFTB + S1/S2 Block-FTB/Block-TAGE/单块 Block-ITT）+ 硬件忠实 1-ahead / 2-ahead 流水（`ah1_4k_a2k1k` + `FTB_BRQ=2`，零 `of2` 组合环） | trace-model `exp/ftb-bpu`（归档 `375b080`）→ `merge/ftb-bpu`；rtl `rtl/ftb-bpu` | **已合入 main（2026-11-21：trace-model `ef61350`、rtl `a4dcfb9`）** | 全量 SPEC06 INT（386 点，12 程序全正零回退）：1-ahead（`ah1_4k_a2k1k`，零组合环）达 **+8.48%（`12.11 → 13.14 分/GHz`）**、`FE.bw 31.23% → 22.85%`；RTL 删 22 个旧 16-bank 文件零外部端口改动，Yosys `bpu` **549,458 → 274,811 单元（−50.0%）**、深度 134→131 层；`fm_gate` **67/67 0 周期偏差**，rv64gc Linux **26/26 段（1.325 亿指令）0 FM 不一致、PT/UP 指纹 0 差异** |
 | [EXP-048](#exp-048-l1-硬件-berti--llc-bop--mshr-1616-预取体系与-rtl-全程对齐) | 2026-11-20 | L1 硬件 Berti（`PF_KIND=4` + DTLB 跨页翻译）+ LLC Best-Offset（`LLC_BOP=1`）+ L1D/LLC MSHR 16/16，三阶段（M1/M2/M3）写入 RTL 并完成全量 rv64gc Linux 对齐 | trace-model `exp/dse-fork`、rtl `exp/pf-berti-bop` | **已合入 main（2026-11-20：trace-model `6df4312`、rtl `6e2d188`）** | 全量 SPEC06 INT 386 点几何平均 **+6.58%**（libquantum +37.14%、mcf +28.14%、gcc +7.90%、astar +3.35%，零回退）；trace-model 单次从 0 启动 Linux 到 `rv64 login:` PASS；27 窗（0→130M）RTL 对齐修掉 3 类根因（`VQD=32`、非法 `OP-32` 译码、跨 dword 非对齐 load 污点） |
@@ -51,6 +52,25 @@
 | [EXP-001](#exp-001-面积优化三个方向) | 2026-11-04 | 面积优化：FTQ 合并、LSU 端口、LD/STA IQ 合并 | trace-model `exp/area-explore` | 未提交、未合入 | 三个方向都能省面积，性能代价 0–1% |
 
 ---
+
+## EXP-052 RV64GC `c.mv` 规范化与组内 1-hop 关键链移动消除 + `ren` 降深度
+
+- **日期 / 分支**：2026-11-21；`trace-model` `exp/move-elim-eval`、`rtl` `rtl/move-elim-1hop`
+- **背景与根因**：分析 `ren` 99 层逻辑深度时发现 `ren_elim_sel` 占 ~43 层，但现 `main` 在 SPEC06（rv64gc）上 `MOVE_ELIMINATED = 0.00%`。根因：RV64GC 编译器把寄存器拷贝编为 16-bit `c.mv rd, rs2`，前端 `rvc_expand` 按规范展开为 `add rd, x0, rs2`，而 `is_move_shape()` 只匹配 `addi rd, rs1, 0`，导致整个 `MOVE_ELIM` 在 RV64GC 上几乎是死代码。
+- **方案**：
+  1. **IDU `c.mv` 规范化**（`Idu.cpp` / `idu_decoder.sv`）：将 `add rd, x0, rs2`（含全部展开后的 `c.mv`）规范化为语义等价的 `addi rd, rs2, 0`（`src1_areg = rs2, src2_en = 0, src2_is_imm = 1, imm = 0`），不改 `function-model`；同时在 `MsData.h` 污点求值器中同步该规范化（否则未被消除且带投机污点的 `c.mv` 会误用原始指令字算 `stale_rs2 + true_rs2`）。
+  2. **组内 1-hop 关键链消除**（`Ren.cpp` / `ren_elim_sel.sv` / `ren_dep_check.sv`）：当 `src1_areg` 被同组更老的有效整数指令 `j` 写时，若最近老写者 `j` 未被消除（分配全新物理寄存器，RAT 原引用数为 0）且 `(i - j) < MOVE_ELIM_MAX_REFS`（8 宽下仅拦截 `j=0, i=7`，保证 3-bit `arch_cnt` 永不溢出），则允许消除，目的寄存器取旁路后的 `src1_preg`。
+  3. **RTL 深度优化**：`ren_elim_sel` 将 1-hop 旁路链拆成仅依赖 `areg` 比较的并行根分解（`is_const / const_val / inv / root_oh`），与 33 路 `spec_rat` `ttg_popcount` 并行；`ren_core` / `ren_fp` 的分支 `head_after` 改用 `alloc_req` 前缀，并由 `ren_free_list` / `ren_fp_free_list` 按 `fire` 末位直接选通 `head_next`（移除握手后的 `popcount + 加法`）。
+- **四档消融（48 个 SPEC06 高权重点，修完 `c.mv` 后）**：
+  - `m0`（关）→ `m1`（仅 `spec_rat`）：Geomean **+0.18%**（消除率 4%~11%）
+  - `m2`（+ 组内 1-hop）：Geomean **+0.51%**（吃掉理想无限制上限 `m3` `+0.60%` 的 ~85%）
+- **全量 SPEC06 INT（386/386 点，0 失败，对比 `main` 基线 `res_fe2f_final_386`）**：
+  - 12 程序全部正收益、零回退，**Geomean +0.55%**：`400.perlbench +0.01%`、`401.bzip2 +0.39%`、`403.gcc +0.30%`、`429.mcf +0.43%`、`445.gobmk +0.68%`、`456.hmmer +0.14%`、`458.sjeng +0.79%`、`462.libquantum +0.04%`、`464.h264ref +0.74%`、`471.omnetpp +1.22%`、`473.astar +0.31%`、`483.xalancbmk +1.62%`。`coremark +0.99%`（`233,223 → 230,923`）。
+- **RTL 综合与验证**：
+  - Yosys（`eda-08`，`SYNTH_ABC="strash;balance;map"`）：`ren` **99 → 97 层**（`474,699 → 475,533` cells，+0.18%），`idu` 66 层（`31,607` cells）；
+  - `tests/ren_elim_sel/run.sh`：100,000 组随机输入 0 不一致；
+  - `lint_chip.sh`：0 警告；`fm_gate.sh`：**68/68 PASS，0 FM 不一致，0 周期偏差**；
+  - rv64gc Linux 27 窗回归（`eda-06`~`eda-09`，`out_me2_t4`）：**27/27 全部跑完，共核对 `137,700,067` 条指令，0 FM 不一致**；**26/27 窗口 PT/UP 指纹 100% 相等**。唯一差异 `s17` 已定位清楚：前 `3,639,100` 拍（479.7 万指令）`SLOT_FIRE` / `INSTRET` / `PT` / `UP` 逐拍 100% 相等（且改写 `head_after`/`head_next` 前后的 RTL 表现完全一致，排除了 RTL 改动 bug）；第 `3,639,115` 拍存在一条错误路径 load（`pc=80007d62`，第 `3,639,122` 拍被误预测冲刷），trace 模型与 RTL 在错误路径访存地址上的固有模型差异使随后第 `3,639,125` 拍的 ICache miss 在 LLC/AXI 竞争中早返回 4 拍（`3,639,154` vs `3,639,158`），与本次微架构改动正确性无关。
 
 ## EXP-051 前端 2-fetch / 2-taken + 真 AXI FDIP（里程碑 B 模型探索）
 

@@ -46,7 +46,6 @@
 
 | 事项 | 为什么 | 做完的标准 |
 |---|---|---|
-| **mov 消除拉长了 `ren` 的关键路径**（EXP-012，已合入 main，默认开启） | 局部 yosys（通用门级数，不是时序）：`ren` 最长组合路径 63 → 130 级；开启后路径是 流水寄存器 → `ren_elim_sel`（33 项 RAT 比较求和）→ `ren_alloc_sel`（8 级串行选择）→ 目的寄存器选择 → RAT 快照 → 分支检查点，消除判定串在分配之前；收益只有 quick SPEC +0.06%、coremark −1.15% 周期，`ren` +12% 单元 | 先做有工艺库的综合量出真实 `ren` 时序（依赖下面“时序综合流程”）；若超标，按下面顺序试：① 判定与分配解耦（所有请求目的寄存器的槽先分配，被消除的槽丢弃分到的寄存器，不让判定进入分配链；会少用空闲寄存器，trace-model 要同步，周期要重新对齐）；② 判定拆成流水一级（用上一拍的 RAT 引用数，上限判定更保守）；③ 放宽到只按“RAT 引用数”不数组内写者；④ 都不行则 `CFG_MOVE_ELIM` 默认改 0（trace-model 与 RTL 一起改，基线、`ref_cycles.txt` 重生成）。每一步 trace-model 先量 quick SPEC，RTL 门禁 66/66 周期对齐 |
 | AMO 改为“特殊 store、在 DCache 里读改写”（BOOM/香山式） | 现在 AMO 和 C910 一样拆成 LOAD + STA + STD（运算在 STD 里，rd=x0 借 32 号寄存器），同时占 LDQ 和 STQ；LD/STA 队列合并后一条 AMO 要在同一拍进 MEM 队列两次，dispatch 为此专留了一条通路（暂时保留这种做法） | trace-model 和 RTL：AMO 只占 STQ（一个地址 uop + STD），在 STQ 头、ROB 已排空时发给 DCache，DCache 流水线内做读改写（AMOALU），旧值经写回口送 rd；dispatch 的 AMO 双写口通路删除；门禁和 Linux 通过。可与 LD/STA 共享 AGU 一起考虑 |
 | 统一 FTQ 的提交读口按块读 | 统一 FTQ 现在每条提交指令一个读口（PC 8 口 + 元数据 8 口，各从 64 项×8 槽里选），是 `ftq_top` 面积的大头。trace-model 统计（2026-11-05，SPEC 6 个最大权重点 + 5 个小程序）：一拍提交跨的 FTQ 块数超过 4 的周期最多 0.06%，超过 3 的在 gcc 上有 9.5% | decode 组队时限制一组最多跨 K 个块（trace-model IDU 与 RTL `pre_idu` 同步，参数 `CFG_DECODE_MAX_BLOCKS`，建议 K=4）；`ftq_top` 提交读口改为从 commit 指针读 K 个连续块整行再按块号/偏移选；quick SPEC 比较 K=3/4；RTL 门禁 66/66、周期与 trace-model 相等；提交读口选择器预计元数据 −44%、PC −50%（K=4） |
 | `front_stall` 接回 | core_top 里写死为 0；BPU 更新队列会满时必须接回 | 接回后门禁通过，有触发它的测试 |
