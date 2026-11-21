@@ -7,7 +7,6 @@
 
 | 事项 | 状态 | 做完的标准 |
 |---|---|---|
-| 前端优化路线图 里程碑 B（`2-fetch` + `2-taken`，见 [BPU_OPT_PLAN.md](BPU_OPT_PLAN.md)） | 里程碑 A（EXP-050：块级 1-Ahead FTB + S2 Block-TAGE/ITT）已合入 `main`（SPEC06 INT +8.48%、`bpu` 单元 −50.0%、Linux 26/26 0 差异）；剩余 `FE.bw 22.85%` 待里程碑 B 消化 | 模型在 SPEC06 INT 386 点验证 `2-fetch + 2-taken` 净收益并定型（无组合环），同步 RTL 并通过 `fm_gate` 与全量 Linux 窗口对齐 |
 | LD/STA IQ 合并、统一 FTQ 的 RTL 试做结果入档 | 两个 RTL 试做都已完成（工作区 `rtl-ldsta`/`trace-model-ldsta`、`rtl-uftq`/`trace-model-uftq`，未提交）：门禁 66/66，66 个程序周期与各自的 trace-model 全部一致 | 在 [EXPLORATION.md](EXPLORATION.md) 记为新实验（含综合数字和未覆盖项）；工作区改动提交到各自的 `exp/` 分支 |
 
 ## 待做：验证
@@ -35,8 +34,9 @@
 | **`dcache_pf`**（EXP-048 硬件 Berti） | **384 层** / 67,431（拆测：`berti_tab` **362 层**、`berti_gen` **172 层**、`berti_hist` 77 层） | `berti_tab`: `srch_pc` → `trig_go`；`berti_gen`: `gen_mask_q[0]` → `gen_mask_q[8]` | 精准优化 `dcache_pf_berti_tab`（362 层）与 `dcache_pf_berti_gen`（172 层），压回 100 层以内 |
 | **`axi_llc_bop`**（EXP-048 LLC BOP）→ 拉高 **`axi_llc`** / **`axi_subsys`** | **291 层** / 5,608（拉高 `axi_llc` 238→**350**、`axi_subsys` 238→**353**） | `best_q` → `replace_alu` → `q_line_q` | 拆解 BOP 候选地址生成与入队路径（可打一拍寄存），先把 `axi_llc_bop` 压回 100 层以内，让 `axi_llc` / `axi_subsys` 回到 238 层及以下 |
 | **`back_top`**（后端整块） | **142 层** / 3,998,654 | `u_lsu.u_pipe.u_core.u_ldq.g_e[17].u_ent.st_q` → `u_lsu...u_rp.srp_ptr_q` | 排查 `lsu` 内部 LDQ 状态到 `u_rp.srp_ptr_q` 跨模块组合路径（单模块 `lsu` 为 101 层，整块拉到 142 层） |
-| **`bpu`**（EXP-050 块级 1-Ahead FTB） | **131 层** / 274,811（较旧 16-bank 549,458 **−50.0%**，深度 134→131） | `u_spec.aras_q[5]` → `u_spec.spec_d[49]` | 排查 `bpu_spec` 推测 RAS/状态更新链，压回 100 层以内 |
-| **`front_top`**（前端整块，含 EXP-050 `bpu`） | **153 层** / 898,333（原超 3600s 未出数，现可正常综合） | 待拆解 `front_top` 顶层与 `bpu`/`pre_idu` 跨模块路径 | 随 `bpu_spec` 压低一并把 `front_top` 压回 100 层以内 |
+| **`bpu`**（EXP-051 2-taken + 2-Ahead B） | **272 层** / 504,078（较旧 16-bank 549,458 仍 −8.3%，较 EXP-050 131→272） | `r1_q[1074]` → `u_spec.spec_d[99]`（S0 `bpu_eval` A+B 双段 + `bpu_spec` 串行） | 拆解 S0 `bpu_eval` 与 `bpu_spec` 历史/RAS 串行更新链，压回 100 层以内 |
+| **`front_top`**（前端整块，含 EXP-051 `bpu`+`icache`） | **356 层** / 1,582,763（较 EXP-050 153→356） | `u_pred_path.u_bpu.r1_q[1074]` → PTAB bypass → `u_pd.pd_ras_op2_q[1]` | 随 `bpu` S0 链压低并切断 PTAB bypass 到 `front_pd_info` 跨模块组合路径，压回 100 层以内 |
+| **`icache`**（EXP-051 4-Bank 1R1W + 2-port ITLB + FDIP） | **106 层** / 916,659（原 70 层 / 312,314） | `u_ctl.r_q[136]` → `mmu_req_vtag[4]` | 拆解 `icache_ctl` / `icache_itlb` 请求选路，压回 100 层以内 |
 | **`dcache_mshr`**（EXP-048 MSHR 8→16） | **123 层** / 91,934（其余 `dcache` 核心子模块均 13–49 层） | `ax_req_accepted` → `ax_req_line[25]` | 16 项 MSHR 下 AXI 请求选择/出队组合链过长，压回 100 层以内 |
 | **`ren`**（重命名） | **111 层** / 474,613 | `inst_q` → `u_fp.u_ckpt.entry_q` | 优化 FP 重命名检查点写入与 mov 消除判定链，压回 100 层以内 |
 | **`lsu`**（单模块） | **101 层** / 1,227,891 | `pl12_q` → `u_ldq.g_e[30].u_ent.st_d` | 贴近 100 层红线，随 `back_top` 路径一并压低 |
@@ -76,8 +76,6 @@ EXP-024 合入的是"STQ 内分组"的简化版 write buffer：4 个条目、每
 | 小 LLC 检查（模型 + RTL） | 本次合入没跑 | `scripts/llc_small_check.sh` 通过 |
 | `FE_RFAST` 的 BPU 面积和 `front_pred_path` 深度（+6% 超判据） | 前端笔记的 `bpu` +19%（`RFAST=15` vs 关，平衡 ABC）和合并综合表（−9.5%，轻量 ABC）互相矛盾；`front_pred_path` 深度 134 → 142 | 同一综合流程对合并后的树做 `FE_RFAST=0` 与 15 的对比；若深度必须回到 5% 内：用 `spec_r1` 推导 `spec_r2`（省面积、费深度）或拆 `front_pred_path` 的关键链 |
 | `FE_BFAST` 的深度（+34%） | 收益 +1.2~1.8%（RFAST 之上约 +2.4%），关着；是否值得取决于时钟目标 | 有时序库流程后量 `bpu` 关键路径；只有当时钟周期被更深的路径决定才开 bit1（+1.8%） |
-| `FE_PAIR`（一拍两块）的 RTL | 模型 +2.9%（RFAST+BFAST 之上）；RTL 要改写 BPU 前端（第二次 uBTB 读、第二套历史/RAS/TAGE 索引、主阵列第二读口、PTAB 项 +50%），估计 3–4 周，前端面积 +30% 以上，S0 双查在当前深度放不进一个周期 | 先用模型量"第二块放到 S1 用寄存的首块猜测查"的变体（稳态两块、重定向后一个气泡）；再决定是否做 RTL，见 EXPLORATION EXP-023 |
-| `FE_IPF`（I$ 预取）走真实内存通路 | 模型的预取不经过 LLC/AXI/DRAM（只对此前被需求 miss 填过的行预取，固定 12 周期，无带宽建模），+1.75% 是上界 | 模型里让预取走真实 LLC/AXI/DRAM 路径后重测；RTL 需要新通路，量收益再决定 |
 | FTQ 读口面积没计入综合表 | 给 dispatch 读 PC 的 64 选 1 块基 PC + 偏移（+16.9k 单元，`$mem` 读口在流程里不计单元）不在 `pre_idu_queue` 的数里 | 综合表里把 FTQ 读口单独列出来 |
 | `spec/*.io` 没更新 | 已退役的逐模块边界描述，访存推测（`spec_ok`、`unk`、`defer`、`flush_pipe` 等）没写进去 | 要么更新，要么在文档里明确这些文件已不再维护 |
 | 访存推测的值路径覆盖 | `LSU_MS_DATA` 里旧地址的 load/store、CSR/FP/AMO 消费者没有 RTL 验证 | 找到能触发的程序（或定向测试）并在 RTL 上对比 |

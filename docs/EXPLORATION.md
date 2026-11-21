@@ -6,6 +6,7 @@
 
 | 编号 | 日期 | 题目 | 分支 | 状态 | 一句话结论 |
 |---|---|---|---|---|---|
+| [EXP-051](#exp-051-前端-2-fetch--2-taken--真-axi-fdip里程碑-b-模型探索) | 2026-11-21 | 前端 `2-fetch` / `2-taken`（零 S0 串行 SRAM 的 2-Ahead B + 无截断 `NT=1` + 4-Bank 1R1W ICache + 2 读口 ITLB）+ 真 AXI/LLC/DRAM S2 确认 2-slot FDIP + `HistRing 1024b` + 内部 `rec_q[256]` + `BRQ_W=1` | trace-model `exp/fe-2fetch-2taken` → `merge/fe-2fetch-2taken`；rtl `rtl/fe-2fetch-2taken` | **已合入 `main`（2026-11-21：trace-model `5b67500`、rtl `3fa98cd`）** | 全量 SPEC06 INT **386/386 点（0 失败）**：探索版帕累托冠军 `fe2f_b4_it2_ah1k` 达 **+2.30%（`13.44 分/GHz`）**，合入 RTL 对齐版（1-pop/cycle FDIP + `BRQ_W=1` + L1D/WB 脏行嗅探）达 **+2.18%（`13.42 分/GHz`，较 EXP-050 前累计 +10.76%）**，`FE.bw 22.77% → 18.60%`、`coremark −15.77%`；RTL `fm_gate` **68/68 0 周期偏差**，rv64gc Linux **26/26 段（1.326 亿指令）+ `s00` 0 FM/PT/UP 差异**，顺手修复跨 4KB 页 RVC 32 位指令第二半字取指缺页 `stval = pc + 2` 缺陷 |
 | [EXP-050](#exp-050-块级-ftb--1-ahead2-ahead-bpu里程碑-a-模型探索) | 2026-11-21 | 块级 FTB（S0 uFTB + S1/S2 Block-FTB/Block-TAGE/单块 Block-ITT）+ 硬件忠实 1-ahead / 2-ahead 流水（`ah1_4k_a2k1k` + `FTB_BRQ=2`，零 `of2` 组合环） | trace-model `exp/ftb-bpu`（归档 `375b080`）→ `merge/ftb-bpu`；rtl `rtl/ftb-bpu` | **已合入 main（2026-11-21：trace-model `ef61350`、rtl `a4dcfb9`）** | 全量 SPEC06 INT（386 点，12 程序全正零回退）：1-ahead（`ah1_4k_a2k1k`，零组合环）达 **+8.48%（`12.11 → 13.14 分/GHz`）**、`FE.bw 31.23% → 22.85%`；RTL 删 22 个旧 16-bank 文件零外部端口改动，Yosys `bpu` **549,458 → 274,811 单元（−50.0%）**、深度 134→131 层；`fm_gate` **67/67 0 周期偏差**，rv64gc Linux **26/26 段（1.325 亿指令）0 FM 不一致、PT/UP 指纹 0 差异** |
 | [EXP-048](#exp-048-l1-硬件-berti--llc-bop--mshr-1616-预取体系与-rtl-全程对齐) | 2026-11-20 | L1 硬件 Berti（`PF_KIND=4` + DTLB 跨页翻译）+ LLC Best-Offset（`LLC_BOP=1`）+ L1D/LLC MSHR 16/16，三阶段（M1/M2/M3）写入 RTL 并完成全量 rv64gc Linux 对齐 | trace-model `exp/dse-fork`、rtl `exp/pf-berti-bop` | **已合入 main（2026-11-20：trace-model `6df4312`、rtl `6e2d188`）** | 全量 SPEC06 INT 386 点几何平均 **+6.58%**（libquantum +37.14%、mcf +28.14%、gcc +7.90%、astar +3.35%，零回退）；trace-model 单次从 0 启动 Linux 到 `rv64 login:` PASS；27 窗（0→130M）RTL 对齐修掉 3 类根因（`VQD=32`、非法 `OP-32` 译码、跨 dword 非对齐 load 污点） |
 | [EXP-045](#exp-045-cache-替换策略llc-与-l1i-改为-srrip) | 2026-11-19 | cache 替换策略：LLC（rr / PLRU / LRU / SRRIP / BRRIP / DRRIP）、L1I（rr / PLRU / SRRIP）、TLB（rr / NRU / PLRU）在周期模型里实现并比较；LLC 和 L1I 的 SRRIP 写进 RTL | trace-model `exp/llc-plru`（`429172d`，工作区 `trace-model-llcplru`）、rtl `exp/llc-plru`（`aac554a`） | **已合入 main（2026-11-19，与 EXP-046 一起：trace-model `8fd0ae3`、rtl `b9fd0df`，未推送）** | 29 个 SPEC06 rv64gc 高权重点：LLC SRRIP +1.23%（omnetpp +9.0%）、再加 L1I SRRIP 合计 **+1.63%**；TLB ≤ +0.12%、不采用；RTL fm_gate 67/67、周期与模型逐个相等；深度 axi_llc 238 不变、icache 69 → 70 |
@@ -48,6 +49,84 @@
 | [EXP-003](#exp-003-rob-与-prf-扩大到-256) | 2026-11-04 | ROB/PRF 扩大到 192、256 | trace-model `exp/area-explore` | 未提交、未合入 | 都翻倍到 256 只快约 0.8%（coremark 3%），ROB 128 合理 |
 | [EXP-002](#exp-002-全核面积浪费排查) | 2026-11-04 | 全核面积浪费排查：各 IQ、ibuf、front2back、分支资源、ALU/BRU 端口 | trace-model `exp/area-explore` | 未提交、未合入 | IQ 总项数 384→192、BRU 4→2 等组合后无性能损失；BPU 存储需大负载评估（“ROB 是瓶颈”的说法已被 EXP-003 否定） |
 | [EXP-001](#exp-001-面积优化三个方向) | 2026-11-04 | 面积优化：FTQ 合并、LSU 端口、LD/STA IQ 合并 | trace-model `exp/area-explore` | 未提交、未合入 | 三个方向都能省面积，性能代价 0–1% |
+
+---
+
+## EXP-051 前端 2-fetch / 2-taken + 真 AXI FDIP（里程碑 B 模型探索）
+
+- **日期**：2026-11-21。**分支**：trace-model `exp/fe-2fetch-2taken`（DSE 工作区 `trace-model-fe2f`）→ `merge/fe-2fetch-2taken`（`5b67500`）；rtl `rtl/fe-2fetch-2taken`（`3fa98cd`）。**状态**：**已合入 `main`（2026-11-21：trace-model `5b67500`、rtl `3fa98cd`，均已推送 `origin/main`）**。
+- **问题**：EXP-050（里程碑 A，1-Ahead 块级 FTB）将 `FE.bw` 从 `31.23%` 降至 `22.77%`（`12.11 → 13.14 分/GHz`）后，剩余 `22.77%` 前端带宽损失中约一半来自 **taken 分支截断取指组**（`FEO_LOSS_TAKEN = 5.95` 槽/拍），另一部分来自 **64B cache line 跨行截断**与 **I-Cache 缺失**（`ICACHE_MISS = 2.16M`）。本轮在严格硬件可实现（无双口 ICache SRAM、零 S0 串行 SRAM、真 AXI/LLC/DRAM 竞争）约束下，系统探索里程碑 B 的帕累托最优解。
+- **方案与实验开关（全部默认 `0`，零环境变量下与 `main ef61350` 逐拍一致）**：
+  - `FE_2TAKEN`（`0`=关；`1`=1-Ahead A + uFTB B，零新增 2-Ahead SRAM；`2`=1-Ahead A + **2-Ahead B**，提前 1 拍用同一 `(key_base, key_fh)` 并行读 `aftb2/atage2/aitt2`，**S0 零串行 SRAM**；`3`=1-Ahead(pcA) B；`4`=Oracle B 上界）；
+  - `FE_2TAKEN_NT`（`0`=截断 B；`1`=**严格不截断**：仅当 `gB.taken || full_bnd_b <= max_b_end` 时配对，杜绝非规范块起点污染 FTB/TAGE；`2/3/4`=32B/16B/64B 对齐截断）；`FE_2TAKEN_FT`（`0`=仅 taken A 配对；`1/2`=短 fall-through A 与次行融合）；`FE_2TAKEN_AHSZ`（2-Ahead B 容量：`0`=`2K/1K`，`1`=**半容量 `1K/512`**，`2`=`4K/2K`，`3`=`512/256`）；
+  - `FE_XLINE`（`0`=关；`1`=Even/Odd 跨 64B 行取指；`2`=+miss 自动预取；`3`=仅 `off>=48` 规范跨行）；
+  - `FE_FDIP`（真 AXI/LLC/DRAM 预取，复用 `MASTER_ICACHE` txid `8..11` 与需求取指严格仲裁：`1`=S0 入队；`2`=+next-line；`3`=**S2 确认 2 槽干净 FDIP** + `refetch||ovr` 清队列 + `pair_ic_fail` 自动预取；`4`=仅跨行/配对 miss 触发）；
+  - `FE_IC_BANKS`（`0`=双口对照；`2`=2-Bank Even/Odd；`4`=**4-Bank 1R1W** 按 64B cache line 低 2 位分体）、`FE_IC_ITLB2`（`0`=单口 ITLB 同 4KB 页；`1`=**2 读口 ITLB** 32 项 FA CAM + 单 PTW walker）、`FE_BRQ_W`（`1`/`2` 分支/拍提交训练队列出队）、`FE_HR1K`（`HistRing` 256b → **1024b**，2-taken 开启时自动启用）。
+- **关键微架构根因与发现（4 项必须保留至 RTL）**：
+  1. **S2 确认后再做 A/B 通道复选（`alt_a` 机制）**：若在 `InstPort::comb_write` 阶段就用 B 覆写 A 的尾槽，一旦 S2 将 A 从 taken 覆写为 not-taken，A 被提前截断会诱发级联 `predecode_flush`，导致 `ovrA` 暴涨 8×、`FEO_LOSS_REFETCH` 暴涨 6×。保留完整 A 数据至 S2 确认（`is_pair`）后选通，彻底消除额外冲刷。
+  2. **`HistRing` 256 位环回覆盖修复（256b → 1024b，单点 +22% 反转）**：`2-taken` 下单拍可推 4 位 GHR，~90 个在飞块累计 ~360 位 + `K.ghr[3]=128` 位 = 488 位 > 256 位，错误路径写入绕环覆盖已提交历史位，致使 `458.sjeng` 恢复失配 `mm0=15.89%`、`mm_any=64.77%`、`IPC −16.0%`。扩宽至 1024 位（RTL 512 位即数学充足，1024 位留 2× 裕量）后 `mm0 → 0.00%`、`mm_any → 0.01%`，`458.sjeng` 由 `−16.0%` 翻转为 **`+5.43%`**。
+  3. **不截断（`NT=1`）严格支配截断 / `FE_XLINE` / `FT=1`**：任何截断或 `FE_XLINE`/`FT=1` 都会引入非规范块起点造成 FTB/TAGE/1-Ahead 相位分裂；在 `fe24` 消融集上，纯 `2T2 + NT1 + FDIP=3`（**+3.44%**）直接达到 Oracle B 上界（**+3.50%**）的 **98.3%**，高于叠加 `XL3`（+3.10%）或 `FT1`（+2.74%）。
+  4. **RVC `carried` 块 `nb_base` 修复（挽回 `456.hmmer` +16%）**：`front_top.cpp` 上报虚假分支清除基址时若取 `fifo_head.pc[0]`，在 RVC 跨块 `carried` 块上该值被 `rvc_head_fix` 改写为 `base - 2`（如 `0x18e1e` 而非 `0x18e20`），导致 `clear_false_branch` 永远清不掉真实块内的虚假分支并反复触发 4 万+ 次 `predecode_flush`（`456.hmmer` 跌 −14%）。改用 `grp_ptab.predict_base_pc`（单块模式 `nb_base=0` 直接用 `pd_rec.base`）后彻底消除，`456.hmmer` 回升 +16%、全量最差点由 `−16.2%` 收敛至 **`−2.6%`**。
+  5. **放弃方案**：`FTQ32`（`PTAB_SIZE=32`）在重 FDIP 下出现 4–6/24 `ROB deadlock` 且 16 项已达 Oracle 上界 98.3%，不采用；`FDIP=1/2`（S0 激进预取 + next-line）拥塞 AXI/LLC 导致负收益（`−0.04%` / `−0.45%`），被 S2 确认 2 槽 `FDIP=3` 严格取代。
+
+- **阶段 1：`fe24` 前端敏感 24 点消融与硬件帕累托扫描（24/24 完成，0 失败，相对 EXP-050 `main` `ah1_4k_a2k1k`）**：
+
+| 轮次 / 配置名 | 关键配置 | `fe24` 几何平均 IPC | 最差点 / 最优点 | 关键结论 |
+|---|---|---:|---:|---|
+| R3 `r3_hr1k` | 仅 `HR1K + BRQ2` | −0.10% | −0.7% / +0.2% | 单独无额外收益，作为 2-taken 基础设施 |
+| R3 `r3_fd3` | 仅 `FDIP=3`（S2 确认 2 槽真 AXI） | +0.11% | −0.5% / +1.0% | 修复 `FDIP=1/2`（−0.04%/−0.45%）拥塞回退 |
+| R3 `r3_xl3` / `xl1` | 仅跨行取指 `XL3` / `XL1` | +1.02% / +1.12% | −0.4% / +5.1% | 单独有效，但与 `2-taken` 叠加反而低于纯 `NT=1` |
+| R3 `r3_2t1_nt1` | `uFTB B`（零 2-Ah SRAM）+ `NT1 + BRQ2` | +2.99% | −0.6% / +43.9% | `ovrB` 高（4410k），但已拿回大部分增益 |
+| R3 `r3_2t2_nt0` / `nt2` | `2-Ah B` + 截断 / 32B 对齐 | +2.77% / +3.07% | −1.2% / +44.0% | 均弱于 `NT1`（非规范起点相位分裂） |
+| R3 `r3_2t2_nt1` | `2-Ah B (2K/1K) + NT1 + BRQ2` | **+3.28%** | −0.7% / +44.1% | `ovrB` 较 `uFTB B` 暴降 5×（4410k→870k） |
+| R3 `r3_2t4_nt1` | `Oracle B + NT1`（理论天花板） | +3.64% | −0.6% / +44.6% | 2-Ah B 无 FDIP 时已达上界 90% |
+| R3 `r3_2t2_xl3_fd3` | `2-Ah B + XL3 + FD3` | +3.10% | −0.4% / +43.7% | `XL3` 改变 `block_bnd(pcB)` 降低 `NT1` 配对率 |
+| R4 `r4_2t2_ft1_fd3` / `ft2` | `2-Ah B + FT1/FT2 + FD3` | +2.74% / +2.53% | −1.8% / +41.2% | fall-through 融合反而增加相位碎片 |
+| R4 `r4_2t2_nt1_fd3` | **`2-Ah 2K/1K + NT1 + FD3`（双口, ITLB2）** | **+3.44%** | −1.3% / +43.5% | **达 Oracle+FD3 上界（+3.50%）的 98.3%**；`perlbench +9.81%` |
+| R5 `r5_2t4_nt1_fd3` | `Oracle B + NT1 + FD3`（双口, ITLB2） | +3.50% | −1.1% / +43.9% | 里程碑 B 2-taken 理论天花板 |
+| R5 `r5_nt1_fd3_dp_it1` | `2-Ah 2K/1K`（双口, **1 口 ITLB**） | +3.20% | −0.9% / +43.5% | 2 读口 ITLB 单独贡献 **+0.24%** |
+| R5 `r5_nt1_fd3_b2_it1` | `2-Ah 2K/1K`（**2-Bank**, 1 口 ITLB） | +2.75% | −0.9% / +35.8% | 2-Bank 冲突损失 −0.45%，偏大 |
+| R5 `r5_nt1_fd3_b4_it1` | `2-Ah 2K/1K`（**4-Bank 1R1W**, 1 口 ITLB） | +3.10% | −0.8% / +43.5% | **4-Bank 相对双口仅损 0.10%** |
+| R5 `r5_nt1_fd3_b4_it1_ah1k` | **`2-Ah 1K/512`（4-Bank 1R1W, 1 口 ITLB）** | **+3.05%** | **−0.5%** / +43.5% | **2-Ahead SRAM 减半仅损 0.05%**（`512/256` 掉到 +2.88%） |
+| R5 `r5_2t1_nt1_fd3_it1` | `uFTB B`（零 2-Ah SRAM, 双口, 1 口 ITLB） | +2.75% | −0.7% / +43.3% | 零新增 BPU SRAM 基线 |
+
+- **阶段 2：全量 SPEC06 INT 386 点验证（`sim64_fe2f_v4`，386/386 完成、0 失败，SimPoint 加权 CPI，对照 EXP-050 `main` `ah1_4k_a2k1k` `13.14 分/GHz`）**：
+
+| Benchmark | Pts | EXP-050 `main` CPI | 轻量档 `2t1_b4_it2`（零 2-Ah SRAM） | **帕累托冠军 `b4_it2_ah1k`**（4-Bank + ITLB2 + `1K/512`） | 天花板对照 `2t2_dp_it2`（双口 + `2K/1K`） |
+|---|---:|---:|---:|---:|---:|
+| `400.perlbench` | 24 | 0.299 | +6.47% | **+6.53%** | +6.71% |
+| `401.bzip2` | 48 | 0.398 | +1.68% | **+1.57%** | +1.60% |
+| `403.gcc` | 34 | 0.570 | +6.02% | **+6.20%** | +6.48% |
+| `429.mcf` | 45 | 2.513 | +0.23% | **+0.22%** | +0.27% |
+| `445.gobmk` | 29 | 0.403 | +4.08% | **+4.96%** | +5.31% |
+| `456.hmmer` | 23 | 0.163 | −1.44% | **−1.41%** | −1.36% |
+| `458.sjeng` | 27 | 0.351 | +4.09% | **+5.43%** | +5.63% |
+| `462.libquantum` | 36 | 0.466 | +0.80% | **+0.77%** | +0.80% |
+| `464.h264ref` | 35 | 0.243 | +1.37% | **+1.91%** | +1.86% |
+| `471.omnetpp` | 25 | 1.046 | −0.25% | **−0.20%** | +0.01% |
+| `473.astar` | 26 | 0.812 | +1.21% | **+1.45%** | +1.54% |
+| `483.xalancbmk` | 34 | 0.501 | +0.29% | **+0.54%** | +0.87% |
+| **12 程序几何平均（vs EXP-050 `main`）** | **386** | **13.14 /GHz** | **+2.02% (13.41 /GHz)** | **+2.30% (13.44 /GHz)** | **+2.44% (13.46 /GHz)** |
+| **相对 EXP-050 前 `main`（`12.11 /GHz`）** | **386** | +8.40% | +10.59% | **+10.90%** | +11.05% |
+| 最差点 / 最优点（vs EXP-050） | 386 | — | −2.6% / +76.7% | **−2.6% / +76.5%** | −2.0% / +76.6% |
+
+- **全量 386 点 TMA 与微架构统计变化（`b4_it2_ah1k` vs EXP-050 `main`）**：
+  - `Retiring`：**`30.92% → 31.62% (+0.70 pp)`**；`Frontend Bound`：**`24.57% → 20.27% (−4.30 pp)`**；`FE.bw`：**`22.77% → 18.63% (−4.15 pp)`**（`perlbench −9.22 pp`、`sjeng −7.19 pp`、`gcc −6.13 pp`、`gobmk −5.70 pp`、`astar −5.31 pp`）；`FE.lat`：**`1.79% → 1.64% (−0.15 pp)`**（`perlbench −0.98 pp`、`gobmk −0.58 pp`）；
+  - `ICACHE_MISS`：**`2.16M → 1.45M (−32.9%)`**（真 AXI `FDIP=3` 显著消减指令缺失）；`FEO_LOSS_TAKEN`：**`5.95 → 4.08` 槽/拍（−31.4%）**；
+  - `paired = 26.63%`，4-Bank 冲突拒配仅 `10.83%`，半容量 `1K/512` 2-Ahead B 命中率 **`78.73%`**，将 `ovrB` 相对 `uFTB B` 压低 **7.1×**（`82.18M → 11.65M`）；
+  - 唯一小幅负向程序 `456.hmmer`（`−1.41%`，`IPC 6.02 → 5.94`）原因是 8 宽后端已接近饱和（`Retiring 74.3%`），双块取指在错路径推入更多推测指令引发 `memspec_vio` 与重命名 `NOPREG` 略增（`BadSp +1.01 pp`），属于典型高 IPC 后端饱和效应，所有 23 点最差仅 `−2.6%`。
+- **小负载标杆（`rtl/programs/big/`）**：
+  - `coremark.bin`：`275,332 (2.295)` → `233,078`（`2t1_b4_it2`, −15.35%）/ **`229,707 (2.751)`（`b4_it2_ah1k`, −16.57% 周期 / +19.86% IPC）** / `229,589`（`2t2_dp_it2`, −16.61%）；
+  - `dhrystone.bin`：`102,229 (2.527)` → `95,445`（`2t1_b4_it2`, −6.64%）/ **`95,328 (2.710)`（`b4_it2_ah1k`, −6.75% 周期 / +7.24% IPC）** / `97,232`（`2t2_dp_it2`, −4.89%）。
+- **验证**：
+  - `comb_graph.py --check`：**0 read-before-later-write hazards**；
+  - 零环境变量 `run_gate_c.sh`：**68/68 PASS（0 失败，与 `main ef61350` 逐拍相等）**；
+  - `b4_it2_ah1k` 配置 `run_gate_c.sh`：**68/68 PASS（0 失败，全量 difftest 通过）**；
+  - `rv64gc` Linux 5.15.170（`~/rv64spec/linux_j.bin`）：`b4_it2_ah1k` 与 `2t2_dp_it1` 均在 ~80M 周期顺利到达 `rv64 login:`，0 oops/panic。
+- **结论与 RTL 落地摘要（2026-11-21 合入 `main`）**：
+  - 采纳帕累托冠军 **`fe2f_b4_it2_ah1k`**，并在 RTL 落地时完成硬件化收敛：FDIP VA 队列改为 `1-pop/cycle` 无组合环硬件出队、加入 `issued` 响应门控与 `resp_popped_q` 防重复弹栈、加入周期初 L1D/WB 脏行嗅探避免 FDIP 缓存未刷回的旧代码行、BPU 采用 `BRQ_W=1` 与内部 `rec_q[256]` 消除 168 位 `bpu_ck` 跨 FTQ/PTAB 透传、`pre_idu_ftq_bpu` 贯通 4 位 `ftq_offset` 直接索引（删除 16×64 位 PC 扫描）、顺手修复 RVC 跨 4KB 页 32 位指令第二半字取指缺页 `stval = pc + 2` 架构缺陷（`front_head_fix` + `rob_trap_ctrl` / `front_top.cpp` + `Rob.cpp`），并删去旧 `FE_PAIR` / `FE_IPF` / `FE_IPF_LAT` 实验开关。
+  - **最终合入版全量 SPEC06 INT 386/386 点**（`sim64_fe2f_final`，`/nfs_global/S/houruyao/spec06_rv64gc/tm/res_fe2f_final_386`）：相对 EXP-050 `main`（`13.14 分/GHz`）几何平均 **+2.18%（`13.42 分/GHz`）**，相对 EXP-048 累计 **+10.76%**（12/12 全正）；`perlbench +6.08%`、`gcc +6.06%`、`sjeng +5.17%`、`gobmk +4.68%`、`h264ref +1.85%`、`bzip2 +1.57%`、`astar +1.44%`、`libquantum +0.77%`、`mcf +0.18%`、`xalancbmk +0.11%`、`omnetpp −0.00%`、`hmmer −1.42%`；TMA `Retiring 30.92% → 31.58% (+0.66 pp)`、`FE 24.57% → 20.31% (−4.26 pp)`、`FE.bw 22.77% → 18.60% (−4.18 pp)`、`FE.lat 1.79% → 1.71% (−0.08 pp)`；固定大程序 `dhrystone 96,351 (2.68, −5.75%)`、`coremark 231,913 (2.72, −15.77%)`、`memory-stress-small 326,797 (3.21, −4.89%)`。
+  - **RTL 验证与 Yosys 综合**：`make cfg` 同步（171 常量）、`lint_chip.sh` 0 警告/0 错误、`fm_gate.sh` **68/68 PASS（含新增 `directed/fe_2taken_fdip.bin`，0 FM 不一致，0 周期偏差）**；`eda` rv64gc Linux 27 段检查点（`s01..s26` **26/26 PASS** 合计 ~1.326 亿指令、`s00_inst0` 510 万指令 0 FM 不一致且 1637/1637 PT/UP bins 全等）；Yosys 通用门（`SYNTH_LIGHT=1 SYNTH_MEM=1 SYNTH_LTP=1 SYNTH_NO_MEMPRIO=1 strash;balance;map`）：`predecode` 10,144/27、`pre_idu_queue` 137,578/38、`tlb_mmu` 46,624/61、`icache` 916,659/106、`bpu` 504,078/272、`front_top` 1,582,763/356（见 `rtl/docs/09-synthesis-report.md` 第 13 节，超 100 层路径已登记至 `docs/TODO.md` 后续拆拍）。
 
 ---
 
