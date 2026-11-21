@@ -38,7 +38,6 @@
 | **`front_top`**（前端整块，含 EXP-051 `bpu`+`icache`） | **356 层** / 1,582,763（较 EXP-050 153→356） | `u_pred_path.u_bpu.r1_q[1074]` → PTAB bypass → `u_pd.pd_ras_op2_q[1]` | 随 `bpu` S0 链压低并切断 PTAB bypass 到 `front_pd_info` 跨模块组合路径，压回 100 层以内 |
 | **`icache`**（EXP-051 4-Bank 1R1W + 2-port ITLB + FDIP） | **106 层** / 916,659（原 70 层 / 312,314） | `u_ctl.r_q[136]` → `mmu_req_vtag[4]` | 拆解 `icache_ctl` / `icache_itlb` 请求选路，压回 100 层以内 |
 | **`dcache_mshr`**（EXP-048 MSHR 8→16） | **123 层** / 91,934（其余 `dcache` 核心子模块均 13–49 层） | `ax_req_accepted` → `ax_req_line[25]` | 16 项 MSHR 下 AXI 请求选择/出队组合链过长，压回 100 层以内 |
-| **`ren`**（重命名） | **111 层** / 474,613 | `inst_q` → `u_fp.u_ckpt.entry_q` | 优化 FP 重命名检查点写入与 mov 消除判定链，压回 100 层以内 |
 | **`lsu`**（单模块） | **101 层** / 1,227,891 | `pl12_q` → `u_ldq.g_e[30].u_ent.st_d` | 贴近 100 层红线，随 `back_top` 路径一并压低 |
 | **`dcache` / `mem_top`**（未出数） | `dcache`/`mem_top` 超 64 GB RSS | `dcache.sv:76` 已修、已加 `SYNTH_NO_MEMPRIO=1` | `dcache` 建议拆子模块（`dcache_s1`/`s2_*`/`mshr`/`wb`/`resp`）或放宽看门狗至 128 GB+ 测 |
 
