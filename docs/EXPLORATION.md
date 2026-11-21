@@ -6,6 +6,7 @@
 
 | 编号 | 日期 | 题目 | 分支 | 状态 | 一句话结论 |
 |---|---|---|---|---|---|
+| [EXP-053](#exp-053-前端结构清理与去补丁重构--复用-ttg_pick_k-与双路径加速) | 2026-11-22 | 前端两阶段清理重构（Phase 1：真 4-Bank `icache_arr` / 并行 BPU & `front_head_fix` / 删死 `tage_idx/tag`；Phase 2：删 `fdip_snoop` 改 1 拍探针 / AXI `CLEAR_ON_POP` 消回波 / 显式 1b `pf_inst_hi`）+ 复用 `ttg_pick_k` 与 `` `ifdef SYNTHESIS `` 双路径 + 修复既有 `LSU_MS_DATA` STLF `cam_ok` | trace-model `exp/fe-cleanup`；rtl `rtl/fe-cleanup` | **已合入 `main`（2026-11-22：trace-model `4d4534f`、rtl `28840c8`）** | 零新功能膨胀、彻底清除跨子系统 `fdip_snoop` / `resp_popped_q` / `inst->diag_val[1]` 三处补丁与死线；Yosys 同口径 `front_top` **1,582,763/356 → 1,159,189 (−26.8%) / 216 层 (−39.3%)**、`bpu` **504k/272 → 410k (−18.6%) / 197 层 (−27.6%)**、`icache` **917k/106 → 389k (−57.5%) / 114 层**、`pre_idu_queue` **138k → 131k (−4.5%) / 38 层**；SPEC06 INT 386/386 **+0.020%**（vs EXP-051）；合入最新 `main`（EXP-052 + `de5fdb9`）后 `lint_chip` 0、`fe_clean_eq_tb` 双路径（仿真 3.6× 提速）0 错、`fm_gate` **68/68 0 周期偏差**、rv64gc Linux 27 窗 **137,700,061 指令 0 FM 差异且 27/27 PT/UP 150,619 bins 全等** |
 | [EXP-052](#exp-052-rv64gc-cmv-规范化与组内-1-hop-关键链移动消除--ren-降深度) | 2026-11-21 | RV64GC `c.mv`（`add rd, x0, rs2`）规范化 + 组内 1-hop 关键链移动消除（`ren_elim_sel` 并行根分解 + `head_after`/`head_next` 移出握手关键路径） | trace-model `exp/move-elim-eval`；rtl `rtl/move-elim-1hop` | **已合入 `main`（2026-11-22：trace-model `1939bd1`、rtl `9798eb7`）** | 修复此前 `is_move_shape` 漏掉全部 16-bit `c.mv`（`MOVE_ELIMINATED = 0%`）的缺陷，并增加组内 1-hop 生产链消除；全量 SPEC06 INT **386/386 点（0 失败）Geomean `+0.55%`**（12 程序全正零回退：`xalancbmk +1.62%`、`omnetpp +1.22%`、`sjeng +0.79%`、`h264ref +0.74%`、`gobmk +0.68%`、`mcf +0.43%`、`bzip2 +0.39%`、`astar +0.31%`、`gcc +0.30%`），`coremark +0.99%`；RTL `ren` 深度不升反降 **99 → 97 层**（`475,533` cells，+0.18%）、`idu` 66 层；`tests/ren_elim_sel/run.sh` 100k 随机 0 不一致、`lint_chip` 0、`fm_gate` **68/68（0 周期偏差）**、Linux 27 窗 1.377 亿指令 0 FM 不一致（26/27 PT/UP 全等） |
 | [EXP-051](#exp-051-前端-2-fetch--2-taken--真-axi-fdip里程碑-b-模型探索) | 2026-11-21 | 前端 `2-fetch` / `2-taken`（零 S0 串行 SRAM 的 2-Ahead B + 无截断 `NT=1` + 4-Bank 1R1W ICache + 2 读口 ITLB）+ 真 AXI/LLC/DRAM S2 确认 2-slot FDIP + `HistRing 1024b` + 内部 `rec_q[256]` + `BRQ_W=1` | trace-model `exp/fe-2fetch-2taken` → `merge/fe-2fetch-2taken`；rtl `rtl/fe-2fetch-2taken` | **已合入 `main`（2026-11-21：trace-model `5b67500`、rtl `3fa98cd`）** | 全量 SPEC06 INT **386/386 点（0 失败）**：探索版帕累托冠军 `fe2f_b4_it2_ah1k` 达 **+2.30%（`13.44 分/GHz`）**，合入 RTL 对齐版（1-pop/cycle FDIP + `BRQ_W=1` + L1D/WB 脏行嗅探）达 **+2.18%（`13.42 分/GHz`，较 EXP-050 前累计 +10.76%）**，`FE.bw 22.77% → 18.60%`、`coremark −15.77%`；RTL `fm_gate` **68/68 0 周期偏差**，rv64gc Linux **26/26 段（1.326 亿指令）+ `s00` 0 FM/PT/UP 差异**，顺手修复跨 4KB 页 RVC 32 位指令第二半字取指缺页 `stval = pc + 2` 缺陷 |
 | [EXP-050](#exp-050-块级-ftb--1-ahead2-ahead-bpu里程碑-a-模型探索) | 2026-11-21 | 块级 FTB（S0 uFTB + S1/S2 Block-FTB/Block-TAGE/单块 Block-ITT）+ 硬件忠实 1-ahead / 2-ahead 流水（`ah1_4k_a2k1k` + `FTB_BRQ=2`，零 `of2` 组合环） | trace-model `exp/ftb-bpu`（归档 `375b080`）→ `merge/ftb-bpu`；rtl `rtl/ftb-bpu` | **已合入 main（2026-11-21：trace-model `ef61350`、rtl `a4dcfb9`）** | 全量 SPEC06 INT（386 点，12 程序全正零回退）：1-ahead（`ah1_4k_a2k1k`，零组合环）达 **+8.48%（`12.11 → 13.14 分/GHz`）**、`FE.bw 31.23% → 22.85%`；RTL 删 22 个旧 16-bank 文件零外部端口改动，Yosys `bpu` **549,458 → 274,811 单元（−50.0%）**、深度 134→131 层；`fm_gate` **67/67 0 周期偏差**，rv64gc Linux **26/26 段（1.325 亿指令）0 FM 不一致、PT/UP 指纹 0 差异** |
@@ -52,6 +53,25 @@
 | [EXP-001](#exp-001-面积优化三个方向) | 2026-11-04 | 面积优化：FTQ 合并、LSU 端口、LD/STA IQ 合并 | trace-model `exp/area-explore` | 未提交、未合入 | 三个方向都能省面积，性能代价 0–1% |
 
 ---
+
+## EXP-053 前端结构清理与去补丁重构 + 复用 `ttg_pick_k` 与双路径加速
+
+- **日期 / 分支**：2026-11-22；`trace-model` `exp/fe-cleanup`（合入 `4d4534f`）、`rtl` `rtl/fe-cleanup`（合入 `28840c8`）。**状态**：**已合入 `main` 并推送**。
+- **背景**：EXP-051 合入 `2-taken + 2-Ahead B + 4-Bank ICache + FDIP` 后，`front_top` 面积达 1.58M / 356 层、`bpu` 504k / 272 层、`icache` 917k / 106 层，且留有三处临时补丁（跨子系统 `fdip_snoop` 旁路、`resp_popped_q` AXI 回波挡板、`inst -> diag_val[1]` 搭便车传跨页 RVC 缺页偏移）与全链路死线 `tage_idx/tage_tag`。
+- **方案（两阶段清理 + 复用 `main` 公共原语）**：
+  1. **Phase 1（零周期结构重构）**：`icache_arr.sv` 显式拆为真 4-Bank 1R1W + 并行 SRRIP；`bpu_types_pkg.sv`/`bpu_eval.sv` 并行 `ftb_eval_ent`（加固奇地址向上取整与 64 位回绕）；`bpu_hist_vec.sv` 零取模并行移位；`bpu_spec.sv` 切断 `r1_q → ovr_a → spec_a → g0_b` 假路径；`inst_fifo` 改为紧凑原始半字、单份展开预译码与 4 轮 Kogge-Stone 起点扫描统一落在 `front_head_fix.sv`；全链路删除死线 `tage_idx`/`tage_tag`。
+  2. **复用 `rtl/common` 公共原语与双路径**：`front_pd_info.sv` 用 `ttg_pick_k #(.N(FETCH_WIDTH), .K(2))` 替代两级 `ttg_first_set` + 前缀或；`front_head_fix.sv` 与 `bpu_hist_vec.sv` 按 `rtl/common/ttg_*.sv` 统一风格补齐 `` `ifdef SYNTHESIS ``（综合走并行树/桶形移位，仿真走快速行为路径，`fe_clean_eq_tb` 仿真提速 **3.6×**）。
+  3. **Phase 2（微架构去补丁）**：P2-1 删除 `dcache`/`wb`/`mem_top` 上跨子系统 `fdip_snoop_dirty`/`fdip_snoop_line`，改为 `icache_fdip` 发射前经既有 `dc_req`/`dc_resp` 做 1 拍 DCache/WB/MSHR/fill 探针；在 `axi_cpu_port_chan` 通道 0 增加 `CLEAR_ON_POP=1`（对应 `SimCpu.cpp`）根治 AXI 响应回波并删除 `resp_popped_q`；`icache_top.cpp` 补齐 32 KiB L1I 数据阵与 `Blocked::StaleIcache`。P2-2 用显式 1-bit `pf_inst_hi` 贯通前端到 `rob_trap_ctrl` 替代 `inst->diag_val[1]` 搭便车。
+  4. **顺带修复既有模型缺陷**：`LsuPipeTranslate.cpp` 命中 STLF 候选（`c.v == true`）时不写 `cam_ok`，消除 `RC_DATA` 等待 SDU 期间错误缓存 oracle `m.rs2` 导致的 Linux `s01`/`s09` 分叉。
+- **综合对比（`eda-04..06`，`SYNTH_LIGHT=1 SYNTH_MEM=1 SYNTH_LTP=1 SYNTH_NO_MEMPRIO=1 strash;balance;map`）**：
+  - `front_top`：`1,582,763 / 356` → **`1,159,189 (−26.8%) / 216 层 (−39.3%)`**
+  - `bpu`：`504,078 / 272` → **`410,093 (−18.6%) / 197 层 (−27.6%)`**
+  - `icache`：`916,659 / 106` → **`389,270 (−57.5%) / 114 层`**
+  - `pre_idu_queue`：`137,578 / 38` → **`131,433 (−4.5%) / 38 层`**
+  - `axi_cpu_port_adapter` `222→227 / 9`、`rob` `466,029→466,653 / 64`、`dcache_bank` `142,429 / 12`、`dcache_s2_ld` `5,097 / 37`、`dcache_wb` `23,334 / 49`。
+- **验证**：
+  - 性能（SPEC06 INT 386/386 点，vs EXP-051）：**Geomean +0.020%**（P2-1 1 拍探针几乎零性能代价）；
+  - 变基至最新 `main`（含 EXP-052 + `de5fdb9`）后全套复验：`comb_graph.py --check` 0 违例、`run_gate` 62/62 + `PF_ENABLE=0` 62/62 + `run_gate_c` 68/68、`linux_check.sh` 到 `rv64 login:`（0 oops/panic）；RTL `gen_cfg.sh` 171 常量 0 差异、`lint_chip` 0、`common_prims` 100k PASS、`ren_elim_sel` 100k PASS、`fe_clean_eq_tb` 双路径（`SIM` 0.038s / `SYNTHESIS` 0.138s）0 错、`fm_gate.sh` **68/68 PASS 0 周期偏差**；Linux 27 窗（`eda-05..10`，合计 **137,700,061 条指令**）**0 FM 不一致、27/27 段 150,619 PT / 150,619 UP bins 100% 全等**。
 
 ## EXP-052 RV64GC `c.mv` 规范化与组内 1-hop 关键链移动消除 + `ren` 降深度
 
