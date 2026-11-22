@@ -6,6 +6,7 @@
 
 | 编号 | 日期 | 题目 | 分支 | 状态 | 一句话结论 |
 |---|---|---|---|---|---|
+| [EXP-055](#exp-055-后端指令窗口扩展-prf256--rob256-与-ren-公共原语降深度) | 2026-11-22 | 后端窗口 DSE（PRF/ROB/MAX_BR/IQ/STQ/MSHR）落地 `PRF=256 / ROB=256`（`MAX_BR=32`）+ `ren` 公共原语降深度（`100→91` 层） | trace-model `exp/win256`；rtl `rtl/win256` | **已合入 `main`（2026-11-22：trace-model `16548ba`、rtl `f1fed8a`）** | 基于 386 点 TMA（`NOPREG 14.9%`、`ROB_FULL 11.6%`）做两轮 48 点 DSE：确认现有 IQ/LDQ/STQ/MSHR/`MAX_BR=32` 均已超配，仅改 `PRF=256 / ROB=256`（天然 2 次幂零回绕逻辑）即可吃掉 `256/256/64` 99%+ 收益；**全量 SPEC06 INT 386/386（0 失败）vs EXP-053 `main` `+5.64%`（`13.48 → 14.24 分/GHz`）**，`BE 33.8% → 26.5%`、`MLP 3.54 → 4.63`；RTL `ren` 经 `ren_dep_check` 两级旁路 + `ren_elim_sel` 3 级指针跳跃 + `ren_rat` 去 `fire` 压至 **91 层**（低于原 128/128 的 97 层），`prf` 25 层、`rob` 64 层、`isu` 50 层；`fm_gate` 68/68（0 周期差）、Linux 27 窗 1.377 亿指令 0 FM 差且 27/27 PT/UP 全等 |
 | [EXP-054](#exp-054-l1-解耦-breadcrumbs-与-berti-融合及-llc-sms-空间预取体系评估) | 2026-11-22 | L1 解耦 Breadcrumbs（移植自 `gem5x86/gem5rv` 简化版 + 自适应 distance）与硬件 Berti 融合、以及 LLC SMS（trigger-only + 12b PC hash + 密集流过滤 + 准确率节流器）与 BOP 协同评估 | trace-model `exp/pf-bc-sms`（worktree `trace-model-pf-bc-sms`，基于 `1939bd1`，未提交） | **探索完成（待决策，未合入）** | **LLC BOP + trigger-only 稀疏过滤/节流 SMS 为绝对帕累托冠军**：零改动前端/重命名/L1D，仅在 LLC 增加硬件 SMS（FT 32 / AGT 32 / PHT 1024 / 2KB region）与 L1D→LLC 12-bit PC hash 透传，全量 SPEC06 INT **386/386 点（0 失败）Geomean `+1.03% ~ +1.04%`**（`SMS_T1_THR`：**`omnetpp +5.88%`、`mcf +2.10%`、`xalancbmk +1.49%`、`gcc +1.20%`、`perlbench +0.87%`、`astar +0.47%`、`libquantum −0.01%`**，全量 386 点最差点仅 **−2.7%**；无节流版 `mcf` 达 **`+3.85%`**）。L1 解耦 BC 叠加 Berti 全量 386 点仅 **`+0.09%`**（与 SMS 叠加 `COMBO +1.07%`，仅多 +0.03 pp），在已有强硬件 Berti + LLC SMS 之上性价比偏低；`rv64gc` Linux 在 `COMBO` 全开下成功启动到 `rv64 login:`（0 oops/panic）；默认关 `run_gate_c.sh` 68/68 逐拍一致 |
 | [EXP-053](#exp-053-前端结构清理与去补丁重构--复用-ttg_pick_k-与双路径加速) | 2026-11-22 | 前端两阶段清理重构（Phase 1：真 4-Bank `icache_arr` / 并行 BPU & `front_head_fix` / 删死 `tage_idx/tag`；Phase 2：删 `fdip_snoop` 改 1 拍探针 / AXI `CLEAR_ON_POP` 消回波 / 显式 1b `pf_inst_hi`）+ 复用 `ttg_pick_k` 与 `` `ifdef SYNTHESIS `` 双路径 + 修复既有 `LSU_MS_DATA` STLF `cam_ok` | trace-model `exp/fe-cleanup`；rtl `rtl/fe-cleanup` | **已合入 `main`（2026-11-22：trace-model `4d4534f`、rtl `28840c8`）** | 零新功能膨胀、彻底清除跨子系统 `fdip_snoop` / `resp_popped_q` / `inst->diag_val[1]` 三处补丁与死线；Yosys 同口径 `front_top` **1,582,763/356 → 1,159,189 (−26.8%) / 216 层 (−39.3%)**、`bpu` **504k/272 → 410k (−18.6%) / 197 层 (−27.6%)**、`icache` **917k/106 → 389k (−57.5%) / 114 层**、`pre_idu_queue` **138k → 131k (−4.5%) / 38 层**；合并后最新 `main`（`4d4534f`+`28840c8`）全量 SPEC06 INT 386/386 **`13.48 分/GHz`**（vs EXP-052 `−0.05%`、vs EXP-051 `+0.50%`）、`lint_chip` 0、`fe_clean_eq_tb` 双路径（仿真 3.6× 提速）0 错、`fm_gate` **68/68 0 周期偏差**、rv64gc Linux 27 窗 **137,700,065 指令 0 FM 差异且 27/27 PT/UP 150,175 bins 全等** |
 | [EXP-052](#exp-052-rv64gc-cmv-规范化与组内-1-hop-关键链移动消除--ren-降深度) | 2026-11-21 | RV64GC `c.mv`（`add rd, x0, rs2`）规范化 + 组内 1-hop 关键链移动消除（`ren_elim_sel` 并行根分解 + `head_after`/`head_next` 移出握手关键路径） | trace-model `exp/move-elim-eval`；rtl `rtl/move-elim-1hop` | **已合入 `main`（2026-11-22：trace-model `1939bd1`、rtl `9798eb7`）** | 修复此前 `is_move_shape` 漏掉全部 16-bit `c.mv`（`MOVE_ELIMINATED = 0%`）的缺陷，并增加组内 1-hop 生产链消除；全量 SPEC06 INT **386/386 点（0 失败）Geomean `+0.55%`**（12 程序全正零回退：`xalancbmk +1.62%`、`omnetpp +1.22%`、`sjeng +0.79%`、`h264ref +0.74%`、`gobmk +0.68%`、`mcf +0.43%`、`bzip2 +0.39%`、`astar +0.31%`、`gcc +0.30%`），`coremark +0.99%`；RTL `ren` 深度不升反降 **99 → 97 层**（`475,533` cells，+0.18%）、`idu` 66 层；`tests/ren_elim_sel/run.sh` 100k 随机 0 不一致、`lint_chip` 0、`fm_gate` **68/68（0 周期偏差）**、Linux 27 窗 1.377 亿指令 0 FM 不一致（26/27 PT/UP 全等） |
@@ -54,6 +55,21 @@
 | [EXP-001](#exp-001-面积优化三个方向) | 2026-11-04 | 面积优化：FTQ 合并、LSU 端口、LD/STA IQ 合并 | trace-model `exp/area-explore` | 未提交、未合入 | 三个方向都能省面积，性能代价 0–1% |
 
 ---
+
+## EXP-055 后端指令窗口扩展（`PRF=256 / ROB=256`）与 `ren` 公共原语降深度
+
+- **日期 / 分支**：2026-11-22；`trace-model` `exp/win256`（`16548ba`）、`rtl` `rtl/win256`（`f1fed8a`），已快进合入 `main`。
+- **问题与动机**：对 EXP-051 全量 386 点（`res_fe2f_final_386`）做 SimPoint 加权 L1+L2 TMA 拆分发现，`Backend Bound = 33.8%` 为头号瓶颈，其中 `SLOT_REN_NOPREG = 14.9%`（`PRF=128` 仅 96 个可用物理寄存器，严重小于 `ROB=128`）、`SLOT_BE_ROB_FULL = 11.6%`、`SLOT_IDU_NOBRTAG = 3.4%`，而执行口与队列（`IQ_FULL = 0.88%`、`LDQ_FULL = 0.0%`、`BE.core = 2.9%`）几乎无瓶颈。
+- **两轮 48 点快评 DSE（`me_jobs48.txt`，vs `res_me2_386` 同 48 点，全程 `PMU=1`）**：
+  - **第一轮（窗口三参数扫描）**：`160/128/32` **`+0.85%`**、`192/128/32` **`+0.87%`**（单扩 PRF 精确饱和在 160）；`192/192/32` **`+3.89%`**、`192/192/48` **`+3.88%`**、`224/192/64` **`+3.94%`**；`256/256/64` **`+5.53%`**。
+  - **第二轮（`ROB=192` 配套队列与 `256/256/32` 验证）**：在 `192/192/32`（`+3.89%`）上叠加 `IQ_STD=32`（`+3.75%`）、`BR=48+IQ_BR=48`（`+3.78%`）、`PRF=224+BR=48`（`+3.86%`）、`STQ=96`（`+3.90%`）、`MSHR=32`（`+3.82%`）均无显著净增益；而 **`256/256/32`**（47/48）即达 **`~+5.48%`**（吃掉 `256/256/64` 99%+ 收益），且 `256` 是 2 的幂（RTL `ren_free_list` 原生 8-bit 环回，且与 `192` 同为 9-bit tag / 8-bit ROB idx），成为最优工程甜点。
+- **全量 SPEC06 INT 386/386 点验证（`res_dse_win256_main` vs `res_exp053_main_386` `13.48 /GHz`，0 失败）**：
+  - **Geomean `+5.64%` → `14.24 SPECint2006 / GHz`**（`464.h264ref +13.07%`、`471.omnetpp +12.67%`、`483.xalancbmk +8.40%`、`456.hmmer +6.95%`、`458.sjeng +6.56%`、`400.perlbench +5.77%`、`403.gcc +5.45%`、`473.astar +5.00%`、`401.bzip2 +2.18%`、`445.gobmk +1.80%`、`429.mcf +1.06%`、`462.libquantum −0.27%`）。
+  - TMA 变化（vs `res_fe2f_final_386`）：`Retiring 31.58% → 33.70%`（+2.12 pp）、`Backend Bound 33.81% → 26.45%`（−7.36 pp）、`MLP 3.54 → 4.63`（+30.8%）。
+  - 副产品发现：`462.libquantum` 停滞根因为 16 项 L1D MSHR 100% 饱和（`MLP = 15.07/16`）叠加 L1D Berti 预取 64% 晚发（`PF_LATE 18.4/28.7`）与单通道 DDR4 排队延迟（`MissLat 71.9 cyc`），需后续通过私有 L2 / 更深 LLC 预取 / MSHR 扩容解锁。
+- **RTL 落地、Yosys 综合（`eda-08`，`strash;balance;map`）与门禁**：
+  - 仅参数化 8 个 wrapper 写死的 `rob_idx` / `rob2dis_free` 位宽，并针对 `ren`（原 100 层）做三处零周期公共原语降深度重构（`ren_dep_check` 两级旁路、`ren_elim_sel` 3 级 Kogge-Stone 指针跳跃、`ren_rat` `snapshot` 去 `fire`）：`ren` **100 → 91 层**（`586,315` cells，低于原 128/128 的 97 层）、`prf` **25 层**（`614,529`）、`rob` **64 层**（`897,972`）、`isu` **50 层**（`1,018,639`）。
+  - 验证：`lint_chip` 0、`tests/ren_elim_sel` 100k 0 不一致、`fm_gate` **68/68（0 FM 差、0 周期差）**、`trace-model` `comb_graph` 0 / 62+68 门禁 / Linux 启动、`eda-05..10` 27 窗 `rv64gc` Linux **137,700,051 指令 0 FM 差且 27/27 PT/UP 100% 全等**。
 
 ## EXP-054 L1 解耦 Breadcrumbs 与 Berti 融合及 LLC SMS 空间预取体系评估
 
@@ -110,6 +126,16 @@
     - **`BINGO_4K`**（4KB 整页 + `MAXDENSE=48` + `TMIN=10%`，385/386）：**12/12 全正、GEOMEAN `+1.34%`（`13.67 /GHz`）**——`omnetpp +8.81%`、`mcf +2.44%`、`perlbench +1.07%`、`astar +0.98%`、`xalancbmk +0.98%`、`gcc +0.95%`、`sjeng +0.57%`、`bzip2 +0.26%`、`h264ref +0.21%`、`gobmk +0.10%`、`libquantum +0.03%`、`hmmer +0.02%`。
     - **`BINGO_2K_T8`**（2KB 区域 + `MAXDENSE=28` + `TMIN=8%`，384/386）：**12/12 全正、GEOMEAN `+1.28%`（`13.66 /GHz`）**——`omnetpp +7.48%`、`mcf +2.79%`、`perlbench +1.19%`、`xalancbmk +1.11%`、`gcc +0.88%`、`sjeng +0.70%`、`astar +0.70%`、`bzip2 +0.28%`、`h264ref +0.28%`、`gobmk +0.17%`、`libquantum +0.04%`、`hmmer +0.01%`（仅 `gcc sp13 −25.9%` 为短事件回退唯一异常点，可对短事件单独提高置信门槛消除）。
     - 结果目录：`res_db_full_bingo_4k`、`res_db_full_bingo_2k_t8`、`res_db_*`。**最终推荐方案升级为 `LLC BOP + Bingo`（2KB/4KB 任选其一，零核内改动）**。
+- **补充探索（2026-11-22）：补全机制版 Breadcrumbs（UFB + 扩容 + 冗余触发 + L1D Hit 观测，`sim64_bcfull_v1/v2`）**：
+  - **补全内容（`MemSubSystem/include/Breadcrumbs.h` + `MemSubSystem/RealDcache.cpp`）**：① 每 relation 有用性反馈（`PF_BC_UFB=1`，128 项 track 环、16 样本窗口、低于 `PF_BC_UFB_MIN%` 自动静音且 `is_producer()` 屏蔽已静音项）；② 扩容表项（`PF_BC_NV=64` Value Table、`PF_BC_NREL=64` Relation Table、弱项优先替换防 `conf=3` 抖动、`PF_BC_TQ_W=6 PF_BC_TQ_N=32` 令 TQ drop 归零）；③ 完整冗余触发（`PF_BC_RES=2`：L1D 命中驻留行带 `expd_` 去重 + in-MSHR 命中保留 `line_meta_` 待 fill 展开）；④ 可选 `PF_BC_HITS=1`（L1D 普通命中也送 BC）与 `PF_BC_SMODE=3`（仅对活跃 producer 运行 BC 自适应步长，绝不替 Berti 给非 producer 发步长）。默认关 `comb_graph.py --check` 0 隐患、`run_gate_c.sh` 68/68 PASS。
+  - **94 点定向消融（`bcfull_jobs.txt` = 全量 `429.mcf` 45 点 + `memgrp` 59 点，0 失败）**：
+    - `PF_BC_HITS=1` 全线变差（普通 L1D 命中淹没步长/触发路径，`omnetpp +0.39% → +0.02%`、`mcf -0.41% → -0.62%`）；
+    - `NV=64 / NREL=64 / TQ=6x32 + RES=2` 显著提升真指针追逐负载（`xalancbmk` 59 点从 `+0.56% → +1.00%`，`mcf sp4` 达 `+12.82%`），但只要 `smode=0` 仍允许 BC 给非 producer 发步长，`mcf sp44/10/54` 仍暴跌 `-6.07% / -3.92% / -3.86%`（根因：`stride_cand` 达 1.6M）；
+    - 切至 **`bc2_pure_ind`（`PF_BC=1` 纯间接 + Berti 步长）** 或 **`bc2_prod_s3`（`PF_BC=2 PF_BC_SMODE=3` 仅 producer 步长）** + `UFB=20% + RES=2 + NV64/NREL64` 后，`mcf` 坏点全部翻正（`sp44 -6.07% → +0.22%`、`sp10 -3.92% → +0.46%`、`sp54 -3.86% → +0.12%`），全量 45 点 `mcf` 加权 CPI 从 **`-0.41%` 翻正至 `+0.36%`**（34/3 正负，最差点仅 `-0.34%`）；但同时证实原 `sp4 +12.8%` 中约 90% 来自 BC 激进步长而非间接预取本身（纯间接在 `sp4` 准确率 87% 下仅 `+1.17%`）。
+  - **全量 SPEC06 INT 386/386 点验证（0 失败，vs EXP-052 `res_me2_386`）**：
+    - `bcfull_s3_386`（单开补全版 BC）：`483.xalancbmk` 提升至 **`+0.98%`**（加权 CPI；最优单点 `+5.17%`）、`429.mcf +0.34%`、`473.astar +0.03%`（彻底消除简化版 `-1.38%` 回退），12 程序总分近持平（`gcc sp43/13` 个别短点时序抖动）。
+    - **`bcfull_s3_bingo_386`（补全版 BC + `BINGO_4K`）**：**386/386 叠加 `BINGO_4K` 额外净增 `+0.17% ~ +0.23%`**（加权 CPI GM **`+1.67%` vs `BINGO_4K +1.44%`**，预估 **`13.72 /GHz`**；加权 Geomean **`+1.38%` vs `+1.21%`**），几乎全部来自 **`483.xalancbmk`（`+0.85% → +2.54%`，净增 `+1.68%`；加权 Geomean `+0.63% → +1.61%`）** 以及 `omnetpp`（`+8.62% → +8.99%`）、`gcc`（`+1.91% → +2.22%`）、`bzip2`（`+0.15% → +0.42%`）、`mcf` **43/0 零负点**。
+    - **结论**：补全冗余触发 + UFB + 大表 + producer-only 步长确实让 BC 变得干净且能正向叠加在 `BINGO_4K` 上（尤其 `xalancbmk` 受益显著），但在 SPEC06 INT 全量上增量仅 `+0.17% ~ +0.23%`，ROI 仍远不如单做 `LLC BOP + Bingo`（`+1.34%`，零核内改动）。结果目录：`res_bcfull_*`、`res_bc2_*`。
 
 ---
 
