@@ -6,6 +6,7 @@
 
 | 编号 | 日期 | 题目 | 分支 | 状态 | 一句话结论 |
 |---|---|---|---|---|---|
+| [EXP-058](#exp-058-硬件忠实版-llc-bingo-4kb-空间预取器) | 2026-11-23 | 硬件忠实版 LLC Bingo 4KB 空间预取器（FT 32 / AGT 32 / 1RW SRAM `PHT_L 256×4` + `PHT_S 128×4` + 12b `pc_hash` 真实边带 + 无乘法器节流器 + 与 BOP 双优先级协同） | trace-model `exp/bingo`；rtl `rtl/bingo` | **已合入 `main`（2026-11-23：trace-model `aa345c9`、rtl `2fbf053`）** | 在 `axi_llc` 落地硬件忠实版 Bingo 4KB（总存储 `~26.75 KiB`，仅占 4 MiB LLC `0.65%`），与既有 BOP 双优先级协同（`bop_q > bingo_q`，`BOP_INF: 4→8`）；**全量 SPEC06 INT 386/386（0 失败，vs EXP-056 `14.69 /GHz`）Geomean `+1.26%` → `14.88 分/GHz`（11 正 1 平 0 回归：`omnetpp +7.01%`、`mcf +2.59%`、`xalancbmk +1.37%`、`gcc +1.11%`、`sjeng +0.99%`、`astar +0.97%`）**；Yosys `axi_llc_bingo` 经桶形移位优化后为 `41,232` cells / **48 层**；`fm_gate` **69/69（0 周期差）**、Linux 27 窗 `1.377 亿` 指令 0 FM 差且 **27/27 PT/UP 100% 逐拍全等** |
 | [EXP-057](#exp-057-cache-层级探索64kb-l1i-与-1mb-l2--16mb-l3-简化模型评估) | 2026-11-22 | Cache 层级探索（基于 EXP-056 `L2TLB+PWC`）：① 64KB L1I (`128×8`) + 64KB L1D (`256×4`)；② 1MB 16-way 私有 L2 + 16MB 16-way Non-inclusive SRRIP L3 (`L3_LAT=20` cyc) 简化模型 | trace-model `exp/l2l3`（worktree `trace-model-l2l3`） | **探索完成（未合入）** | **64KB L1I** 全量 SPEC06 INT 386/386 仅 **`+0.36%`**（`perlbench +2.44%`、`xalancbmk +1.28%`、`omnetpp +0.61%`），性价比有限；**1MB L2 + 16MB L3** 相对 4MB L2 达 **`+4.11%`**（`mcf +37.73%`、`omnetpp +14.53%`、`xalancbmk +7.28%`、`libquantum +3.50%`、`astar +2.24%`；L2 缩容回退 `gcc −4.66%`、`bzip2 −3.45%`），相对 EXP-055 `main` 累计 **`+7.42%`（`~15.30 分/GHz`）** |
 | [EXP-056](#exp-056-统一-l2-tlb10244-1rw-sram--8-项大页-cam--16-项-sv39-pwc) | 2026-11-22 | 统一 L2 TLB（1024 项 4 路 1RW SRAM，3-bit tree-PLRU）+ 8 项大页 CAM + 16 项 Sv39 PWC 落地 `ptw_walk`，及 `TraceBridge` 已提交页表读修复 | trace-model `exp/l2tlb`；rtl `rtl/l2tlb` | **已合入 `main`（2026-11-22：trace-model `c174d8d`、rtl `c630c5d`）** | 零 L1 关键路径改动，仅在 `ptw_walk` 增加 4 独立 1D 256×76b 1RW SRAM bank + 8 项 RR 大页 CAM + 16 项 RR Sv39 PWC（20-bit root 匹配）；**全量 SPEC06 INT 386/386（0 失败）vs EXP-055 `main` 12/12 全正、Geomean `+3.17%`（`14.24 → 14.69 分/GHz`）**（`mcf +14.61%`、`xalancbmk +9.74%`、`omnetpp +4.38%`、`astar +3.34%`、`perlbench +2.22%`、`bzip2 +2.21%`）；Yosys `ptw_walk` 仅 `5,446` cells（21 `$mem_v2`）/ **44 层**（较改前 47 层反降 3 层）；`fm_gate` **69/69（0 周期差）**、Linux 27 窗 0 FM 差且 27/27 UP / 26/27 PT 全等 |
 | [EXP-055](#exp-055-后端指令窗口扩展-prf256--rob256-与-ren-公共原语降深度) | 2026-11-22 | 后端窗口 DSE（PRF/ROB/MAX_BR/IQ/STQ/MSHR）落地 `PRF=256 / ROB=256`（`MAX_BR=32`）+ `ren` 公共原语降深度（`100→91` 层） | trace-model `exp/win256`；rtl `rtl/win256` | **已合入 `main`（2026-11-22：trace-model `16548ba`、rtl `f1fed8a`）** | 基于 386 点 TMA（`NOPREG 14.9%`、`ROB_FULL 11.6%`）做两轮 48 点 DSE：确认现有 IQ/LDQ/STQ/MSHR/`MAX_BR=32` 均已超配，仅改 `PRF=256 / ROB=256`（天然 2 次幂零回绕逻辑）即可吃掉 `256/256/64` 99%+ 收益；**全量 SPEC06 INT 386/386（0 失败）vs EXP-053 `main` `+5.64%`（`13.48 → 14.24 分/GHz`）**，`BE 33.8% → 26.5%`、`MLP 3.54 → 4.63`；RTL `ren` 经 `ren_dep_check` 两级旁路 + `ren_elim_sel` 3 级指针跳跃 + `ren_rat` 去 `fire` 压至 **91 层**（低于原 128/128 的 97 层），`prf` 25 层、`rob` 64 层、`isu` 50 层；`fm_gate` 68/68（0 周期差）、Linux 27 窗 1.377 亿指令 0 FM 差且 27/27 PT/UP 全等 |
@@ -55,6 +56,24 @@
 | [EXP-003](#exp-003-rob-与-prf-扩大到-256) | 2026-11-04 | ROB/PRF 扩大到 192、256 | trace-model `exp/area-explore` | 未提交、未合入 | 都翻倍到 256 只快约 0.8%（coremark 3%），ROB 128 合理 |
 | [EXP-002](#exp-002-全核面积浪费排查) | 2026-11-04 | 全核面积浪费排查：各 IQ、ibuf、front2back、分支资源、ALU/BRU 端口 | trace-model `exp/area-explore` | 未提交、未合入 | IQ 总项数 384→192、BRU 4→2 等组合后无性能损失；BPU 存储需大负载评估（“ROB 是瓶颈”的说法已被 EXP-003 否定） |
 | [EXP-001](#exp-001-面积优化三个方向) | 2026-11-04 | 面积优化：FTQ 合并、LSU 端口、LD/STA IQ 合并 | trace-model `exp/area-explore` | 未提交、未合入 | 三个方向都能省面积，性能代价 0–1% |
+
+---
+
+## EXP-058 硬件忠实版 LLC Bingo 4KB 空间预取器
+
+- **日期 / 分支**：2026-11-22–23；`trace-model` `exp/bingo`（`aa345c9`）、`rtl` `rtl/bingo`（`2fbf053`），**已合入 `main`**。
+- **动机**：在 EXP-054 验证 LLC 空间预取（SMS）零回归有效且 EXP-056 补齐 L2 TLB 后，前端与地址翻译瓶颈进一步缓解，LLC 空间预取对不规则访存（`omnetpp`/`mcf`/`xalancbmk`）收益突出；相比单表 SMS，Bingo 双表（`PHT_L` 长事件 `PC+Offset` + `PHT_S` 短事件 `PC` 兜底）能在不改前端/L1D 关键路径的前提下进一步抬升覆盖率。
+- **硬件结构（总存储 `~26.75 KiB`，占 4 MiB LLC `0.65%`）**：
+  - **真实 12-bit `pc_hash` 边带**：L1D MSHR 分配时记录 `(pc>>1)^(pc>>13)^(pc>>21)` 低 12 位，经 `dcache_mshr → mem_axi → axi_interconnect → axi_llc_lookup` 透传至 LLC。
+  - **FT + AGT + 提交队列（`axi_llc_bingo_agt.sv`）**：32 项 FIFO 过滤表 FT、32 项 31-bit tree-PLRU 全相联累积表 AGT、4 项提交队列 `cmt_q`、1 项待查表锁存 `pred_pend`。
+  - **1RW SRAM 双 PHT（`axi_llc_bingo_pht.sv`）**：3 状态 FSM（`ST_IDLE`/`ST_PRED`/`ST_CMT`）驱动 4× 1D `256×138b` `PHT_L`（`17.25 KiB`）+ 4× 1D `128×133b` `PHT_S`（`8.31 KiB`，相对偏移经单行桶形移位还原），均为 3-bit tree-PLRU；配合 `ttg_popcount` 密集流过滤（`>= 48` 跳过）。
+  - **节流与发射（`axi_llc_bingo.sv`）**：无乘法器周期准确率节流器（窗口 `256`、阈值 `26` 即 `10.16%`，低于阈值降为 1/8 试探 `deg=2`）、1 候选/拍发射器 + 16 项去重队列 `bingo_q`；与既有 BOP 双优先级协同（`bop_q > bingo_q`，`BOP_INF: 4 → 8`）。
+- **SPEC06 INT 386/386 实测（`eda`，`res_bingo_hw_386` vs EXP-056 `res_l2tlb_rtl` `14.69 /GHz`，0 失败）**：
+  - **Geomean `+1.26%` → `14.88 分/GHz`**（11 正 1 平 **0 回归**）：
+    `471.omnetpp +7.01%`、`429.mcf +2.59%`、`483.xalancbmk +1.37%`、`403.gcc +1.11%`、`458.sjeng +0.99%`、`473.astar +0.97%`、`400.perlbench +0.78%`、`401.bzip2 +0.23%`、`464.h264ref +0.12%`、`462.libquantum +0.09%`、`445.gobmk +0.08%`、`456.hmmer −0.02%`。
+- **验证与综合**：
+  - `trace-model`：`comb_graph.py --check` 0 隐患；`run_gate.sh` 62/62（默认 / `PF_ENABLE=0` / `LLC_BINGO=0`）；`linux_check.sh` 到 `rv64 login:`（0 oops/panic）。
+  - `rtl`：`lint_chip.sh` 0 警告；`fm_gate.sh` **69/69 PASS（0 FM 差、0 周期差）**；`eda-05` Yosys 综合 `axi_llc_bingo` 经桶形移位优化由 163 层降至 **`41,232` cells / 48 层**；`eda-05..09` 27 窗 `rv64gc` Linux 全部跑完（`137,700,059` 指令 0 FM 差、**27/27 PT/UP 指纹 100% 逐拍全等**）。
 
 ---
 

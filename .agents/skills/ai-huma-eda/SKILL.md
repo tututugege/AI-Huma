@@ -36,11 +36,11 @@ done; wait' | sort
 
 - **指令集兼容**：本机 `iprc-jump` 是 AMD Zen 5，`eda` 是 Intel Xeon Cascade Lake。编译给 `eda` 跑的程序必须把 `-march=native` / `-mtune=native` 改为 **`-march=x86-64-v3 -mtune=generic`**，否则触发 `SIGILL`。
 - **glibc 兼容**：本机（Ubuntu）glibc 高于 `eda`（CentOS 7 / Rocky），给 `eda` 的二进制必须**静态链接**（`-static`），或拷源码到 NFS 后直接在 `eda` 节点编译。
-- **Verilator 路径**：本机系统 `/usr/bin/verilator` 是 5.020（编不过），且默认 `PATH` 未包含新版，构建 RTL TB 或跑 lint 前必须显式：
+- **Verilator 路径与多线程默认**：本机系统 `/usr/bin/verilator` 是 5.020（编不过），且默认 `PATH` 未包含新版，构建 RTL TB 或跑 lint 前必须显式：
   ```bash
   export PATH="$HOME/rv64spec/verilator_src/bin:$PATH"
   ```
-  （使用 5.052。）
+  （使用 5.052。）为 `eda` 长跑（如 27 窗 Linux 对齐）构建 `soc_tb` 时，**默认开启 8 线程**（`SOC_VOPT="--threads 8" SOC_COPT="-O2 -march=x86-64-v3 -mtune=generic"`，实测 `eda-09` 上 `7.11×` 加速、本机 9950X3D 上 `7.29×` 加速）；静态链接多线程 `soc_tb` 时需带 `-Wl,--whole-archive -lpthread -Wl,--no-whole-archive -latomic`。
 - **Python 兼容**：`eda` 节点默认 `python3` 是 **Python 3.6.8**，脚本中禁止使用 `:=`、`match` 等 3.8+ 语法。
 
 ## 4. NFS 关键目录与 SPEC06 运行口径
