@@ -6,6 +6,8 @@
 
 | 编号 | 日期 | 题目 | 分支 | 状态 | 一句话结论 |
 |---|---|---|---|---|---|
+| [EXP-057](#exp-057-cache-层级探索64kb-l1i-与-1mb-l2--16mb-l3-简化模型评估) | 2026-11-22 | Cache 层级探索（基于 EXP-056 `L2TLB+PWC`）：① 64KB L1I (`128×8`) + 64KB L1D (`256×4`)；② 1MB 16-way 私有 L2 + 16MB 16-way Non-inclusive SRRIP L3 (`L3_LAT=20` cyc) 简化模型 | trace-model `exp/l2l3`（worktree `trace-model-l2l3`） | **探索完成（未合入）** | **64KB L1I** 全量 SPEC06 INT 386/386 仅 **`+0.36%`**（`perlbench +2.44%`、`xalancbmk +1.28%`、`omnetpp +0.61%`），性价比有限；**1MB L2 + 16MB L3** 相对 4MB L2 达 **`+4.11%`**（`mcf +37.73%`、`omnetpp +14.53%`、`xalancbmk +7.28%`、`libquantum +3.50%`、`astar +2.24%`；L2 缩容回退 `gcc −4.66%`、`bzip2 −3.45%`），相对 EXP-055 `main` 累计 **`+7.42%`（`~15.30 分/GHz`）** |
+| [EXP-056](#exp-056-统一-l2-tlb10244-1rw-sram--8-项大页-cam--16-项-sv39-pwc) | 2026-11-22 | 统一 L2 TLB（1024 项 4 路 1RW SRAM，3-bit tree-PLRU）+ 8 项大页 CAM + 16 项 Sv39 PWC 落地 `ptw_walk`，及 `TraceBridge` 已提交页表读修复 | trace-model `exp/l2tlb`；rtl `rtl/l2tlb` | **已合入 `main`（2026-11-22：trace-model `c174d8d`、rtl `c630c5d`）** | 零 L1 关键路径改动，仅在 `ptw_walk` 增加 4 独立 1D 256×76b 1RW SRAM bank + 8 项 RR 大页 CAM + 16 项 RR Sv39 PWC（20-bit root 匹配）；**全量 SPEC06 INT 386/386（0 失败）vs EXP-055 `main` 12/12 全正、Geomean `+3.17%`（`14.24 → 14.69 分/GHz`）**（`mcf +14.61%`、`xalancbmk +9.74%`、`omnetpp +4.38%`、`astar +3.34%`、`perlbench +2.22%`、`bzip2 +2.21%`）；Yosys `ptw_walk` 仅 `5,446` cells（21 `$mem_v2`）/ **44 层**（较改前 47 层反降 3 层）；`fm_gate` **69/69（0 周期差）**、Linux 27 窗 0 FM 差且 27/27 UP / 26/27 PT 全等 |
 | [EXP-055](#exp-055-后端指令窗口扩展-prf256--rob256-与-ren-公共原语降深度) | 2026-11-22 | 后端窗口 DSE（PRF/ROB/MAX_BR/IQ/STQ/MSHR）落地 `PRF=256 / ROB=256`（`MAX_BR=32`）+ `ren` 公共原语降深度（`100→91` 层） | trace-model `exp/win256`；rtl `rtl/win256` | **已合入 `main`（2026-11-22：trace-model `16548ba`、rtl `f1fed8a`）** | 基于 386 点 TMA（`NOPREG 14.9%`、`ROB_FULL 11.6%`）做两轮 48 点 DSE：确认现有 IQ/LDQ/STQ/MSHR/`MAX_BR=32` 均已超配，仅改 `PRF=256 / ROB=256`（天然 2 次幂零回绕逻辑）即可吃掉 `256/256/64` 99%+ 收益；**全量 SPEC06 INT 386/386（0 失败）vs EXP-053 `main` `+5.64%`（`13.48 → 14.24 分/GHz`）**，`BE 33.8% → 26.5%`、`MLP 3.54 → 4.63`；RTL `ren` 经 `ren_dep_check` 两级旁路 + `ren_elim_sel` 3 级指针跳跃 + `ren_rat` 去 `fire` 压至 **91 层**（低于原 128/128 的 97 层），`prf` 25 层、`rob` 64 层、`isu` 50 层；`fm_gate` 68/68（0 周期差）、Linux 27 窗 1.377 亿指令 0 FM 差且 27/27 PT/UP 全等 |
 | [EXP-054](#exp-054-l1-解耦-breadcrumbs-与-berti-融合及-llc-sms-空间预取体系评估) | 2026-11-22 | L1 解耦 Breadcrumbs（移植自 `gem5x86/gem5rv` 简化版 + 自适应 distance）与硬件 Berti 融合、以及 LLC SMS（trigger-only + 12b PC hash + 密集流过滤 + 准确率节流器）与 BOP 协同评估 | trace-model `exp/pf-bc-sms`（worktree `trace-model-pf-bc-sms`，基于 `1939bd1`，未提交） | **探索完成（待决策，未合入）** | **LLC BOP + trigger-only 稀疏过滤/节流 SMS 为绝对帕累托冠军**：零改动前端/重命名/L1D，仅在 LLC 增加硬件 SMS（FT 32 / AGT 32 / PHT 1024 / 2KB region）与 L1D→LLC 12-bit PC hash 透传，全量 SPEC06 INT **386/386 点（0 失败）Geomean `+1.03% ~ +1.04%`**（`SMS_T1_THR`：**`omnetpp +5.88%`、`mcf +2.10%`、`xalancbmk +1.49%`、`gcc +1.20%`、`perlbench +0.87%`、`astar +0.47%`、`libquantum −0.01%`**，全量 386 点最差点仅 **−2.7%**；无节流版 `mcf` 达 **`+3.85%`**）。L1 解耦 BC 叠加 Berti 全量 386 点仅 **`+0.09%`**（与 SMS 叠加 `COMBO +1.07%`，仅多 +0.03 pp），在已有强硬件 Berti + LLC SMS 之上性价比偏低；`rv64gc` Linux 在 `COMBO` 全开下成功启动到 `rv64 login:`（0 oops/panic）；默认关 `run_gate_c.sh` 68/68 逐拍一致 |
 | [EXP-053](#exp-053-前端结构清理与去补丁重构--复用-ttg_pick_k-与双路径加速) | 2026-11-22 | 前端两阶段清理重构（Phase 1：真 4-Bank `icache_arr` / 并行 BPU & `front_head_fix` / 删死 `tage_idx/tag`；Phase 2：删 `fdip_snoop` 改 1 拍探针 / AXI `CLEAR_ON_POP` 消回波 / 显式 1b `pf_inst_hi`）+ 复用 `ttg_pick_k` 与 `` `ifdef SYNTHESIS `` 双路径 + 修复既有 `LSU_MS_DATA` STLF `cam_ok` | trace-model `exp/fe-cleanup`；rtl `rtl/fe-cleanup` | **已合入 `main`（2026-11-22：trace-model `4d4534f`、rtl `28840c8`）** | 零新功能膨胀、彻底清除跨子系统 `fdip_snoop` / `resp_popped_q` / `inst->diag_val[1]` 三处补丁与死线；Yosys 同口径 `front_top` **1,582,763/356 → 1,159,189 (−26.8%) / 216 层 (−39.3%)**、`bpu` **504k/272 → 410k (−18.6%) / 197 层 (−27.6%)**、`icache` **917k/106 → 389k (−57.5%) / 114 层**、`pre_idu_queue` **138k → 131k (−4.5%) / 38 层**；合并后最新 `main`（`4d4534f`+`28840c8`）全量 SPEC06 INT 386/386 **`13.48 分/GHz`**（vs EXP-052 `−0.05%`、vs EXP-051 `+0.50%`）、`lint_chip` 0、`fe_clean_eq_tb` 双路径（仿真 3.6× 提速）0 错、`fm_gate` **68/68 0 周期偏差**、rv64gc Linux 27 窗 **137,700,065 指令 0 FM 差异且 27/27 PT/UP 150,175 bins 全等** |
@@ -55,6 +57,37 @@
 | [EXP-001](#exp-001-面积优化三个方向) | 2026-11-04 | 面积优化：FTQ 合并、LSU 端口、LD/STA IQ 合并 | trace-model `exp/area-explore` | 未提交、未合入 | 三个方向都能省面积，性能代价 0–1% |
 
 ---
+
+## EXP-057 Cache 层级探索（64KB L1I 与 1MB L2 + 16MB L3 简化模型评估）
+
+- **日期 / 分支**：2026-11-22；基于 EXP-056（`L2TLB+PWC`）评估，分支 `trace-model` `exp/l2l3`（worktree `trace-model-l2l3`，未合入）。
+- **实验 1：64KB L1I (`128×8`) + 64KB L1D (`256×4`)**（当前主线 L1D 已是 64KB PIPT，L1I 为 32KB PIPT）：
+  - 全量 SPEC06 INT **386/386 点（0 失败，vs EXP-056 `res_l2tlb_rtl` `14.69 /GHz`）**，结果目录 `res_l2tlb_64ki`：
+  - **Geomean `+0.36%`**（`perlbench +2.44%`、`xalancbmk +1.28%`、`omnetpp +0.61%`、`h264ref −0.21%`、`gcc −0.19%`，其余基本持平），相对 EXP-055 `main` 累计 `+3.55%`（`~14.75 /GHz`）。收益偏小，暂不采纳。
+- **实验 2：1MB 16-way 私有 L2 + 16MB 16-way Non-inclusive SRRIP L3 (`L3_LAT=20` cyc)**（替换当前 4MB 共享 L2/LLC）：
+  - 在 `exp/l2l3` 中于 `AXI_LLC` 之后增加简化版 16MB 16-way Non-inclusive SRRIP L3 模型（命中固定 20 周期延迟，未命中走 DRAMsim3）。
+  - 全量 SPEC06 INT **386/386 点（0 失败，vs EXP-056 4MB L2 `res_l2tlb_rtl` `14.69 /GHz`）**，结果目录 `res_l2_1m_l3_16m`：
+  - **Geomean `+4.11%`**（相对 EXP-055 `main` 累计 **`+7.42%` → `~15.30 分/GHz`**）：
+    - 大幅收益项：`429.mcf +37.73%`、`471.omnetpp +14.53%`、`483.xalancbmk +7.28%`、`462.libquantum +3.50%`、`473.astar +2.24%`；
+    - L2 缩容（4MB → 1MB）回退项：`403.gcc −4.66%`、`401.bzip2 −3.45%`。
+  - **结论**：大工作集访存程序（`mcf`/`omnetpp`/`xalancbmk`）受 16MB L3 收益极大；若后续真正落地三级缓存，建议考虑 `2MB L2 + 16MB L3` 以兼顾 `gcc`/`bzip2` 工作集。当前保留 `exp/l2l3` 分支，暂不合入 `main`。
+
+## EXP-056 统一 L2 TLB（1024×4 1RW SRAM + 8 项大页 CAM）+ 16 项 Sv39 PWC
+
+- **日期 / 分支**：2026-11-22；`trace-model` `exp/l2tlb`（`c174d8d`）、`rtl` `rtl/l2tlb`（`c630c5d`），已快进合入 `main`。
+- **问题与设计**：EXP-055 扩窗至 `PRF=256 / ROB=256` 后，`mcf`/`xalancbmk`/`omnetpp`/`astar` 的 L1 DTLB/ITLB miss 直接触发 3 级 Sv39 页表遍历，延迟高且挤占 DCache 读口。本轮在 `ptw_walk`（`MemPtwBlock`）内实现硬件可综合的统一 L2 TLB + PWC，零 L1 关键路径改动：
+  - **1024 项 4 路组相联 4KB STLB**：4 个独立 1D `256×76b` 1RW SRAM bank（RTL 中置入 `genvar w` 且无复位，Yosys 综合为干净 `$mem_v2`），XOR 组索引 `vpn[7:0] ^ vpn[16:9]`、3-bit tree-PLRU、1 拍 `STLB_LK` 查表；
+  - **8 项 RR 大页 CAM**（2MB/1GB megapage/gigapage）+ **16 项 RR Sv39 PWC**（缓存 L2/L1 非叶 PTE，20-bit `root` 匹配）；
+  - **`sfence.vma` 刷新**：`TlbMmu` / `rob_bcast_fence` 透传 `sfence_flush` 至 `ptw_walk` 同拍清空全部有效位。
+- **全量 SPEC06 INT 386/386 点验证（`res_l2tlb_rtl` vs EXP-055 `res_dse_win256_main` `14.24 /GHz`，0 失败）**：
+  - **12/12 全正、Geomean `+3.17%` → `14.69 SPECint2006 / GHz`**：
+    - `429.mcf +14.61%`、`483.xalancbmk +9.74%`、`471.omnetpp +4.38%`、`473.astar +3.34%`、`400.perlbench +2.22%`、`401.bzip2 +2.21%`、`403.gcc +0.62%`、`464.h264ref +0.60%`、`458.sjeng +0.49%`、`445.gobmk +0.48%`、`456.hmmer +0.36%`、`462.libquantum +0.06%`。
+- **关键问题修复与 RTL 综合优化**：
+  1. **`TraceBridge` PTW 读未提交 PTE 导致 Linux 早期 oops**：`MemRouteBlock::comb_response()` 原调用 `tbhook::mem_read()` 读出 ROB 内未提交 store 的投机值（`setup_vm_final` 中较新 `clear_fixmap` 清零 `0x803e6ff0` 影响 80 条前老 load 的页表遍历），新增 `Bridge::read_committed_word()` / `tbhook::mem_read_committed()` 回溯 `chain_` undo log 读已提交内存，根治 oops 且与 RTL DCache 逐拍一致。
+  2. **Yosys 面积与深度优化**：将二维数组 `stlb_mem_q[4][256]` 拆为 `genvar w` 内 4 个独立 1D `mem_q[256]`（`ptw_walk` 单元从 `84,338` 骤降至 **`5,446` cells / 21 `$mem_v2`**）；将 `PW_L1_REQ`/`PW_L2_REQ` 授权与 PTE 分类从 `select_any → state_b` 解耦至 `state_q`，深度从 `50` 降至 **`44` 层**（低于改前 `47` 层）。
+- **验证**：
+  - `trace-model`：`comb_graph.py --check` 0 隐患、`run_gate.sh` 62/62、`PF_ENABLE=0` 62/62、`run_gate_c.sh` 68/68（`rvc-sv39.bin` `3270→3268`）、`linux_check.sh` `rv64 login:`（0 oops/panic）；
+  - `rtl`：`make cfg`（175 常量）、`lint.sh` & `lint_chip.sh` 0 警告/0 错误、新增 `directed/l2tlb_pwc.bin`（`9041 == 9041` 周期，14,243 指令 0 FM 差）、`fm_gate.sh` **69/69 PASS（0 FM 差、0 周期差）**、`eda-05..10` 27 窗 `rv64gc` Linux（27/27 DONE、约 1.377 亿指令 0 FM 差、27/27 UP 全等、26/27 PT 全等，`s02` 1 处错路投机差 3 拍重收敛至末尾全等）。
 
 ## EXP-055 后端指令窗口扩展（`PRF=256 / ROB=256`）与 `ren` 公共原语降深度
 
@@ -126,6 +159,13 @@
     - **`BINGO_4K`**（4KB 整页 + `MAXDENSE=48` + `TMIN=10%`，385/386）：**12/12 全正、GEOMEAN `+1.34%`（`13.67 /GHz`）**——`omnetpp +8.81%`、`mcf +2.44%`、`perlbench +1.07%`、`astar +0.98%`、`xalancbmk +0.98%`、`gcc +0.95%`、`sjeng +0.57%`、`bzip2 +0.26%`、`h264ref +0.21%`、`gobmk +0.10%`、`libquantum +0.03%`、`hmmer +0.02%`。
     - **`BINGO_2K_T8`**（2KB 区域 + `MAXDENSE=28` + `TMIN=8%`，384/386）：**12/12 全正、GEOMEAN `+1.28%`（`13.66 /GHz`）**——`omnetpp +7.48%`、`mcf +2.79%`、`perlbench +1.19%`、`xalancbmk +1.11%`、`gcc +0.88%`、`sjeng +0.70%`、`astar +0.70%`、`bzip2 +0.28%`、`h264ref +0.28%`、`gobmk +0.17%`、`libquantum +0.04%`、`hmmer +0.01%`（仅 `gcc sp13 −25.9%` 为短事件回退唯一异常点，可对短事件单独提高置信门槛消除）。
     - 结果目录：`res_db_full_bingo_4k`、`res_db_full_bingo_2k_t8`、`res_db_*`。**最终推荐方案升级为 `LLC BOP + Bingo`（2KB/4KB 任选其一，零核内改动）**。
+  - **最新 `main`（EXP-055 `16548ba`，`PRF=256 / ROB=256`，`14.24 /GHz`）上收口验证（分支 `exp/llc-bingo`，worktree `trace-model-llc-bingo`）**：剔除全部 BC/DMP/D5 代码，仅保留 `Berti + LLC BOP + Bingo 4KB`，并将 PHT 改为 RTL 友好的 **4 路组相联 SRAM**（长表 `256×4=1024`、短表 `128×4=512`、`FT=32`、`AGT=32`、`BOP_INF=8`、`Q=24`、`MAXDENSE=48`、`TMIN=10%`）。验证：`comb_graph.py --check` 0 隐患；`LLC_BINGO=1` 下 `rv64gc` Linux 启动 PASS（`rc=3 login=1 oops/panic=0`）；**全量 SPEC06 INT 386/386 点（0 失败，vs `main165_base_386` `14.24 /GHz`）**：加权 CPI **`+1.07%`（`14.39 /GHz`）**、加权 Geomean **`+0.96%`**（10 正 2 平 0 回退：`omnetpp +6.40%`、`mcf +2.28%`、`perlbench +0.96%`、`xalancbmk +0.91%`、`astar +0.71%`、`gcc +0.69%`、`sjeng +0.52%`、`bzip2 +0.22%`、`h264ref +0.16%`、`gobmk +0.13%`、`hmmer -0.00%`、`libquantum -0.01%`）。结果目录：`res_main165_{base,bingo4w}_386`。
+  - **补充：`libquantum` 专项（LLC Streamer / BOP 跨页 / DTLB 下一页）**：85 点消融中 `DTLB_NP=1` 在 `libquantum` 持平（`-0.01%`，因 `BertiHw` 的 `g_pf_xq` 已触发真实 PTW）、`LLC Streamer`（同页 `-3.81%`，跨页 `dist=64` `+0.98%` 但压低 `omnetpp` `-2.1%`）；`LLC_BOP_XPAGE=1 + INF=12` 将 `libquantum` 提至 **`+1.42%`**（`sp43 +10.9%`）且 `omnetpp` 升至 **`+7.45%`**，但在全量 386 点上因跨非连续物理页拖累 `bzip2`（`+0.22% → -0.66%`，`sp23 -20.6%`）与 `gcc`（`+0.69% → -0.75%`），总分反略降至 `+1.02%`（`res_main165_bopxp_bingo_386`）。**结论：保持同页 `BOP + 4-way Bingo 4KB`（`+1.07%`，0 回退）作为 RTL 落地规格。**
+  - **重大突破：统一 L2 TLB（1024 项 4 路 SRAM，2 拍）+ 16 项 Sv39 PWC（[L2Tlb.h](trace-model-llc-bingo/MemSubSystem/include/L2Tlb.h)，挂在 `MemPtwBlock` 中间，零 L1 关键路径改动）**：
+    - 验证：`comb_graph.py --check` 0 隐患；`L2TLB_ENTRIES=1024 L2TLB_PWC=16 LLC_BINGO=1` 下 `rv64gc` Linux 启动 PASS（`rc=3 login=1 oops/panic=0`）；
+    - **全量 SPEC06 INT 386/386 点（0 失败，vs 最新 `main` `16548ba` `14.24 /GHz`）**：
+      - **单开 `L2TLB(1024×4) + PWC(16)`**：**12/12 全正、GEOMEAN `+3.46%`（`14.73 /GHz`）**——`mcf +15.85%`、`xalancbmk +10.17%`、`omnetpp +5.36%`、`astar +3.83%`、`bzip2 +2.24%`、`perlbench +2.20%`、`h264ref +0.72%`、`gcc +0.63%`、`sjeng +0.61%`、`gobmk +0.51%`、`hmmer +0.36%`、`libquantum +0.17%`。
+      - **叠加 `LLC Bingo 4KB`（`main165_l2tlb1k_pwc_bingo_386`）**：**超线性叠加、12/12 全正、GEOMEAN `+4.64%`（`14.90 /GHz`，加权 GM `+4.22%`）**——`mcf +18.85%`（45/45 全正，单点最高 `+53.7%`）、`omnetpp +12.55%`（25/25 全正）、`xalancbmk +11.25%`（最高 `+35.9%`）、`astar +4.72%`（26/26 全正）、`perlbench +2.99%`、`bzip2 +2.48%`、`gcc +1.43%`、`sjeng +1.13%`、`h264ref +0.89%`、`gobmk +0.69%`、`hmmer +0.34%`、`libquantum +0.25%`。结果目录：`res_main165_l2tlb1k_pwc{,_bingo}_386`。
 - **补充探索（2026-11-22）：补全机制版 Breadcrumbs（UFB + 扩容 + 冗余触发 + L1D Hit 观测，`sim64_bcfull_v1/v2`）**：
   - **补全内容（`MemSubSystem/include/Breadcrumbs.h` + `MemSubSystem/RealDcache.cpp`）**：① 每 relation 有用性反馈（`PF_BC_UFB=1`，128 项 track 环、16 样本窗口、低于 `PF_BC_UFB_MIN%` 自动静音且 `is_producer()` 屏蔽已静音项）；② 扩容表项（`PF_BC_NV=64` Value Table、`PF_BC_NREL=64` Relation Table、弱项优先替换防 `conf=3` 抖动、`PF_BC_TQ_W=6 PF_BC_TQ_N=32` 令 TQ drop 归零）；③ 完整冗余触发（`PF_BC_RES=2`：L1D 命中驻留行带 `expd_` 去重 + in-MSHR 命中保留 `line_meta_` 待 fill 展开）；④ 可选 `PF_BC_HITS=1`（L1D 普通命中也送 BC）与 `PF_BC_SMODE=3`（仅对活跃 producer 运行 BC 自适应步长，绝不替 Berti 给非 producer 发步长）。默认关 `comb_graph.py --check` 0 隐患、`run_gate_c.sh` 68/68 PASS。
   - **94 点定向消融（`bcfull_jobs.txt` = 全量 `429.mcf` 45 点 + `memgrp` 59 点，0 失败）**：
@@ -136,6 +176,18 @@
     - `bcfull_s3_386`（单开补全版 BC）：`483.xalancbmk` 提升至 **`+0.98%`**（加权 CPI；最优单点 `+5.17%`）、`429.mcf +0.34%`、`473.astar +0.03%`（彻底消除简化版 `-1.38%` 回退），12 程序总分近持平（`gcc sp43/13` 个别短点时序抖动）。
     - **`bcfull_s3_bingo_386`（补全版 BC + `BINGO_4K`）**：**386/386 叠加 `BINGO_4K` 额外净增 `+0.17% ~ +0.23%`**（加权 CPI GM **`+1.67%` vs `BINGO_4K +1.44%`**，预估 **`13.72 /GHz`**；加权 Geomean **`+1.38%` vs `+1.21%`**），几乎全部来自 **`483.xalancbmk`（`+0.85% → +2.54%`，净增 `+1.68%`；加权 Geomean `+0.63% → +1.61%`）** 以及 `omnetpp`（`+8.62% → +8.99%`）、`gcc`（`+1.91% → +2.22%`）、`bzip2`（`+0.15% → +0.42%`）、`mcf` **43/0 零负点**。
     - **结论**：补全冗余触发 + UFB + 大表 + producer-only 步长确实让 BC 变得干净且能正向叠加在 `BINGO_4K` 上（尤其 `xalancbmk` 受益显著），但在 SPEC06 INT 全量上增量仅 `+0.17% ~ +0.23%`，ROI 仍远不如单做 `LLC BOP + Bingo`（`+1.34%`，零核内改动）。结果目录：`res_bcfull_*`、`res_bc2_*`。
+- **补充探索（2026-11-22）：移植 `gem5gs` `D5` 统一预取器并移除 `BertiHw`（`MemSubSystem/include/BreadcrumbsD5.h`，`sim64_d5_v1..v4`）**：
+  - **实现**：按 `D5` 规格完整移植解耦 Rename Tag 引擎（单链 `chainIdx=1`、每 100k 周期清零）+ LDT 循环边界（拦截 RV64 `BR` 比较寄存器 `rs1/rs2`、`bound_index` + `contig` 连续性豁免）+ `uni[32]` 无偏 per-PC/per-Relation MSHR 延迟与 Tag-Seeded 重入 + 融合 Timely Local-Delta（`BC_LD=1`，`MSHR < 70%` 限流）+ 步长网格展开 + 冗余触发 `RES=2` + `l2_far` 经 `g_llc_inject_q` 直注 `AXI_LLC` 与 `l2_fill_trigger=2`，**默认关闭 `BertiHw`**（`PF_BC_D5=1`，默认关 `gate_c` 68/68 PASS）。
+  - **4 轮迭代定位的 5 个关键 RV64 / AI-Huma 架构适配点**：
+    1. RV64 无 x86 访存寻址融合，`has_rule` 指令密度达 x86 的 2×–2.5×，8 宽核上 `NTQ=8, 3/cyc` 丢弃率高达 55%（`libquantum drop=5.07M`），扩至 `TQ_W=8, TQ_N=32` 后 `drop` 归零、`mcf sp56` 从 `-59.6%` 飙回 `-5.97%`；
+    2. `l2_far` 必须经 `g_llc_inject_q` 直注 `AXI_LLC`（不能走 L1D 探针口/MSHR，否则把 `mcf sp4` 从 `+22.9%` 打成 `-3.5%`）；
+    3. `handle_aff_access` 不能在 `!newline` 时丢弃 `pf_hit`（乱序先命中行内非 0 偏移），`ld_update` 遇自身 `h.va_line == vline` 须 `continue` 而非 `break`；
+    4. AI-Huma 无私有 L2，`BC_LD` 恢复 `rpl == 2`（35%–65% 置信度）直注 `AXI_LLC` 后，`gcc sp47` 从 `-19.5%` 追至 `-3.6%`、`omnetpp` 飙升至 `+8.33%`；
+    5. `pop_phys_cand` 在 `mshr_occ >= 15` 时反压保序（消除 `no-mshr = 29k` 破坏 `NOOVL` 导致的 `libquantum` 16 行周期性冷 miss），`libquantum` 从 `-14%` 追至 `-1.85%`。
+  - **全量 SPEC06 INT 386/386 点验证（0 失败，vs EXP-052 `BertiHw + BOP` `13.49 /GHz`）**：
+    - **`d5v4_386`（纯 `D5` 替换 `BertiHw`，`LDHW=32, LDTAB=32, FAR=2, L2FT=2, MAXLA=24`，无 Bingo）**：**全量 386 点反超 `BertiHw + BOP`**——加权 CPI **`+0.16%`（`13.51 /GHz`）**、加权 Geomean **`+0.39%`（`13.54 /GHz`）**；大胜项：`471.omnetpp +6.44%`、`464.h264ref +1.19%`、`401.bzip2 +0.56%`（`mcf sp4 +28.5%`）；小负项：`libquantum -1.85%`、`astar -1.55%`、`xalancbmk -1.54%`、`gcc -1.05%`（加权 GM `+0.11%`）。
+    - **`d5v4_bingo_386`（`D5` 替换 `BertiHw` + `BINGO_4K`）**：加权 CPI **`+1.16%`（`13.65 /GHz`）**、加权 Geomean **`+1.18%`**；其中 **`471.omnetpp` 创纪录达 `+11.97%`**、`464.h264ref +1.27%`、`401.bzip2 +0.75%`，但因 `libquantum -2.11%` / `astar -1.33%` 略低于 `BertiHw + BINGO_4K`（`+1.34%` / `13.67 /GHz`）与 `BertiHw + Full BC(s3) + BINGO_4K`（`+1.56%` / `13.70 /GHz`）。
+    - **结论**：`D5` 证明了**无需独立 `BertiHw`** 即可在全量 SPEC06 INT 上超越原 `BertiHw + BOP`（尤其在 `omnetpp`/`h264ref`/`bzip2` 极强）；若追求 SPEC06 INT 最高性价比与零核内 RTL 改动，首选仍为 **`BertiHw + LLC BOP + Bingo 4KB`（`+1.34%`, 12/12 全正）**；若后续兼顾图计算（GAP）/ 稀疏科学计算并希望精简 L1D 预取器为单一统一架构，则 `D5` 极具价值。结果目录：`res_d5_*`、`res_d5v2_*`、`res_d5v3_*`、`res_d5v4_*`。
 
 ---
 
