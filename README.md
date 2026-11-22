@@ -28,7 +28,7 @@ AI-Huma 有两层意思：
 |---|---|---|
 | **function-model** | `function-model/` | 功能模型：只管指令执行的结果（寄存器、访存、CSR、分页），不管时序。基于 tututugege/GenSimpoint，库名 `librefcpu`；main 上为 rv64gc（`XLEN=64`、`FP=1`；`RVC=1` 构建带 C 扩展的版本）。也负责 SPEC 的 BBV/SimPoint/检查点生成。 |
 | **trace-model** | `trace-model/` | 我们的时序模型和架构探索平台：起点由 tututugege/simulator 蒸馏而来，不计算数据值，分支方向/目标、地址、store 数据、CSR 写数据都来自功能模型提供的“事实”，只保留周期精确的时序行为。核参数的唯一来源（`include/config.h`）；运行时开关全部列在 [trace-model/docs/ENV_VARS.md](trace-model/docs/ENV_VARS.md)（13 个环境变量）。建模方式和代码风格见 trace-model 的 [README](trace-model/README.md)，一拍的调度（模块声明、自动生成、改了模块之后怎么做）见 [trace-model/docs/SCHEDULING.md](trace-model/docs/SCHEDULING.md)（`scripts/comb/comb_graph.py --check` 核对）。 |
-| **rtl** | `rtl/` | 我们的 SystemVerilog 实现（285 个 RTL 文件、约 3.75 万行）：起点由原模型逐模块翻译，现在随优化独立迭代；整核测试平台（Verilator）逐条提交对比 function-model；参数包由 trace-model 的 `config.h` 生成。 |
+| **rtl** | `rtl/` | 我们的 SystemVerilog 实现（286 个 RTL 文件、约 3.86 万行）：起点由原模型逐模块翻译，现在随优化独立迭代；整核测试平台（Verilator）逐条提交对比 function-model；参数包由 trace-model 的 `config.h` 生成。 |
 
 三者的关系：function-model 定义“对不对”（架构行为），trace-model 定义“快不快”（周期）并用来做架构探索；rtl 的架构行为必须与 function-model 一致，合入 main 时同一配置下的周期必须与 trace-model（默认配置即 RTL 配置，无需额外环境变量）逐个程序相等。
 
@@ -73,14 +73,14 @@ git submodule update --init          # 取出 function-model、trace-model、rtl
 - **旧的逐模块锁步 / trace 回放 / 变异检查体系已退役**（代码在 rtl 标签 `legacy-reference`，文档在 `rtl/docs/history/`）。
 - **目标是方法，而不只是代码**：AI 和人能否系统地做 CPU 架构优化——每个想法先在模型上量化，再落到 RTL，保证正确，留下可复用的验证手段和完整记录（包括负面结果）。
 
-## 当前状态（2026-11-21）
+## 当前状态（2026-11-22）
 
 README 只写概况，**各次合入的数字、配置变化和已知回退以 [docs/MAIN_RECORDS.md](docs/MAIN_RECORDS.md) 与 [docs/EXPLORATION.md](docs/EXPLORATION.md) 为准**，在做的事见 [docs/TODO.md](docs/TODO.md)。
 
-- **当前配置**（默认开，trace-model 默认配置 = RTL 配置）：第 3 批面积配置（取指宽度 8、在飞分支 32）→ DRAMsim3 DDR4-3200 + 60 ns 非核心延迟、核心 1 GHz、无 AXI 分频 → mov 消除 → 分级 LSU → 两个 INT 发射队列（各 32 项、每个 4 条入队）+ 合并的访存队列（load + STA，入队 6）+ 5 个 AGU（共 6 个发射队列）→ 访存推测（`LSU_MEMSPEC`）+ 前端快速通路（`FE_RFAST=15`）→ 已提交 store 的 write buffer（4 项 × 2 store）→ 紧凑 ROB（128 项，按序分配、前缀提交）+ 寄存器版 BPU 提交额度 → 全局 flush 晚一拍（`FLUSH_REG`）、取指地址 FIFO 晚一拍读、STA/STD 事件和写缓冲合并寄存（EXP-044）→ LLC / L1I SRRIP 替换（EXP-045）+ 发射前查完成周期与写回口压缩（EXP-046）→ L1 硬件 Berti（`PF_KIND=4` + DTLB 跨页翻译）+ LLC Best-Offset 预取（`LLC_BOP=1`）+ L1D/LLC MSHR 16/16（EXP-048）→ 块级 1-Ahead FTB + S2 Block-TAGE/ITT 分支预测器（EXP-050 里程碑 A）→ **前端 `2-taken` 双块融合 + 2-Ahead B（`1K/512`）+ 4-Bank 1R1W ICache + 2 读口 ITLB + 实 AXI/LLC/DRAM S2 确认 2-slot FDIP**（EXP-051 里程碑 B：`HistRing 1024b`、内部 `rec_q[256]`、`BRQ_W=1`、L1D/WB 脏行嗅探）。
+- **当前配置**（默认开，trace-model 默认配置 = RTL 配置）：第 3 批面积配置（取指宽度 8、在飞分支 32）→ DRAMsim3 DDR4-3200 + 60 ns 非核心延迟、核心 1 GHz、无 AXI 分频 → mov 消除 → 分级 LSU → 两个 INT 发射队列（各 32 项、每个 4 条入队）+ 合并的访存队列（load + STA，入队 6）+ 5 个 AGU（共 6 个发射队列）→ 访存推测（`LSU_MEMSPEC`）+ 前端快速通路（`FE_RFAST=15`）→ 已提交 store 的 write buffer（4 项 × 2 store）→ 紧凑 ROB（128 项，按序分配、前缀提交）+ 寄存器版 BPU 提交额度 → 全局 flush 晚一拍（`FLUSH_REG`）、取指地址 FIFO 晚一拍读、STA/STD 事件和写缓冲合并寄存（EXP-044）→ LLC / L1I SRRIP 替换（EXP-045）+ 发射前查完成周期与写回口压缩（EXP-046）→ L1 硬件 Berti（`PF_KIND=4` + DTLB 跨页翻译）+ LLC Best-Offset 预取（`LLC_BOP=1`）+ L1D/LLC MSHR 16/16（EXP-048）→ 块级 1-Ahead FTB + S2 Block-TAGE/ITT 分支预测器（EXP-050 里程碑 A）→ 前端 `2-taken` 双块融合 + 2-Ahead B（`1K/512`）+ 真 4-Bank 1R1W ICache + 2 读口 ITLB + 实 AXI/LLC/DRAM S2 确认 2-slot FDIP（EXP-051/053：`HistRing 1024b`、内部 `rec_q[256]`、`BRQ_W=1`、发射前 1 拍 DCache/WB/MSHR/fill 探针、AXI 通道 0 `CLEAR_ON_POP=1`、显式 1b `pf_inst_hi`）→ 后端唤醒驱动 EXU Bypass + 公共原语平衡树 `ttg_pick_k` 与 `` `ifdef SYNTHESIS `` 双路径 + **RV64GC `c.mv` 规范化与组内 1-hop 关键链移动消除**（EXP-052）。
 - **ISA**：main 只有 rv64gc（rv64imafdc + Sv39，默认 `XLEN=64`、`FP=1`、`RVC=1`），rv32 在各仓库分支 `rv32-legacy`。
-- **性能**：rv64gc SPEC06 INT 全量 386 点（约 95% 权重，`eda` 集群 `/nfs_global/S/houruyao/spec06_rv64gc`）：EXP-048 估算 `12.11 分/GHz` → EXP-050 +8.48% 达 `13.14 分/GHz` → **EXP-051 再增 +2.18%（较 EXP-048 累计 +10.76%，12/12 全正，`FE.bw 22.77% → 18.60%`），估算达 `13.42 分/GHz`**（详见 [docs/EXPLORATION.md](docs/EXPLORATION.md) EXP-051）。**RTL 没有跑过 SPEC**；Yosys 深度代理（[rtl/docs/09-synthesis-report.md](rtl/docs/09-synthesis-report.md) 第 12/13 节）：`bpu` `504,078` 单元 / `272` 层（较旧 16-bank 549,458 仍 −8.3%）、`icache` `916,659` 单元 / `106` 层、`front_top` `1,582,763` 单元 / `356` 层、`pre_idu_queue` `137,578` 单元 / `38` 层、`predecode` `10,144` 单元 / `27` 层、`tlb_mmu` `46,624` 单元 / `61` 层；工艺库时序综合（Synopsys DC）待接。
-- **C 扩展与 rv64gc 的 RTL**：`RVC=1`（C910 式携带，含跨 4KB 页第二半字取指缺页 `stval = pc + 2` 修正）和 rv64gc 的 RTL 与 trace-model 逐周期对齐，含 Linux。EXP-051 已完成 27 段 rv64gc Linux 检查点窗口（`s01..s26` **26/26 PASS** 合计 ~1.326 亿指令、`s00_inst0` 510 万指令 0 FM 不一致且 1637/1637 PT/UP bins 0 差异）；快速检查用 `rtl/scripts/linux_segments_cmp.sh`，从复位的完整 Linux gate 是最后确认（[docs/WORKFLOW.md](docs/WORKFLOW.md) 第 3.2 节）。
+- **性能**：rv64gc SPEC06 INT 全量 386 点（约 95% 权重，`eda` 集群 `/nfs_global/S/houruyao/spec06_rv64gc`）：EXP-048 `12.11 分/GHz` → EXP-050 `13.14 分/GHz` → EXP-051 `13.42 分/GHz` → EXP-052 `13.49 分/GHz` → **EXP-053 最新 `main`（`4d4534f`）实测 `13.48 分/GHz`（386/386 零失败，vs EXP-052 `−0.05%`、vs EXP-051 `+0.50%`）**（详见 [docs/EXPLORATION.md](docs/EXPLORATION.md) EXP-051/052/053）。**RTL 没有跑过 SPEC**；Yosys 深度代理（[rtl/docs/09-synthesis-report.md](rtl/docs/09-synthesis-report.md) 第 12–14 节）：`front_top` `1,159,189` 单元 / `216` 层（较 EXP-051 −26.8% / −39.3%）、`bpu` `410,093` 单元 / `197` 层（−18.6% / −27.6%）、`icache` `389,270` 单元 / `114` 层（−57.5%）、`pre_idu_queue` `131,433` 单元 / `38` 层、`isu` `50` 层、`ren` `97` 层、`rob` `64` 层、`tlb_mmu` `61` 层；工艺库时序综合（Synopsys DC）待接。
+- **C 扩展与 rv64gc 的 RTL**：`RVC=1`（C910 式携带，显式 1-bit `pf_inst_hi` 修正跨 4KB 页第二半字取指缺页 `stval = pc + 2`）和 rv64gc 的 RTL 与 trace-model 逐周期对齐，含 Linux。最新 `main`（`4d4534f` + `28840c8`）已完成全量 27 段 rv64gc Linux 检查点窗口（`s01..s26` **26/26 PASS** + `s00_inst0` PT/UP `0..1619` 全等，合计 **137,700,065 条指令 0 FM 不一致、27/27 全部 150,175 PT/UP bins 全等**）；快速检查用 `rtl/scripts/linux_segments_cmp.sh`，从复位的完整 Linux gate 是最后确认（[docs/WORKFLOW.md](docs/WORKFLOW.md) 第 3.2 节）。
 - **trace-model**：默认 `RVC=1` 门禁（`run_gate.sh` 62/62、`PF_ENABLE=0` 62/62、`run_gate_c.sh` 68/68），周期等于基线；`comb_graph.py --check` 0 隐患、模块声明与代码一致；rv64gc Linux 启动到 `rv64 login:` PASS（0 oops/panic）。
 - **rtl**：lint 干净（按目录和整芯片）；`fm_gate.sh` 68/68（含 `directed/fe_2taken_fdip.bin`）逐条对比，周期与默认配置 trace-model 逐个相等；store 数据不在逐条对比范围内。已知风险见 [rtl/docs/08-risk-register.md](rtl/docs/08-risk-register.md)。
 - **未合入的实验**：sdip 预取器（EXP-026，`exp/sdip`）、BC_CORE 预取（EXP-043，`exp/pf-l1l2`）、统一 FTQ 的 RTL 试做（见 TODO）、其余探索见 [docs/EXPLORATION.md](docs/EXPLORATION.md) 索引。
@@ -102,7 +102,7 @@ export PATH="$HOME/rv64spec/verilator_src/bin:$PATH"
 cd ../rtl
 bash scripts/lint.sh && bash scripts/lint_chip.sh
 SOC_FM=1 SOC_OUT=$PWD/build/soc_fm bash tb/soc/build.sh    # 自动经 scripts/fm_lib.sh 构建匹配的 librefcpu.a
-bash scripts/fm_gate.sh $PWD/build/soc_fm/obj/soc_tb $PWD/build/gate   # 67/67，并报告与 trace-model 周期不同的个数
+bash scripts/fm_gate.sh $PWD/build/soc_fm/obj/soc_tb $PWD/build/gate   # 68/68，并报告与 trace-model 周期不同的个数
 ```
 
 - **默认配置即 RTL 配置（不靠环境变量对齐）**：2026-11-19 起已删除 `LSU_PIPE_NOWD` 看门狗开关，trace-model 与 RTL 默认均为 `XLEN=64 FP=1 RVC=1`，比周期和跑 SPEC 均不需要额外环境变量；PMU 默认开（`PMU=0` 关闭）。
