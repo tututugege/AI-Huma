@@ -171,7 +171,8 @@ EXP-024 合入的是"STQ 内分组"的简化版 write buffer：4 个条目、每
 - `ptw_walk` 静默丢掉 32 位物理地址以上的 PPN，模型 `exit(2)`；RTL 没有"I-Cache 取指组 pc 与 PTAB pc 一致"的检查（模型非成对路径有 `fatal`）；路由号 RTL 只留 4 位、模型 32 位。
 - `ldq_alloc_valid` 在 `dispatch_lsu_alloc` 里没用，模型用。
 - ROB 自己算 F/D 的 `fs_need` / `fs_off` / `fs_dirty` / `fflags`，模型从 trace bridge 取；`lp_mdp` 一个训练口、`RTL_MEMSPEC_NOTES.md` 写两个；LSU 没有对应模型 `PLdq.illegal` 的 F/D 字段。
-- `fp_core` 在 `SYNTHESIS` 下返回 0，所以任何综合结果里都没有 FP 运算的面积和深度。
+- `fp_core` 默认仿真走 DPI SoftFloat，`SYNTHESIS` / `-DFPU_REAL` 走自研可综合 RV64FD FPU（2026-11-23 EXP-061 已完成，综合已包含全部真实 FPU 面积与深度）。
+- **变延迟 Early-out DIV 错路操作数差与 Linux `s19` 既有微差（2026-11-23 EXP-061）**：① 错路（wrong-path）上 `trace-model` 无操作数事实（`fact_by_rob == nullptr` 固定取 2 拍），RTL 用寄存器堆真实脏值算 `clz` 得 `2..17` 拍，极少数在误预测解析前完成的错路 DIV 可能在 Port 1 `wb_next` 阻塞上差 1 拍；② EXP-061 26 窗 Linux 检查点 26/26 0 FM 不一致（1.326 亿指令）、25/26 PT/UP 全等，仅 `s19` 在 `cyc=2372697`（用户态 `8eefd8c0..8eefd8e0` load/store 循环陷入 `0x800016cc` 前，距最近 DIV 17,548 拍）出现 1 处与 EXP-052 `s17` / EXP-056 `s02` 同类的既有错路投机/陷入边界时序微差。
 
 ### 死代码与清理
 - **2026-11-18 已清掉**：行式 ROB（`ROB_COMPACT` 和 7 个文件）、旧 LSU（30 个 `lsu_*` 文件、`LSU_PIPE` 常量和 `lsu.sv` 的旧分支、测试台的 `SOC_LSU_PIPE` 开关、`gen_cfg_pkg.py` 里生成 `LSU_PIPE` 的那行）、`csr_fu.sv`、`core_top.sv` 里空的 `always_comb`、`lp_pkg::NDC`、`lp_stq_ent` 里 `dr_pick ? rw13 : rw13`、`scripts/fe_refs/`、`scripts/ref_cycles_legacy_lsu*.txt`。
