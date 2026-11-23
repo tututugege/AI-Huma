@@ -101,21 +101,10 @@ EXP-024 合入的是"STQ 内分组"的简化版 write buffer：4 个条目、每
 - 对周期必须用 `LSU_PIPE_NOWD=1` 跑模型（否则 63 周期看门狗会让 store 重发，`crc32` 等程序差几十周期）；考虑把它设成 trace-model 默认或在 `cyc*.sh` 里写死。
 - F/D（rv32 和 rv64，EXP-030…036 已合 main，模型和 RTL 逐周期一致，rv64g Linux 在 RTL 上到登录且 `fptest: PASS`；还没做：RTL 的可综合 FP 单元（现在是 DPI softfloat，S7）、PolyBench/SPECfp 上标定延迟和队列大小、STD 口 FP 数据口数、F/D 的 SPEC 验证、`BpuPipe` 剩余拷贝热点）、C（EXP-037：function-model 已完成并合入 main；trace-model 前端按半字取指、BPU / FTQ 半字粒度、RTL 预译码和边界还没做）、bitmanip 边界测试、SPEC rv64 检查点流程、FastWarm 的 Sv39、function-model rv64 的 MMIO `sd`/`ld` 回读、交互式登录测试。
 
-## 待做：乘除法器的物理实现优化（2026-11-12，EXP-029 综合代理对比后）
+## 待做：乘除法器的物理实现优化（已于 2026-11-23 EXP-061 完成合入 `main`）
 
-现状（`rtl/rtl/backend/exu_fu/`，数字见 `rtl/docs/09-synthesis-report.md` 第 10 节，yosys 通用门，相对值）：
-
-- **乘法器 `mul_core`**：一行 `a * b`（33×33 / 65×65 有符号，四种变体共用，每次都算满 2×XLEN 位积），**单周期纯组合**。`mul_pipe` 只是 `MUL_MAX_LATENCY`（rv32 为 2、rv64 为 3）深的结果延迟线，周期上和模型对齐，物理上整个乘法器在第一级寄存器之前的一拍里：深度 rv32 120 级 → rv64 213 级，面积 7,565 → 28,411 单元（`exu.sv` 里 `MUL_NUM = 2`）。没有 Booth，没有压缩树，也没有重定时。
-- **除法器 `div_core`**：迭代恢复除法，每周期 2 步（`XLEN / DIV_MAX_LATENCY`），rv64 为 32 周期、`divw` 16 周期；每周期的路径是两级 64 位减法加选择，深度 96 → 215；有符号运算先取绝对值、最后修正符号（两处 64 位取反）。面积 1,822 → 4,951。
-
-要做的事（周期数保持不变，除非明确说明；任何改动之后都要重跑 `fm_gate`（周期与 `ref_cycles.txt` 0 处不同）、rv64 的 53 个程序和 lint，并用 `scripts/synth_depth.sh` 对比每级的深度和面积）：
-
-1. **乘法器真正流水化**：把乘法器拆成 `MUL_MAX_LATENCY` 级，接口和延迟不变：第 1 级 Booth radix-4 编码 + 部分积 + 部分压缩，第 2 级 Wallace / Dadda 压缩树，第 3 级最终加法器和 `mul` / `mulh*` / `mulw` 选位。rv32（2 级）和 rv64（3 级）各给出切法。`mul_pipe` 的延迟线改成真实的级间寄存器（带 flush / `br_mask` 清除），不再另存一份完成结果。
-2. **乘法器面积**：评估两个乘法单元里让其中一个只做 `mul` / `mulw`（只需低 XLEN 位，部分积少一半）；或 `mulh*` 多周期完成、只保留一个全宽乘法器（后者改变 `mulh*` 的延迟，要先在 trace-model 里建模并重新标定 `ref_cycles.txt`，不是纯 RTL 改动）。
-3. **除法器每周期深度**：评估 radix-4 / SRT（每周期 2 位商，进位保存的余数，避免每步 64 位进位传播），把每周期路径降到一级小的选择 + 一个 CSA；评估有符号修正（取绝对值 / 结果取反）是否落在关键路径上，必要时单独占一拍或用预计算。
-4. **除法器延迟**：`DIV_MAX_LATENCY` rv64 为 32 周期偏长；高基数或提前终止（除数 / 被除数前导零）可以缩短，但这会改周期，需要模型 `CONFIG_DIV_LATENCY` 同步、重新标定、重跑 SPEC 对比，和第 3 项分开做。
-5. **验证**：乘除法器各加定向测试（符号 / 零除数 / `INT_MIN / -1` / 溢出 / `mulh*` 四种变体 / `*W` 变体，rv32 和 rv64），用函数模型逐条对比；综合代理记录写进 `09-synthesis-report.md` 和 MAIN_RECORDS。
-6. 真实频率 / 工艺库面积 / WNS 仍然要在有工艺库的流程里做（见 `rtl/docs/08-risk-register.md` V-7），代理里的深度不能代替。
+- 乘法器已完成 Radix-4 Booth + Wallace + Kogge-Stone 3 拍流水（`mul_unit` 40,041→27,473 cells / 30 层）；除法器已完成 1× Radix-16（双 Radix-4）+ CLZ Early-out 变延迟（2..17 拍，EXU 动态唤醒，`div_unit` 12,340 cells / 50 层，SPEC06 +0.53%）；可综合 RV64FD FPU（S7）也已全部自研落地（5 核心均 <100 层，235 万条 SoftFloat 0 不一致，`-DFPU_REAL` `fm_gate` 69/69）。
+- 仅余工艺库时序综合（Synopsys DC WNS/面积）统一随整核流程完成。
 
 ## 待做：未合入的实验
 
