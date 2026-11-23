@@ -6,6 +6,7 @@
 
 | 编号 | 日期 | 题目 | 分支 | 状态 | 一句话结论 |
 |---|---|---|---|---|---|
+| [EXP-063](#exp-063-第二轮-tsmc-28nm-dc-时序优化bpu_eval--bpu_spec--lsu--exu_ctrl) | 2026-11-24 | 第二轮 TSMC 28nm HPC+ DC 时序优化（`bpu_eval` 真并行 2-Ahead B / `bpu_spec` 寄存 `M_ARCH` / `lsu` 无移位 CAM + 并行 `lp_wk` / `exu_ctrl` 修 DC `(VER-37)`）及 `ren` 两级流水 DSE | trace-model `exp/timing-opt2`；rtl `rtl/timing-opt2` | **已合入 `main`（2026-11-24：trace-model `4626924`、rtl `aa7888b`）** | 全核 23/23 模块补齐 28nm DC 真实签核数据（22/23 模块 ≥1.15 GHz，14/23 ≥1.54 GHz，仅剩 `lsu` <1.0 GHz）：`exu_ctrl` **MET ≥2.00 GHz**（WNS `0.00 ns` / 13 lvl / 31.8k um²）、`bpu_eval` **0.84→1.28 GHz (+52.4%)**（纯组合 `0.68 ns / 1.47 GHz`、面积 −6.8%）、`bpu_spec` **0.86→1.20 GHz (+39.5%)**（纯组合 `0.70 ns / 1.43 GHz`、面积 −8.9%）、`lsu` **0.83→0.88 GHz**（0 周期变化，暴露第三轮流水切分目标）；**全量 SPEC06 INT 386/386 仅 `−1.20%`**（vs EXP-062，以 1.2% IPC 换 BPU 频率 +40%~+52%）；`fm_gate` **69/69（0 周期差）**，**rv64gc Linux 26 窗（`s01..s26` + `s00`，~1.377 亿指令）26/26 PASS、0 FM 差、100% PT/UP 全等** |
 | [EXP-062](#exp-062-tsmc-28nm-dc-时序基线与第一轮-5-模块时序优化) | 2026-11-24 | 建立 TSMC 28nm HPC+ Synopsys DC 真实工艺库时序基线（22 模块）+ 第一轮 5 模块时序优化（`dcache_pf` 4 级流水 / `axi_llc_bop` / `bpu_spec` / `ren` / `dcache_mshr`） | trace-model `exp/timing-opt1`；rtl `rtl/timing-opt1` | **已合入 `main`（2026-11-24：trace-model `d872061`、rtl `7f31634`）** | 首次建立 TSMC 28nm HPC+（`ssg0p81v125c`, 12T SVT+LVT, `0.50ns / 2.0GHz`, `compile_ultra`）22 模块真实时序基线并确立“DC 28nm 权威签核 + Yosys 快速代理”流程；第一轮攻克 5 大瓶颈：`dcache_pf` **0.37→1.18 GHz (+3.19×)** / 面积 −19.8% / Yosys 384→75、`axi_llc_bop` **1.05→1.47 GHz** / Yosys 291→75、`bpu_spec` **0.73→0.86 GHz**（69→41 lvl）、`ren` **1.05→1.16 GHz**、`dcache_mshr` Yosys **123→99 层 (<100)**；**全量 SPEC06 INT 386/386 反涨 `+0.51%`**（vs EXP-060），**rv64gc Linux 26 窗（`s01..s26` + `s00`，~1.377 亿指令）26/26 PASS、0 FM 差、100% PT/UP 逐拍全等** |
 | [EXP-061](#exp-061-乘法器-radix-4-booth--1-radix-16-early-out-变延迟除法--全套自研可综合-rv64fd-fpu) | 2026-11-23 | 乘除法优化（Radix-4 Booth 乘法 + 1× Radix-16 双 Radix-4 Early-out 变延迟除法 + EXU 完成前 1 拍动态唤醒）与全套自研可综合 RV64FD FPU（FMISC / I2F / FCVT / 3 拍流水 FMA / 迭代 FDIV-FSQRT，双路径设计） | trace-model `exp/div16`；rtl `rtl/fpu-synth` | **已合入 `main`（2026-11-23：trace-model `ac0a4bc`、rtl `1df38b0`）** | 4 组 386 点 DSE 确认 1× Radix-16 Early-out 为最佳帕累托点（1×32 拍 `−0.42%`、1×R4+EO `+0.37%`、1×R16+EO `+0.52%`、2×4 拍上限 `+0.58%`）；落地硬件忠实版 EXU 动态唤醒（删 `div_wake_slots` 与 Port 1 `isu_wb_gate` 移位寄存器）后，**全量 SPEC06 INT 386/386（0 失败，vs EXP-060 `15.25 /GHz`）Geomean `+0.53%` → `15.33 分/GHz`**（`hmmer +2.65%`、`sjeng +1.12%`、`gobmk +1.05%`、`h264ref +0.85%`、`gcc +0.68%`），`dhrystone −3.72%`、`prime −55.8%`、`wanshu −56.1%`；Yosys：`mul_unit` `40,041→27,473`（−31.4%）/30 层、`div_unit` `12,340`/50 层、`isu` `−8,412`/60 层、自研 RV64FD FPU 5 核心全部 `<100` 层（`fp_fma_core` 33.8k/98 层、`fp_div_core` 10.9k/73 层）、整块 `exu` `304,977`/98 层；`-DFPU_REAL` 整核 `fm_gate` **69/69（0 周期差）**，3 项专项对拍合计 645 万次 0 不一致，Linux 26 窗 1.326 亿指令 0 FM 不一致（25/26 PT/UP 全等，仅 `s19` 1 处错路微差） |
 | [EXP-060](#exp-060-load-l2-推测唤醒-stlf-l2-唤醒--wbp-同拍唤醒与-mdp-store-sets-对比) | 2026-11-23 | Load 唤醒优化（L2 推测唤醒 `4→3` 拍 + STLF `data_v` L2 唤醒 + WBP 同拍唤醒 `5→4` 拍 + `isu` 4 路直接比较 cancel + `prf` 整数 `lsu_byp`），并附 MDP Store Sets / Wait Table / Oracle 48 点对比评估 | trace-model `exp/ld-wake`（MDP：`exp/mdp-eval`）；rtl `rtl/ld-wake` | **已合入 `main`（2026-11-23：trace-model `0e609d7`、rtl `99830ea`）** | 先评估 MDP（48 点）：现有 64-entry/2000-cycle Wait Table 已吃掉访存推测空间 88%，Oracle 上限仅 `+1.60%`，经典 Store Sets（SSIT 1024 + LFST 64）因 PC 级假依赖实测反而 **`−1.33% ~ −3.60%`**，决定不采用。转向 Load 唤醒优化：48 点三项逐级叠加（`wbp +0.37%`、`l2 +2.41%`、`l2+stlf +2.51%`、`all +2.84%`），**全量 SPEC06 INT 386/386（0 失败，vs EXP-059 `14.86 /GHz`）Geomean `+2.64%` → `15.25 分/GHz`（首次突破 15 分，12/12 全正零回退）**；Yosys `lsu` 101 / `dispatch` 57 / `prf` 25（均 0 增长）、`isu` 60 层（4 路直接比较 cancel）；`fm_gate` **69/69（0 周期差）**，Linux 26 窗 `1.326 亿` 指令 0 FM 差且 **26/26 PT/UP 100% 逐拍全等** |
@@ -62,6 +63,24 @@
 | [EXP-001](#exp-001-面积优化三个方向) | 2026-11-04 | 面积优化：FTQ 合并、LSU 端口、LD/STA IQ 合并 | trace-model `exp/area-explore` | 未提交、未合入 | 三个方向都能省面积，性能代价 0–1% |
 
 ---
+
+## EXP-063 第二轮 TSMC 28nm DC 时序优化（`bpu_eval` / `bpu_spec` / `lsu` / `exu_ctrl`）
+
+- **状态**：**已合入 `main`（2026-11-24：trace-model `4626924`、rtl `aa7888b`）**。
+- **动机与方法**：
+  1. **补齐 `exu_ctrl` DC 28nm 数据**：修复 `exu_ctrl_pkg.sv:205` `xc_is_fp_kind` 返回 `bit` 在 `localparam` 循环内触发 DC Presto `(VER-37)` 断言，改为返回 `int`（`1 : 0`）并同步 3 处调用。
+  2. **`bpu_eval` 真并行 2-Ahead B（打破 Block A → Block B 串行天花板）**：纯组合优化仅将 `bpu_eval` 从 `-0.69 ns` 推至 `-0.67 ns`；48 点 SPEC06 DSE 对比 `AH2_PAR=1`（保留 `u0_b` 回退，`+0.10%` 但 DC 仍停在 `~-0.60 ns`）与 `AH2_PAR=2`（2-Ahead B 改为 `(key_base, s0_base)` 索引、`bpu_ftb_tab` 增 `STORE_B_BASE=1` 存 `b_base`、`ah2_eval` 使用 `ah2_b_base + block_bnd(ah2_b_base)` 与 Block A 完全并行评估、删除串行 `u0_b` 回退、末尾校验 `ah2_b_base == s0_b_base` 与 `b_truncated`），采纳 `AH2_PAR=2` 为唯一默认并删实验开关。
+  3. **`bpu_spec` 寄存态 `M_ARCH` 恢复**：第一轮优化后残余瓶颈为 `commit br_type[0..7] → aras_d → s_d1 → spec_a_ras_top`（`-0.66 ns`）；改为 `M_ARCH` 直接从寄存态 `arch_sr_q / arch_fh_q / aras_q` 恢复（同步 `BPU_pipe.h`），彻底切断 commit→spec 组合环，IPC 影响 `~0.00%`。
+  4. **`lsu` 纯结构优化（0 周期变化）**：`lp_cam.sv` 利用代数恒等式 `rotr64(rotl64(mask_unrot, head) & raw, head) == mask_unrot & rotr64(raw, head)` 与 6-bit 常量比较消除 2×64b 桶形移位器；`lp_wk.sv` 将 3 路 `stlf_confirm` 与 `off_a` 移至与 `sta_info[k].stq == blk` 并行预计算。
+  5. **`ren` 两级流水 DSE（暂缓至第三轮）**：在 `trace-model` 48 点探索 2 级 `ren`（有效 47 点均值约 `~−1.0%`），鉴于当前整核唯一 `<1.0 GHz` 瓶颈为 `lsu` (0.88 GHz)，留待第三轮与 `lsu` 流水切分一并落地。
+- **实测结果**：
+  - **TSMC 28nm HPC+ DC 签核（`ssg0p81v125c`, `0.50 ns`, `compile_ultra`）**：
+    - `exu_ctrl`：**WNS `0.00 ns`（MET ≥2.00 GHz）**、13 级、`31,761 um²`；
+    - `bpu_eval`：**`0.84 → 1.28 GHz` (+52.4%)**（WNS `−0.69 → −0.28 ns`，纯组合 `0.68 ns / 1.47 GHz`，69→49 级，`25,652 → 23,911 um²` −6.8%）；
+    - `bpu_spec`：**`0.86 → 1.20 GHz` (+39.5%)**（WNS `−0.66 → −0.33 ns`，纯组合 `0.70 ns / 1.43 GHz`，`reg2reg −0.32 ns / 1.22 GHz`，`156,084 → 142,200 um²` −8.9%）；
+    - `lsu`：**`0.83 → 0.88 GHz` (+6.0%)**（WNS `−0.71 → −0.64 ns`，56 级，`927k → 919k um²`），清晰暴露第三轮流水切分目标（`rp_ldq_q → lp_cam → req_id` 1.06 ns 与 `lp_ldq_ent` P1..P14 状态链 1.10 ns）。
+  - **全量 SPEC06 INT 386/386（`res_r2_386` vs EXP-062 `res_pf4_386`，0 失败，全点指令数一致）**：Geomean **`−1.20%`**（`sjeng −3.83%`、`gcc −3.67%`、`perlbench −2.63%`、`gobmk −1.08%`、`bzip2 −0.96%`、`astar −0.79%`、`omnetpp −0.38%`、`xalancbmk −0.31%`、`h264ref −0.28%`、`libquantum −0.12%`、`mcf −0.11%`、`hmmer −0.08%`）。
+  - **正确性与对齐**：`comb_graph` 0 隐患、`linux_check.sh` PASS、`lint_chip.sh` 0 警告/0 错误、**`fm_gate.sh` + `tm_cycles.sh` 69/69 PASS（0 FM 差、0 周期差）**、**`eda-04/05/07` 8 线程静态 `soc_tb` rv64gc Linux 26 窗（`s01..s26` + `s00`，~1.377 亿指令，最长达 1,328.5 万周期/窗）26/26 PASS、0 FM 差、100% PT/UP 逐拍全等**。
 
 ## EXP-062 TSMC 28nm DC 时序基线与第一轮 5 模块时序优化
 

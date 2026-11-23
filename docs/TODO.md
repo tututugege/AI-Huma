@@ -2,18 +2,18 @@
 
 全项目唯一的待办清单。每条写清为什么、做到什么算完；做完删掉，在 [LOG.md](LOG.md) 里留一行。（2026-11-23 阶段性清理：删除 EXP-029..061 已完成/已取代的条目，收敛为当前有效待办。）风险（验证缺口、变异存活）记在 [rtl/docs/08-risk-register.md](../rtl/docs/08-risk-register.md)，不在这里重复。
 
-## 待做：TSMC 28nm DC 时序收敛（第二轮目标：全核 ≥ 1.3–1.5 GHz）
+## 待做：TSMC 28nm DC 时序收敛（第三轮目标：全核 ≥ 1.4–1.5 GHz）
 
-权威口径：**Synopsys DC `W-2024.09-SP2` + TSMC 28nm HPC+（`ssg0p81v125c`, 12T SVT+LVT, `CLK=0.50ns / 2.0GHz`, `compile_ultra`）**，Yosys（`strash;balance;map`）仅作分钟级快速迭代代理（详见 [rtl/docs/09-synthesis-report.md](../rtl/docs/09-synthesis-report.md) §15）。第一轮（EXP-062）已完成 `dcache_pf`（0.37→1.18 GHz）、`axi_llc_bop`（1.05→1.47 GHz）、`bpu_spec`（0.73→0.86 GHz）、`ren`（1.05→1.16 GHz）、`dcache_mshr`（Yosys 123→99 层）。第二轮待攻克瓶颈按 DC Fmax 排序：
+权威口径：**Synopsys DC `W-2024.09-SP2` + TSMC 28nm HPC+（`ssg0p81v125c`, 12T SVT+LVT, `CLK=0.50ns / 2.0GHz`, `compile_ultra`）**，Yosys（`strash;balance;map`）仅作分钟级快速迭代代理（详见 [rtl/docs/09-synthesis-report.md](../rtl/docs/09-synthesis-report.md) §15–16）。
+- **前两轮已完成**：EXP-062（`dcache_pf` 0.37→1.18、`axi_llc_bop` 1.05→1.47、`bpu_spec` 0.73→0.86、`ren` 1.05→1.16、`dcache_mshr` Yosys 123→99）+ EXP-063（`exu_ctrl` MET ≥2.00 GHz、`bpu_eval` 0.84→1.28 / 纯组合 1.47、`bpu_spec` 0.86→1.20 / 纯组合 1.43、`lsu` 0.83→0.88）。全核 23/23 模块中已有 **14/23 ≥ 1.54 GHz、22/23 ≥ 1.15 GHz**，仅剩 `lsu` 低于 1.0 GHz。
+- **第三轮待攻克瓶颈按 DC Fmax 排序**：
 
 | 模块 | 当前 DC 28nm WNS / Fmax / 级数 | 关键路径线索 | 优化方向 / 做完标准 |
 |---|---|---|---|
-| **`lsu`** | **−0.71 ns / 0.83 GHz / 55 lvl**（829k um²；Yosys 101 层） | `#1` `u_rp/rp_ldq_q → u_l1b/pl12_q[cand]`（1.16 ns）；`#2` `sta_info_q → u_ldq/f_q[rwait]`（1.17 ns） | 拆解 `lp_rp → l1b` 与 `sta_info_q → ldq` 违例/唤醒组合链（必要时可评估流水切分），冲 ≥ 1.3 GHz |
-| **`bpu_eval`**（连带 `bpu` / `front_top`） | **−0.69 ns / 0.84 GHz / 69 lvl**（26k um²；Yosys `bpu` 197 / `front_top` 216 层） | S2 双块 `fin → fin_b` 校验与选择链 | 并行化或拆拍 `bpu_eval` S2 校验链并压低 `front_top` 跨模块路径，冲 ≥ 1.3 GHz |
-| **`bpu_spec`**（余下瓶颈） | **−0.66 ns / 0.86 GHz / 41 lvl**（156k um²） | `aras_q[cnt] → st_q` 在 `M_ARCH` 上的 32 项全栈拷贝 | 消除 `M_ARCH` 全栈 32→64 拷贝（改为环形指针/指针切换），冲 ≥ 1.4 GHz |
-| **`ren`**（两级流水评估） | **−0.36 ns / 1.16 GHz / 48 lvl**（144k um²；Yosys 91 层） | `inst_q → u_rat/spec_q`（重命名核心 + 依赖检查 + 移动消除） | 评估 2 级流水化 `ren`（SPEC06 IPC 代价 vs 频率冲 1.5+ GHz 收益） |
-| **`exu_ctrl`** DC `(VER-37)` | 未出数 | `exu_ctrl_pkg.sv:205` 触发 DC 内部断言 `(VER-37)` | 改写触发 Presto 断言的写法，补齐 `exu_ctrl` 及整块 `exu` / `core_top` DC 28nm 报告 |
-| **`axi_llc`** / **`icache`** / **`dcache`** 整块 DC | 未单跑整块 DC（子模块 `bop` 1.47 / `mshr` 1.15 / `wb` 1.49 / `s1/s2` ≥2.0 GHz） | SRAM 宏黑盒化后跑子系统级 DC 综合 | 为大阵列补齐 SRAM 宏/黑盒脚本，跑通 `axi_llc`、`icache`、`dcache`、`front_top`、`back_top`、`core_top` DC 综合 |
+| **`lsu`**（唯一 <1.0 GHz） | **−0.64 ns / 0.88 GHz / 56 lvl**（919k um²） | `#1` `u_rp/rp_ldq_q → lsu2dcache_load_ports_req_id`（1.06 ns：`rp_ldq → 64:1 mux → lp_l1 → lp_cam → epoch_nx`）；`#2` `u_ldq/f_q[br_mask] → u_ldq/st_q[0]`（1.10 ns：`lp_ldq_ent` P1..P14 状态链） | 流水切分 `rp_ldq` 预读载荷（消 64:1 mux）与 `lp_ldq_ent` 状态链，冲 ≥ 1.3–1.4 GHz |
+| **`dcache_mshr`** / **`dcache_pf`** | **−0.37 ns / 1.15 GHz**（reg2reg 1.18）；**−0.35 ns / 1.18 GHz** | MSHR 分配/冲突匹配；`dcache_pf` `tab_s2` 路径 | 评估微调冲 ≥ 1.3–1.4 GHz |
+| **`ren`**（两级流水评估） | **−0.36 ns / 1.16 GHz / 48 lvl**（144k um²） | `inst_q → u_rat/spec_q`（0.81 ns）与 `ckpt_head_q → u_log/rd_slot_q`（0.82 ns） | 落地 2 级流水化 `ren`（48 点 DSE 预估约 −1.0% IPC），冲 ≥ 1.5 GHz |
+| **`axi_llc`** / **`icache`** / **`dcache`** / **`core_top`** 整块 DC | 未单跑整块 DC（子模块均已有数） | SRAM 宏黑盒化后跑子系统级与整核 DC 综合 | 为大阵列补齐 SRAM 宏/黑盒脚本，跑通 `axi_llc`、`icache`、`dcache`、`front_top`、`back_top`、`core_top` DC 综合 |
 
 ## 待做：验证与对齐
 
