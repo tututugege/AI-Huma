@@ -2,28 +2,18 @@
 
 全项目唯一的待办清单。每条写清为什么、做到什么算完；做完删掉，在 [LOG.md](LOG.md) 里留一行。（2026-11-23 阶段性清理：删除 EXP-029..061 已完成/已取代的条目，收敛为当前有效待办。）风险（验证缺口、变异存活）记在 [rtl/docs/08-risk-register.md](../rtl/docs/08-risk-register.md)，不在这里重复。
 
-## 待做：RTL 综合时序/深度优化（目标全模块 ≤ 100 层）
+## 待做：TSMC 28nm DC 时序收敛（第二轮目标：全核 ≥ 1.3–1.5 GHz）
 
-基准口径：`SYNTH_LIGHT=1 SYNTH_MEM=1 SYNTH_LTP=1 SYNTH_ABC="strash;balance;map"`（无 `dc2`，详见 [rtl/docs/09-synthesis-report.md](../rtl/docs/09-synthesis-report.md)）。以下模块仍超过 100 层红线，按优先级排序：
+权威口径：**Synopsys DC `W-2024.09-SP2` + TSMC 28nm HPC+（`ssg0p81v125c`, 12T SVT+LVT, `CLK=0.50ns / 2.0GHz`, `compile_ultra`）**，Yosys（`strash;balance;map`）仅作分钟级快速迭代代理（详见 [rtl/docs/09-synthesis-report.md](../rtl/docs/09-synthesis-report.md) §15）。第一轮（EXP-062）已完成 `dcache_pf`（0.37→1.18 GHz）、`axi_llc_bop`（1.05→1.47 GHz）、`bpu_spec`（0.73→0.86 GHz）、`ren`（1.05→1.16 GHz）、`dcache_mshr`（Yosys 123→99 层）。第二轮待攻克瓶颈按 DC Fmax 排序：
 
-| 模块 | 当前深度 / 单元数 | 关键路径线索 | 优化方向 / 做完标准 |
+| 模块 | 当前 DC 28nm WNS / Fmax / 级数 | 关键路径线索 | 优化方向 / 做完标准 |
 |---|---|---|---|
-| **`dcache_pf`**（EXP-048 硬件 Berti） | **384 层** / 67,431（拆测：`berti_tab` **362 层**、`berti_gen` **172 层**、`berti_hist` 77 层） | `berti_tab`: `srch_pc` → `trig_go`；`berti_gen`: `gen_mask_q[0]` → `gen_mask_q[8]` | 优化 `dcache_pf_berti_tab` 与 `dcache_pf_berti_gen`，压回 100 层以内 |
-| **`axi_llc_bop`**（EXP-048 LLC BOP）→ 拉高 **`axi_llc`** / **`axi_subsys`** | **291 层** / 5,608（拉高 `axi_llc` 238→**350**、`axi_subsys` 238→**353**） | `best_q` → `replace_alu` → `q_line_q` | 拆解 BOP 候选地址生成与入队路径（可打一拍寄存），压回 100 层以内；同步评估 `axi_llc` 自身 238 层（内存写响应 → LLC 行数据） |
-| **`bpu`**（EXP-051/053 2-taken + 2-Ahead B） | **197 层** / 410,093（EXP-053 已从 504k/272 降至 410k/197） | `r1_q[1106]` → `u_spec.spec_d[144]`（S2 双块校验→投机历史更新链） | 拆解 S2 `fin`→`fin_b` 到 `u_spec.spec_d` 组合链，压回 100 层以内 |
-| **`front_top`**（前端整块） | **216 层** / 1,159,189（EXP-053 已从 1.58M/356 降至 1.16M/216） | `u_pred_path.u_bpu.r1_q[1106]` → `u_pred_path.u_pd.ras_val_d[29]` | 随 `bpu` S2 链压低并切断 PTAB bypass 到 `front_pd_info` 跨模块组合路径，压回 100 层以内 |
-| **`back_top`**（后端整块） | **142 层** / 3,998,654（旧基线，未重测 EXP-055..061） | `u_lsu.u_pipe.u_core.u_ldq.g_e[17].u_ent.st_q` → `u_lsu...u_rp.srp_ptr_q` | 排查 `lsu` 内部跨模块组合路径并在最新 `main` 重测整块深度，压回 100 层以内 |
-| **`dcache_mshr`**（EXP-048 MSHR 8→16） | **123 层** / 91,934 | `ax_req_accepted` → `ax_req_line[25]` | 缩短 16 项 MSHR AXI 请求选择/出队组合链至 100 层以内 |
-| **`icache`**（EXP-053 4-Bank 1R1W + 2-port ITLB） | **114 层** / 389,270 | `u_ctl.r_q[136]` → `Mux$12092[30]` | 拆解 `icache_ctl` / `icache_itlb` 请求选路至 100 层以内 |
-| **`lsu`**（单模块） | **101 层** / 1,239,556 | `pl12_q` → `u_ldq.g_e[30].u_ent.st_d` | 贴近 100 层红线，随 `back_top` 路径一并压低 |
-| **`dcache` / `mem_top`**（超 64 GB RSS 未出数） | 未出数 | 已加 `SYNTH_NO_MEMPRIO=1` | 拆分子模块或在 128 GB+ 节点单跑出数 |
-| **`fp_fma_core`**（可选，当前 98 层在线内） | 98 层 / 33,776 | 53×53 乘法器综合展开 | 如需进一步裕量，复用 Radix-4 Booth 压至 ~55 层 |
-
-## 待做：工艺库时序综合（Synopsys DC）
-
-| 事项 | 为什么 | 做完的标准 |
-|---|---|---|
-| 工艺库时序综合与 WNS 报告 | `MAIN_RECORDS` 要求记真实 WNS/面积，目前仅有 Yosys 通用门深度代理；`eda` 集群已有 Synopsys DC `W-2024.09-SP2` 与 TSMC 28nm HPC+ / NanGate 15nm 库 | 建好标准 DC 综合脚本（SRAM 宏黑盒或模拟），主要模块及整核出面积、频率约束与 WNS，结果写入 `rtl/docs/09-synthesis-report.md` 与 `MAIN_RECORDS.md` |
+| **`lsu`** | **−0.71 ns / 0.83 GHz / 55 lvl**（829k um²；Yosys 101 层） | `#1` `u_rp/rp_ldq_q → u_l1b/pl12_q[cand]`（1.16 ns）；`#2` `sta_info_q → u_ldq/f_q[rwait]`（1.17 ns） | 拆解 `lp_rp → l1b` 与 `sta_info_q → ldq` 违例/唤醒组合链（必要时可评估流水切分），冲 ≥ 1.3 GHz |
+| **`bpu_eval`**（连带 `bpu` / `front_top`） | **−0.69 ns / 0.84 GHz / 69 lvl**（26k um²；Yosys `bpu` 197 / `front_top` 216 层） | S2 双块 `fin → fin_b` 校验与选择链 | 并行化或拆拍 `bpu_eval` S2 校验链并压低 `front_top` 跨模块路径，冲 ≥ 1.3 GHz |
+| **`bpu_spec`**（余下瓶颈） | **−0.66 ns / 0.86 GHz / 41 lvl**（156k um²） | `aras_q[cnt] → st_q` 在 `M_ARCH` 上的 32 项全栈拷贝 | 消除 `M_ARCH` 全栈 32→64 拷贝（改为环形指针/指针切换），冲 ≥ 1.4 GHz |
+| **`ren`**（两级流水评估） | **−0.36 ns / 1.16 GHz / 48 lvl**（144k um²；Yosys 91 层） | `inst_q → u_rat/spec_q`（重命名核心 + 依赖检查 + 移动消除） | 评估 2 级流水化 `ren`（SPEC06 IPC 代价 vs 频率冲 1.5+ GHz 收益） |
+| **`exu_ctrl`** DC `(VER-37)` | 未出数 | `exu_ctrl_pkg.sv:205` 触发 DC 内部断言 `(VER-37)` | 改写触发 Presto 断言的写法，补齐 `exu_ctrl` 及整块 `exu` / `core_top` DC 28nm 报告 |
+| **`axi_llc`** / **`icache`** / **`dcache`** 整块 DC | 未单跑整块 DC（子模块 `bop` 1.47 / `mshr` 1.15 / `wb` 1.49 / `s1/s2` ≥2.0 GHz） | SRAM 宏黑盒化后跑子系统级 DC 综合 | 为大阵列补齐 SRAM 宏/黑盒脚本，跑通 `axi_llc`、`icache`、`dcache`、`front_top`、`back_top`、`core_top` DC 综合 |
 
 ## 待做：验证与对齐
 
