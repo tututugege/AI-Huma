@@ -2,9 +2,9 @@
 
 AI-Huma 是一个乱序 RISC-V CPU 的设计项目：人定方向和验收标准，AI 做大部分设计、验证和实现工作。
 
-我们从一个已有的开源模拟器（tututugege/simulator，RTL 风格、周期精确的 C++ 乱序核）出发，先把它变成自己的起点：蒸馏出快速、可读的时序模型 trace-model，逐模块翻译出 RTL，再配上功能模型 function-model 做正确性对照。这一步在 2026-11-04 完成，**它只是开始**。
+我们从一个开源模拟器（tututugege/simulator）出发建立起点，随后完成了向 `rv64gc` + `Sv39` 的全面演进与 60 余项体系结构探索。经过前端块级预测与双块融合、后端扩窗与稀疏检查点重构、L2 TLB / Berti / BOP / Bingo 访存层次升级、Load L2 推测唤醒、Radix-4 Booth 乘法 / Radix-16 Early-out 除法以及**全套自研可综合 RV64FD FPU** 的全栈落地，项目在 SPEC06 INT 386 点上已突破 **`15.33 分/GHz`**，且 `function-model` / `trace-model` / `rtl` 三仓逐程序周期 100% 对齐。
 
-现在项目的重心是**自己的优化**：每个想法先在 trace-model 上量化（性能、面积代价），结论再同步到 RTL，用功能模型保证正确，记录下来，合入 main。第一项落地的成果是“第 3 批面积配置”（[EXP-005](docs/EXPLORATION.md)）：IPC 只降 0.5%，受影响模块少了约 17% 的门。长期目标是让三个模型协同迭代，成为 Agentic CPU 训练大师。
+当前项目已进入**物理实现与时序收敛新阶段**：在保持 15+ 分/GHz 架构竞争力的同时，集中推进剩余超 100 层模块的逻辑深度压缩与 Synopsys DC 工艺库时序/面积/功耗综合，持续探索人机协同的 Agentic CPU 设计范式。
 
 ## 名字的由来
 
@@ -17,10 +17,10 @@ AI-Huma 有两层意思：
 
 | 阶段 | 时间 | 做了什么 |
 |---|---|---|
-| 建立起点 | 至 2026-11-04 | 从 tututugege/simulator 蒸馏出 trace-model（代码从约 8.4 万行降到 4.3 万行、更快，周期与原模型完全一致）；逐模块翻译出 RTL，与原模型逐拍对照；接入 function-model。逐拍对照体系完成使命后退役（rtl `docs/history/`、标签 `legacy-reference`）。 |
-| 自主优化 | 2026-11-04 起 | 正确性改为对照 function-model，周期不再要求与原模型一致；建立探索 → 验证 → 合入 main 的流程（[WORKFLOW.md](docs/WORKFLOW.md) 第 4–6 节）；重建 SPEC 检查点。已合入 main 的优化（逐项数字见 [MAIN_RECORDS.md](docs/MAIN_RECORDS.md)）：第 3 批面积配置（EXP-005）、DRAMsim3 DDR 内存模型并去掉 AXI 分频（EXP-006，新基线）、mov 消除（EXP-012）、L1D 数据预取器 h1（EXP-009）、PMU（EXP-013）、分级 LSU + 流水化 BPU（EXP-015）、后端 DSE 支持代码（EXP-016）、IQ 入队宽度（EXP-017）、访存推测与前端快速通路（EXP-019/020/023）、已提交 store 的 write buffer（EXP-024）、多表间接跳转预测 ITT（EXP-025）、删除 0x87f00000 非缓存窗口（EXP-027）、紧凑 ROB（EXP-028）。待做见 [TODO.md](docs/TODO.md)。 |
-| rv64 | 2026-11-11 起 | 从 rv32imab 迁移到 rv64imab + Sv39（EXP-029），后加 F/D、C（rv64gc）；**2026-11-16 起 main 只有 rv64gc，rv32 在各仓库分支 `rv32-legacy`**（见 [docs/RV32_REMOVAL.md](docs/RV32_REMOVAL.md)）。 |
-| trace-model 结构整理 | 2026-11-16 至 11-17 | 周期全程不变的四次整理：去掉执行驱动时代的残留（[TM_CLEANUP.md](docs/TM_CLEANUP.md)）；环境变量 77 → 16、开关和变体精简（[TM_SIMPLIFY.md](docs/TM_SIMPLIFY.md)）；comb 只在一拍内按依赖计算、seq 只在时钟沿锁存，后端 comb 阶段 69 → 23（[TM_REG_WIRE.md](docs/TM_REG_WIRE.md)）；模块契约：寄存器统一为 `Regs q_, d`，每个 comb 阶段在头文件声明读写的信号，后端、访存、前端和 `SimCpu::cycle()` 的调度都由声明生成、由工具核对（[TM_MODULE_CONTRACT.md](docs/TM_MODULE_CONTRACT.md)）；一张全局调度表、25 个模块同一种写法、大部分模块的下一状态在 seq 原地更新、uop 只带 id、每拍扫描改查表，dhrystone 模拟快约 20%（[TM_GLOBAL_SCHED.md](docs/TM_GLOBAL_SCHED.md)）。随后整理 TLB、CSR、Dispatch、Rename、ROB、LSU，删掉 PhysMemory（[TM_MODULE_CLEANUP.md](docs/TM_MODULE_CLEANUP.md)）。模型 .cpp/.h 约 3.0 万行。 |
+| 建立起点 | 至 2026-11-04 | 从 tututugege/simulator 蒸馏出 trace-model（代码从约 8.4 万行降到 4.3 万行、更快，周期与原模型完全一致）；逐模块翻译出 RTL，与原模型逐拍对照；接入 function-model。逐拍对照体系完成使命后退役（rtl 标签 `legacy-reference`）。 |
+| 自主优化 | 2026-11-04 至 11-11 | 正确性改为对照 function-model，建立“探索 → 验证 → 合入 main”流程（[WORKFLOW.md](docs/WORKFLOW.md)）；落地 DRAMsim3 DDR4 模型、L1D 预取器、PMU、分级 LSU、访存推测、write buffer、多表 ITT、紧凑 ROB 等基础优化（EXP-005..028）。 |
+| rv64gc 迁移与模型重构 | 2026-11-11 至 11-17 | 从 rv32imab 全面迁移至 `rv64gc` + `Sv39`（含 F/D、C 扩展；rv32 归档于各仓 `rv32-legacy` 分支）；随后完成 trace-model 四轮零周期差结构重构（统一 `In/Out` + `CONTRACT` 声明与自动调度生成 `comb_graph.py`、精简环境变量、提速 ~20%，详见 [trace-model/docs/SCHEDULING.md](trace-model/docs/SCHEDULING.md)）。 |
+| 体系结构冲刺与 15+ 分里程碑 | 2026-11-18 至 11-23 | **从 11.37 分/GHz 演进至 `15.33 分/GHz`（+34.8%，SPEC06 INT 386/386 点），三仓全量对齐**：① 默认配置 = RTL 配置，删看门狗与旧开关，建立模块级文档先行与 Yosys 深度代理综合基线（EXP-044..046）；② 访存与前端大升级：L1 硬件 Berti + LLC BOP/Bingo 双优先级空间预取（EXP-048/058）、块级 1-Ahead FTB + `2-taken` + 2-Ahead B + 真 4-Bank ICache + 实 AXI FDIP 与前端重构（EXP-050/051/053）、统一 L2 TLB + Sv39 PWC（EXP-056）；③ 后端性能与面积协同：`c.mv` 1-hop 移动消除（EXP-052）、`PRF=256 / ROB=256` 扩窗（EXP-055）、唤醒驱动 6b EXU Bypass 与 `isu`/`ren` 公共原语平衡树降深度、`ren` 稀疏 K=4 检查点 + `ren_log` 前向 Walk（`ren` 面积 −73.2%，EXP-059）、**Load L2 推测唤醒（`load-to-use 4→3`）突破 15 分大关（`15.25 /GHz`，EXP-060）**；④ 执行单元物理化与自研可综合 FPU：Radix-4 Booth 乘法 + 1× Radix-16 Early-out 变延迟除法与 EXU 动态唤醒 + **全套自研可综合 RV64FD FPU（5 核心 `<100` 层，235 万条 SoftFloat 0 差，`-DFPU_REAL` 整核 69/69）**（`15.33 /GHz`，EXP-061）。下一阶段重点：剩余超 100 层模块降深度与 Synopsys DC 工艺库时序综合（见 [TODO.md](docs/TODO.md)）。 |
 
 ## 三个部分
 
@@ -34,7 +34,7 @@ AI-Huma 有两层意思：
 
 ## 仓库结构
 
-`AI-Huma` 本身是**总仓库**，只放全项目文档（`docs/`）、脚本（`scripts/`）和忽略规则；三个子项目是各自独立的 git 仓库，作为 **git 子模块**引用（`.gitmodules` 指向 `git@github.com:tututugege/AI-Huma-{func,trace,rtl}.git`）。
+`AI-Huma` 本身是**总仓库**，只放全项目文档（`docs/`）和忽略规则；三个子项目是各自独立的 git 仓库，作为 **git 子模块**引用（`.gitmodules` 指向 `git@github.com:tututugege/AI-Huma-{func,trace,rtl}.git`）。
 
 ```text
 AI-Huma/
@@ -42,7 +42,6 @@ AI-Huma/
 ├── function-model/           子模块：功能模型（librefcpu）
 ├── trace-model/              子模块：时序模型 / 架构探索平台
 ├── rtl/                      子模块：SystemVerilog + 整核测试平台
-├── scripts/gate_all.sh       三个仓库的合入前门禁串联脚本（trace-model / lint / RTL 对 function-model；数字可能落后于当前 gate，用前先看脚本头注释）
 └── rtl-*/ trace-model-*/     被 .gitignore 忽略：各实验分支的 git worktree（git worktree add ../<repo>-<名字>）
 ```
 
@@ -64,13 +63,13 @@ git submodule update --init          # 取出 function-model、trace-model、rtl
 - [docs/MAIN_RECORDS.md](docs/MAIN_RECORDS.md)：每次合入 main 的性能、面积和“变化”；**当前数字以这里为准**。
 - [docs/EXPLORATION.md](docs/EXPLORATION.md)：架构探索记录；[docs/LOG.md](docs/LOG.md)：每个 commit 一行。
 - [docs/PMU.md](docs/PMU.md)：性能监控单元与 TMA；[docs/SERVER.md](docs/SERVER.md)：`iprc-jump` 与 `eda` 集群怎么编译、跑 SPEC。
-- [trace-model/docs/ENV_VARS.md](trace-model/docs/ENV_VARS.md)：时序模型的全部环境变量（默认值、用途）；[trace-model/docs/SCHEDULING.md](trace-model/docs/SCHEDULING.md)：模块写法、接口声明、调度生成和工具看不见的共享状态（[MODULE_CONTRACT.md](trace-model/docs/MODULE_CONTRACT.md) 是过程记录）。
+- [trace-model/docs/ENV_VARS.md](trace-model/docs/ENV_VARS.md)：时序模型的全部环境变量（默认值、用途）；[trace-model/docs/SCHEDULING.md](trace-model/docs/SCHEDULING.md)：模块写法、接口声明、调度生成和工具看不见的共享状态。
 
 ## 核心原则
 
 - **正确性 = 架构行为与 function-model 一致**（2026-11-04 起）。RTL 整核测试平台每提交一条指令，function-model 执行一条，比较提交 PC 和目的寄存器的值；Linux 从复位启动到登录提示符是整机检查。
 - **周期数、IPC 是性能指标，也是优化的对象**。原模型的周期只是起点，不再是标准；探索的结论先在 trace-model 上验证，再同步到 RTL，合入 main 时两者周期逐个相等。
-- **旧的逐模块锁步 / trace 回放 / 变异检查体系已退役**（代码在 rtl 标签 `legacy-reference`，文档在 `rtl/docs/history/`）。
+- **旧的逐模块锁步 / trace 回放 / 变异检查体系已退役**（归档在 rtl 标签 `legacy-reference`）。
 - **目标是方法，而不只是代码**：AI 和人能否系统地做 CPU 架构优化——每个想法先在模型上量化，再落到 RTL，保证正确，留下可复用的验证手段和完整记录（包括负面结果）。
 
 ## 🏆 里程碑：SPEC06 INT 突破 **15 分/GHz**（当前 `main`：**`15.33 分/GHz`**，2026-11-23）
@@ -126,7 +125,7 @@ export PATH="$HOME/rv64spec/verilator_src/bin:$PATH"
 cd ../rtl
 bash scripts/lint.sh && bash scripts/lint_chip.sh
 SOC_FM=1 SOC_OUT=$PWD/build/soc_fm bash tb/soc/build.sh    # 自动经 scripts/fm_lib.sh 构建匹配的 librefcpu.a
-bash scripts/fm_gate.sh $PWD/build/soc_fm/obj/soc_tb $PWD/build/gate   # 68/68，并报告与 trace-model 周期不同的个数
+bash scripts/fm_gate.sh $PWD/build/soc_fm/obj/soc_tb $PWD/build/gate   # 69/69，并报告与 trace-model 周期不同的个数
 ```
 
 - **默认配置即 RTL 配置（不靠环境变量对齐）**：2026-11-19 起已删除 `LSU_PIPE_NOWD` 看门狗开关，trace-model 与 RTL 默认均为 `XLEN=64 FP=1 RVC=1`，比周期和跑 SPEC 均不需要额外环境变量；PMU 默认开（`PMU=0` 关闭）。

@@ -1,7 +1,7 @@
 # 文档导航
 
 AI-Huma 由总仓库和三个子仓库组成，文档分两层：**总仓库 `docs/` 放全项目的规则、记录和待办**；**各子仓库只放“本仓库是什么、怎么跑、模块怎么设计”**。
-已退役的文档挪进各仓库的 `docs/history/`，只供查阅。
+已完成或退役的临时过程文档不再长期堆积在工作区，统一在 git 历史中查阅。
 
 ```
 AI-Huma/                                  总仓库（开发机 iprc-jump：~/AI-Huma）：全项目文档（本目录）
@@ -48,7 +48,6 @@ AI-Huma/                                  总仓库（开发机 iprc-jump：~/AI
 | [EXPLORATION.md](EXPLORATION.md) | 每次架构/性能探索一节（EXP-编号）：问题、方法、模型近似、结果、结论；不论是否合入 | 每次探索 |
 | [SERVER.md](SERVER.md) | 开发机与集群怎么用：当前开发机 `iprc-jump`（9950X3D）、`login-inband`、`eda` 计算集群、NFS SPEC/Linux checkpoint 与综合/批跑流程 | 换服务器或流程变化时 |
 | [PMU.md](PMU.md) | 性能监控单元：事件表、TMA 口径、硬件计数器块、trace-model 分析层、接进 RTL 的计划 | PMU 设计变化时 |
-| [BPU_OPT_PLAN.md](BPU_OPT_PLAN.md) | BPU 与前端微架构优化路线图：按块 FTB（S1 主力 / S2 兜底）→ 2-ahead → 2-fetch → 2-taken | 阶段规划变化时 |
 | [MAIN_RECORDS.md](MAIN_RECORDS.md) | 每次合入 main 一行（版本、正确性、性能、RTL 周期、综合）+ 一节“变化”；**当前数字的权威来源** | 每次合入 main |
 
 ### function-model
@@ -73,7 +72,6 @@ AI-Huma/                                  总仓库（开发机 iprc-jump：~/AI
 | [docs/ENV_VARS.md](../trace-model/docs/ENV_VARS.md) | 运行时读取的全部环境变量（16 个），默认配置 = RTL 配置，比周期无需任何环境变量 |
 | [docs/LSU_PIPE.md](../trace-model/docs/LSU_PIPE.md)、`docs/LSU_PIPE_IPC.md` | 分级 LSU 的设计和 IPC 修复记录 |
 | `front-end/*.md` | 上游带来的前端写法规范和训练函数清单（前端代码的参考） |
-| `docs/history/` | 蒸馏计划 `PLAN.md` 和各阶段记录（P0–P3），已完成 |
 
 ### rtl
 
@@ -87,11 +85,9 @@ AI-Huma/                                  总仓库（开发机 iprc-jump：~/AI
 | [06-equivalence-policy.md](../rtl/docs/06-equivalence-policy.md) | 正确性原则：现行门禁、不比较什么 |
 | [08-risk-register.md](../rtl/docs/08-risk-register.md) | 风险登记簿（只记风险） |
 | [09-synthesis-report.md](../rtl/docs/09-synthesis-report.md) | 面积代理综合的方法和逐模块数字 |
-| [modules/](../rtl/docs/modules/) | 每个模块的设计笔记（“验证”一节多为旧体系结果） |
-| [analysis/](../rtl/docs/analysis/README.md) | 边界与结构分析（设计内容仍可参考） |
+| [modules/](../rtl/docs/modules/) | 每个模块的设计笔记（开发前必须先更新，见 `WORKFLOW.md` 第 7 节） |
 | [deviations.md](../rtl/docs/deviations.md) | 旧体系的差异登记（不再新增，S 编号仍被引用） |
 | [scripts/README.md](../rtl/scripts/README.md) | 脚本索引 |
-| `docs/history/` | 已退役：逐模块开发流程、逐拍对照 harness、翻译阶段路线图、翻译任务书、录制点 |
 
 ## 3. 每类信息只记在一处
 
@@ -110,6 +106,6 @@ AI-Huma/                                  总仓库（开发机 iprc-jump：~/AI
 
 - 新增或挪动文档时更新本导航；挪动后检查相对链接（所有仓库都不应有坏链接）。
 - 文档整理的规则（每次合入 main 时检查、每月全面审查及清单）见 [WORKFLOW.md](WORKFLOW.md) 第 6.1 节。
-- 退役的文档不删，挪进本仓库的 `docs/history/`，并在索引里注明。
+- 一次性过程文档与退役文档直接删除，历史查阅 git log。
 - 新写的文档用中文；trace-model 已有的英文文档暂不翻译。
 - 子 agent 交回的设计文档（如 `LDSTA_MERGE.md`、`UNIFIED_FTQ.md`）跟着它所在的实验分支提交，结论摘要写进 [EXPLORATION.md](EXPLORATION.md)。
