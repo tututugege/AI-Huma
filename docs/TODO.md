@@ -10,19 +10,19 @@
 
 | 模块 | 当前 DC 28nm WNS / Fmax / 级数 | 关键路径线索 | 优化方向 / 做完标准 |
 |---|---|---|---|
-| **`lsu`**（唯一 <1.20 GHz） | **−0.39 ns / 1.12 GHz / 49 lvl**（纯组合 `0.85 ns / 1.18 GHz`，TNS −9.0k，840k um²） | Top 1–10 齐平在 `−0.39 ns`：`u_ldq/g_e[*]/f_q[blk] → f_q[result]`（per-entry STLF 数据合并）与 `dec_bcast_br_mask → u_rp/u_ldq` | 拆解 `lp_wk` 每项 STLF 数据字节合并或轻量化 `br_mask` 广播，将 `lsu` 推上 `≥ 1.20 GHz`（使全核 23/23 ≥ 1.20 GHz） |
+| **`lsu`**（唯一 <1.20 GHz） | **−0.39 ns / 1.12 GHz / 43 lvl**（纯组合 `0.84 ns / 1.19 GHz`，TNS −7.5k，758k um²） | `dec_bcast_br_mask` 已随 EXP-068 消除，残余瓶颈集中于 `u_ldq/g_e[*]/f_q[blk] → f_q[result]`（per-entry STLF 数据合并） | 拆解 `lp_wk` 每项 STLF 数据字节合并，将 `lsu` 推上 `≥ 1.20 GHz`（使全核 23/23 ≥ 1.20 GHz） |
 | **`axi_llc`** / **`icache`** / **`dcache`** / **`core_top`** 整块 DC | 未单跑整块 DC（子模块均已有数） | SRAM 宏黑盒化后跑子系统级与整核 DC 综合 | 为大阵列补齐 SRAM 宏/黑盒脚本，跑通 `axi_llc`、`icache`、`dcache`、`front_top`、`back_top`、`core_top` DC 综合 |
 
 ## 待做：验证与对齐
 
 | 事项 | 为什么 | 做完的标准 |
 |---|---|---|
-| **逐条对比加上 store 比较**（rtl V-12） | 目前 `fm_check.h` 只比提交 PC 和目的寄存器，MMIO/缓存 store 数据错误只能靠串口或后续 load 间接发现 | `tb/soc/fm_check.h` 在每条 store 提交时比较物理地址、数据、字节使能（MMIO 与可缓存都比），门禁通过；再考虑 CSR 写值 |
+| **LR/SC 遇异步中断的保留位对齐（R-7 根因）** | `lp_rsv.sv` 在 `sc` 推测执行时即通过 `sc_clr` 清零 `rsv_valid_q`，若随后异步中断冲刷未提交的 `sc`，`mret` 重执时 RTL 返回 1（保留失效），而 `function-model` 在 `refcpu_take_forced_interrupt` 未清 `reserve_valid` 返回 0，引发 Difftest 分歧（即 `08-risk-register.md` R-7 悬案） | 统一三仓口径：中断/异常冲刷时 RTL 与 `function-model` 同步清保留位（或 `sc_clr` 推迟至提交/非推测态），并用 `lr.d`/`sc.d` + 高频中断回归验证通过 |
+| **逐条对比补全 AMO store 比较**（rtl V-12 剩余） | `SOC_TB_FM_STRICT=1` 已补齐 MMIO/跨字 store 数据及 18 个架构 CSR + 特权级对比（69/69 + 152/152 通过），仅剩 AMO 指令写回数据与字节使能未纳入 store 比较 | `tb/soc/fm_check.h` 补齐 AMO 写回数据与字节使能对比，严格门禁通过 |
 | **RTL 抽样跑 SPEC06 点** | 当前 15.33 分/GHz 仅来自 trace-model；RTL 与模型周期相等只在 69 个小程序和 Linux 26 窗口验证过 | 12 个 SPEC06 INT 程序各抽至少 1 个高权重点，RTL 周期 = trace-model 周期且逐条对比 0 不一致 |
 | **从复位 140M 周期 Linux 全程 RTL vs 模型对齐** | EXP-040 时期在 3000–3050 万周期起出现 PMU 区间偏差（+0.29%），近期合入均用 26 段检查点验证，尚未在最新 `main` 跑完整复位对比 | 在 `eda` 跑 8 线程静态 `soc_tb` 从复位到 `rv64 login:`，确认逐条 0 不一致并排查是否仍有区间分歧 |
 | 检查点窗口比 PMU 区间（`PMU_CMP=1`） | 检查点恢复程序在 RTL 与模型上耗时不同，按绝对周期切 PMU 区间会错位 | 两边在恢复结束处对齐计数，`PMU_CMP=1` 通过 |
-| RTL 断言与去复位随机初值 | 测试平台未默认开 `--assert`，且用 `--x-initial 0` 可能掩盖未初始化依赖 | 测试平台开启 `--assert` 及 `--x-initial unique` 跑通门禁 |
-| 补齐覆盖缺口与 toggle 覆盖率 | `front_top`（RET `imm≠0`、SFENCE.VMA 后取指）、peripheral AXI、PTW 超级页/故障、MSHR_HIT/FULL、新旧降深度模块等价测试（`lp_ovl`、`bpu_ub_track_ser`、`bpu_updq`、`bpu_ub_look`、`front_fetch_buf`）缺回归 | 补定向测试与模块级等价测试进 `rtl/tb/`，并统计 Verilator toggle 覆盖率 |
+| 补齐剩余覆盖缺口、形式等价（CEC）与 toggle 覆盖率 | 已补 `rtl/sva/` 20 个功能覆盖点（100% 命中）、152 官方 `riscv-tests`、8 个定向短测试（行覆盖 `96.44%`）及 RV64GC Fuzzer；尚缺：① `lp_ovl`/`bpu_ub_track_ser`/`bpu_updq`/`bpu_ub_look`/`front_fetch_buf` 等降深度模块的 Yosys CEC / 等价测试；② 集群全量 `--coverage-toggle`（`SOC_COV=all`）与 26 窗 Linux 下的 `SOC_SVA=1` 回归；③ `dcache_resp` `fwd_st`/`fwd_st_full` 与 `lp_ldq_ent` `L2_WBP` 覆盖 | 接入 Yosys CEC 形式等价并上 `eda` 集群跑 `SOC_COV=all` + 夜间万级 seed Fuzzer 扫雷 |
 | 扩大 gate（加入 `float_test` / `memory-stress` 等长程序） | 现有 69 个 gate 程序最长仅 ~31 万周期 | `float_test` 及更长定向程序进入常规门禁 |
 | F/D 性能标定（SPECfp / PolyBench） | 当前 386 点均为 SPEC06 INT，FP 队列大小/延迟/STD FP 数据口尚未在浮点大负载上标定 | 建 rv64gc SPECfp 或 PolyBench 评测并标定 FP 后端参数 |
 
@@ -54,7 +54,7 @@
 - **生成器同步**：`tools/gen_backtop.py`、`gen_soc_top.py`、`gen_cfg_pkg.py` 与手改的 `back_top.sv`/`exu.sv`/`soc_top.sv`/`ttg_cfg_pkg.sv` 补齐同步（让 `make cfg` 与提交包逐字节一致，不再输出已删常量）。
 - **`axi_subsys` UNOPTFLAT**：确认 `axi_llc.in_w` 组合环是否为误报，消除后纳入 `-Wall`。
 - **死代码与过期注释清理**：`rob.sv` `pf_inst` 恒 0；`lsu_pipe.sv` 孤立 `lint_on`；`tests/tlb_par` 过期接口；`exu_fu` 单周期单元无用端口；LLC `hz_wctx`/`hz_wresp`；`mem_axi` 桩口 2；`tlb_mmu_pkg`/`fp_pkg` rv32 残留；`ptw_walk` L1/L2 误导命名；各模块旧注释（`27 FUs`、`14 wake channels`、`16 tick`、`8->16 lane` 等）。
-- **可选架构清理**：是否删除默认关闭且不再使用的 `bpu_ub_track.sv`（`RVC=0`）和 `FE_BFAST` 分支；`RealLsu` 3 个 SSA 展开文件手写化；`spec/*.io` 明确退役或更新。
+- **可选架构清理**：① **将 `idu_br_latch` 移出 `idu`**（移至 `exu_ctrl` 输出或 `back_top`）：EXP-068 删除 `br_mask`/`br_id` 后，`idu` 已与分支管理解耦，迁出 `idu_br_latch` 可让 `idu` 成为纯组合 8 路译码器（零周期变化）；② 是否删除默认关闭且不再使用的 `bpu_ub_track.sv`（`RVC=0`）和 `FE_BFAST` 分支；`RealLsu` 3 个 SSA 展开文件手写化；`spec/*.io` 明确退役或更新。
 - **RTL 文档补全**：全模块压到 ≤100 层后补齐 `rtl/docs/DEPTH_OPT.md`，清理各 `rtl/docs/modules/*.md` 末尾的“未核对”项，核对 `pmu`/`common` 的 `area` 字段。
 - **未决定是否合入的历史探索**：`BPO_LOOP=1` 循环预测器（EXP-025）、`exp/sdip`（EXP-026），如需重启须在当前 15.33 分/GHz `main` 上重测。
 - **合入流程自动化**：把 `scripts/linux_check.sh` 正式写进 `WORKFLOW.md` 检查清单。
