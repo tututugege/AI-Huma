@@ -6,6 +6,7 @@
 
 | 编号 | 日期 | 题目 | 分支 | 状态 | 一句话结论 |
 |---|---|---|---|---|---|
+| [EXP-065](#exp-065-第四轮-tsmc-28nm-dc-时序优化ren--lsu) | 2026-11-25 | 第四轮 TSMC 28nm HPC+ DC 时序优化（`ren` 无引用上限 + 1 拍检查点写/回收；`lsu` L2a 并行 CAM + 256b STQ Bloom Filter + L2a/L2b STLF 拆拍 + 零 29b 加法器 + 寄存 MMIO + `lp_wbuf` 拍平） | trace-model `exp/timing-opt4`；rtl `rtl/timing-opt4` | **已合入 `main`（2026-11-25：trace-model `974e485`、rtl `ded05e3`）** | 全核 23/23 模块全部突破 **1.12 GHz**（22/23 ≥1.20 GHz，15/23 ≥1.54 GHz）：`ren` **1.22→1.67 GHz (+36.9% / +450 MHz)**（WNS `−0.10 ns`、40→26 级、TNS −75.3%、面积 −0.6%）、`lsu` **0.97→1.12 GHz (+15.5%，较 R1 +34.9%)**（WNS `−0.39 ns`、纯组合 `0.85 ns / 1.18 GHz`、56→49 级、TNS −15.2%、面积 `873.6k→840.2k um²` −3.8%）；全量 SPEC06 INT 386/386 仅 **`−0.802%`（`~14.87 /GHz`）**，绝对性能（`分/GHz × Fmax`）**+14.6%**（较 R1 累计 **+31.5%**）；`fm_gate` **69/69 PASS（0 周期差）**，**rv64gc Linux 26 窗（`s01..s26`，~1.326 亿指令）26/26 PASS、0 FM 差、100% PT/UP 全等** |
 | [EXP-064](#exp-064-第三轮-tsmc-28nm-dc-时序优化dcache_pf--dcache_mshr--lsu-wave-12--ren-2-stage) | 2026-11-24 | 第三轮 TSMC 28nm HPC+ DC 时序优化（`dcache_pf` / `dcache_mshr` / `lsu` Wave 1+2 零周期变化优化 + `ren` 2-stage 流水化）及 `Fu.h` `div_radix16_latency` `msd::taint` 修复 | trace-model `exp/timing-opt3`；rtl `rtl/timing-opt3` | **已合入 `main`（2026-11-24：trace-model `be7699a`、rtl `7d84c7d`）** | 全核 22/23 模块 ≥1.20 GHz（20/23 ≥1.28 GHz，14/23 ≥1.54 GHz）：`dcache_pf` **1.18→1.35 GHz (+14.4%)**（纯组合 1.43，0 周期变化）、`dcache_mshr` **1.15→1.28 GHz (+11.3%)**（纯组合 1.54，面积 **−13.9%**，0 周期变化）、`lsu` Wave 1+2 **0.88→0.97 GHz (+10.2%)**（TNS −32.6%，面积 −4.9%，0 周期变化）、`ren` 2-stage **1.16→1.22 GHz (+5.2%)**（46→40 级，SPEC06 INT 386/386 **`−1.07%`**）；`fm_gate` **69/69 PASS（0 周期差）**，**rv64gc Linux 26 窗（`s01..s26`，~1.326 亿指令）26/26 PASS、0 FM 差、100% PT/UP 全等**；顺带修复 `Fu.h` `div_radix16_latency` 未读 `msd::live()` 导致投机旧值 `divu` 差 1 拍的遗留 bug；同时实测确认 `ren_elim_sel` 33×33 `spec_ref_cnt` 预计算因高扇出回归（−0.36→−0.42 ns）并已回退 |
 | [EXP-063](#exp-063-第二轮-tsmc-28nm-dc-时序优化bpu_eval--bpu_spec--lsu--exu_ctrl) | 2026-11-24 | 第二轮 TSMC 28nm HPC+ DC 时序优化（`bpu_eval` 真并行 2-Ahead B / `bpu_spec` 寄存 `M_ARCH` / `lsu` 无移位 CAM + 并行 `lp_wk` / `exu_ctrl` 修 DC `(VER-37)`）及 `ren` 两级流水 DSE | trace-model `exp/timing-opt2`；rtl `rtl/timing-opt2` | **已合入 `main`（2026-11-24：trace-model `4626924`、rtl `aa7888b`）** | 全核 23/23 模块补齐 28nm DC 真实签核数据（22/23 模块 ≥1.15 GHz，14/23 ≥1.54 GHz，仅剩 `lsu` <1.0 GHz）：`exu_ctrl` **MET ≥2.00 GHz**（WNS `0.00 ns` / 13 lvl / 31.8k um²）、`bpu_eval` **0.84→1.28 GHz (+52.4%)**（纯组合 `0.68 ns / 1.47 GHz`、面积 −6.8%）、`bpu_spec` **0.86→1.20 GHz (+39.5%)**（纯组合 `0.70 ns / 1.43 GHz`、面积 −8.9%）、`lsu` **0.83→0.88 GHz**（0 周期变化，暴露第三轮流水切分目标）；**全量 SPEC06 INT 386/386 仅 `−1.20%`**（vs EXP-062，以 1.2% IPC 换 BPU 频率 +40%~+52%）；`fm_gate` **69/69（0 周期差）**，**rv64gc Linux 26 窗（`s01..s26` + `s00`，~1.377 亿指令）26/26 PASS、0 FM 差、100% PT/UP 全等** |
 | [EXP-062](#exp-062-tsmc-28nm-dc-时序基线与第一轮-5-模块时序优化) | 2026-11-24 | 建立 TSMC 28nm HPC+ Synopsys DC 真实工艺库时序基线（22 模块）+ 第一轮 5 模块时序优化（`dcache_pf` 4 级流水 / `axi_llc_bop` / `bpu_spec` / `ren` / `dcache_mshr`） | trace-model `exp/timing-opt1`；rtl `rtl/timing-opt1` | **已合入 `main`（2026-11-24：trace-model `d872061`、rtl `7f31634`）** | 首次建立 TSMC 28nm HPC+（`ssg0p81v125c`, 12T SVT+LVT, `0.50ns / 2.0GHz`, `compile_ultra`）22 模块真实时序基线并确立“DC 28nm 权威签核 + Yosys 快速代理”流程；第一轮攻克 5 大瓶颈：`dcache_pf` **0.37→1.18 GHz (+3.19×)** / 面积 −19.8% / Yosys 384→75、`axi_llc_bop` **1.05→1.47 GHz** / Yosys 291→75、`bpu_spec` **0.73→0.86 GHz**（69→41 lvl）、`ren` **1.05→1.16 GHz**、`dcache_mshr` Yosys **123→99 层 (<100)**；**全量 SPEC06 INT 386/386 反涨 `+0.51%`**（vs EXP-060），**rv64gc Linux 26 窗（`s01..s26` + `s00`，~1.377 亿指令）26/26 PASS、0 FM 差、100% PT/UP 逐拍全等** |
@@ -62,6 +63,29 @@
 | [EXP-003](#exp-003-rob-与-prf-扩大到-256) | 2026-11-04 | ROB/PRF 扩大到 192、256 | trace-model `exp/area-explore` | 未提交、未合入 | 都翻倍到 256 只快约 0.8%（coremark 3%），ROB 128 合理 |
 | [EXP-002](#exp-002-全核面积浪费排查) | 2026-11-04 | 全核面积浪费排查：各 IQ、ibuf、front2back、分支资源、ALU/BRU 端口 | trace-model `exp/area-explore` | 未提交、未合入 | IQ 总项数 384→192、BRU 4→2 等组合后无性能损失；BPU 存储需大负载评估（“ROB 是瓶颈”的说法已被 EXP-003 否定） |
 | [EXP-001](#exp-001-面积优化三个方向) | 2026-11-04 | 面积优化：FTQ 合并、LSU 端口、LD/STA IQ 合并 | trace-model `exp/area-explore` | 未提交、未合入 | 三个方向都能省面积，性能代价 0–1% |
+
+---
+
+## EXP-065 第四轮 TSMC 28nm DC 时序优化（`ren` / `lsu`）
+
+- **状态**：**已合入 `main`（2026-11-25：trace-model `974e485`、rtl `ded05e3`）**。
+- **动机与方法**：
+  1. **`ren`（`1.22 → 1.67 GHz`，+36.9%，面积 −0.6%）**：
+     - 取消 `MOVE_ELIM_MAX_REFS=7` 上限（保留组内 1-hop `!elim[producer]`），将 `ren_arch_cnt` 位宽 `CNT_W` 扩至 `$clog2(RAT_NUM + 1) = 6`（最大引用计数 33 永不溢出），从而彻底删除 `ren_elim_sel.sv` 中 264× 8-bit `spec_rat` 比较器与 8× 33-bit popcount，改为复用 S1 `raw_hit_src1_q` 与 3 级 Kogge-Stone 指针跳跃（连续 `assign` 消除 `ALWCOMBORDER`）。
+     - `ren_rat.sv` / `ren_core.sv` / `ren_fp.sv` 将检查点写入流水化 1 拍（0 周期变化）。
+     - `ren_arch_cnt.sv` 简化归零判定（`n_dec >= n_inc && cnt_q == n_dec - n_inc`），并将 INT 空闲列表回收打 1 拍寄存（`free_q` / `reclaim_preg_q`，同步 `trace-model` `Ren.{h,cpp}`）。
+  2. **`lsu`（`0.97 → 1.12 GHz`，+15.5% / 较 R1 +34.9%，纯组合 `0.85 ns / 1.18 GHz`，面积 −3.8%）**：
+     - **寄存 MMIO 输出**：`lp_unc.sv` / `RealLsuPipe` 改为从寄存态 `cur_.uncached_unit` 输出 `mmio_out`，彻底切断原 Top 9 `rob_commit → per_addr`。
+     - **L2a 并行 STQ CAM + 256-bit 寄存 STQ Bloom Filter**：将 `stq_cam` 从 L1 后移至 L2a 与 D-Cache 响应并行（93% 非 STLF load 零额外延迟）；针对无过滤时 `456.hmmer` 因 STLF load 无条件发起推测 D-Cache 读挤占端口导致 STQ 排空饥饿（`SLOT_BE_STQ_FULL 1,108 → 94,973`，`−7.06%`）的现象，新增 256-bit 寄存 `stq_bloom_q`（以 `vaddr[10:3]` 索引、由拍首存活 STQ 与本拍 STA 同步更新）在 L1 过滤掉命中 STQ 的推测 D-Cache 读，将 `456.hmmer` 拉回 `−0.66%`。
+     - **L2a / L2b STLF 拆拍**：将 L2 拆为 **L2a**（快路径 + `stq_cam`，非 STLF 零额外延迟）与 **L2b**（仅对 ~7% STLF 命中打 1 拍 `PL2B` 寄存器，彻底解耦 `lp_cam → stlf_confirm → lp_wk`）。
+     - **零周期变化 RTL 结构提频**：① `lp_ldq_ent.sv` 切断假路径 `rs_busy → res_v → lp_wb`；② 在 `sta_info_q` / `pl12_q` / `pl2b_q` 寄存器前一次性预计算 `paddr_p1/paddr_m1 = paddr[31:3] ± 1` 并在 `lp_wk.sv` 先 mux `sel_sta` 再进 `stlf_confirm_pre_s`，消除 ~700 份 29-bit 加法器；③ 实测该版 DC 暴露原 Top 1–10 全部落在未动过的 `lp_wbuf`（`rotr64 → lp_pickn → 4 级串行 lp_wbstep`，56 级 / `−0.51 ns`），随即零周期变化重写拍平 `lp_wbuf.sv`（`hi/lo` 拆分 `ttg_pick_k(32,4)` + `ttg_onehot_mux` + 6 组并行 26b 行标签比较 + 4 步纯控制链 + 单级并行 240b 数据 mux + 2 门年龄矩阵），使 `lsu` 一举突破 1.12 GHz。
+- **实测结果**：
+  - **TSMC 28nm HPC+ DC 签核（`ssg0p81v125c`, `0.50 ns`, `compile_ultra`）**：
+    - `ren`：**`1.22 → 1.67 GHz` (+36.9% / +450 MHz)**（WNS `−0.32 → −0.10 ns`，40→26 级 −35%，TNS `−5,375 → −1,330` −75.3%，`157,570 → 156,632 um²` −0.6%）；
+    - `lsu`：**`0.97 → 1.12 GHz` (+15.5%，较 R1 0.83 GHz +34.9%)**（WNS `−0.53 → −0.39 ns`，纯组合 `0.85 ns / 1.18 GHz`，56→49 级 −12.5%，TNS `−10,579 → −8,988` −15.2%，`873,552 → 840,182 um²` −3.8% / 较 R1 −9.4%）；
+    - 全核 23/23 模块现已全部 `≥ 1.12 GHz`（22/23 `≥ 1.20 GHz`，15/23 `≥ 1.54 GHz`）。
+  - **全量 SPEC06 INT 386/386 点（`sim64_r4_l2b` vs `res_r3_386`，0 失败）**：**Geomean `−0.802%`（`~14.87 /GHz`）**（`471.omnetpp −0.03%`、`462.libquantum −0.15%`、`429.mcf −0.21%`、`403.gcc −0.40%`、`458.sjeng −0.60%`、`456.hmmer −0.66%`、`483.xalancbmk −0.71%`、`473.astar −0.84%`、`445.gobmk −0.95%`、`464.h264ref −1.17%`、`401.bzip2 −1.87%`、`400.perlbench −2.01%`）；结合全核短板频率 `0.97 → 1.12 GHz`，绝对性能（`分/GHz × Fmax`）从 `14.5 → 16.7` 提升 **+14.6%**（较 R1 基线 `12.7` 累计 **+31.5%**）。
+  - **验证与对齐**：`comb_graph.py --check` 0 隐患；`trace-model` `rv64gc` Linux 全启动到 `rv64 login:` PASS（0 oops/panic）；RTL `make cfg` 0 差异、`lint_chip.sh` 0 警告；**`fm_gate.sh` 69/69 PASS、0 FAIL、0 SKIP、0 FM 不一致、69/69 周期 0 差异**；**`eda-08/09` 8 线程静态 `soc_tb` `rv64gc`+`Sv39` Linux 26 窗（`s01..s26`，合计 ~1.326 亿指令）：26/26 PASS、0 FAIL、0 FM 不一致、26/26 PT/UP 指纹 100% 逐拍全等**。
 
 ---
 

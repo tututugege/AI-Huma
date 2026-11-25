@@ -2,16 +2,15 @@
 
 全项目唯一的待办清单。每条写清为什么、做到什么算完；做完删掉，在 [LOG.md](LOG.md) 里留一行。（2026-11-23 阶段性清理：删除 EXP-029..061 已完成/已取代的条目，收敛为当前有效待办。）风险（验证缺口、变异存活）记在 [rtl/docs/08-risk-register.md](../rtl/docs/08-risk-register.md)，不在这里重复。
 
-## 待做：TSMC 28nm DC 时序收敛（第四轮目标：突破 `lsu` 与 `ren` 冲全核 ≥ 1.3–1.4+ GHz）
+## 待做：TSMC 28nm DC 时序收敛（第五轮目标：将 `lsu` 推过 `1.20+ GHz` + 子系统/整核黑盒 DC）
 
-权威口径：**Synopsys DC `W-2024.09-SP2` + TSMC 28nm HPC+（`ssg0p81v125c`, 12T SVT+LVT, `CLK=0.50ns / 2.0GHz`, `compile_ultra`）**，Yosys（`strash;balance;map`）仅作分钟级快速迭代代理（详见 [rtl/docs/09-synthesis-report.md](../rtl/docs/09-synthesis-report.md) §15–17）。
-- **前三轮已完成**：EXP-062（22 模块建基线 + 5 模块首轮）+ EXP-063（`exu_ctrl` MET ≥2.00 GHz、`bpu_eval` 0.84→1.28、`bpu_spec` 0.86→1.20、`lsu` 0.83→0.88）+ EXP-064（`dcache_pf` 1.18→1.35 / 纯组合 1.43、`dcache_mshr` 1.15→1.28 / 纯组合 1.54 / 面积 −13.9%、`ren` 2-stage 1.16→1.22、`lsu` Wave 1+2 0.88→0.97 / TNS −32.6% / 面积 −4.9%）。全核 23/23 模块中已有 **14/23 ≥ 1.54 GHz、20/23 ≥ 1.28 GHz、22/23 ≥ 1.20 GHz**，仅剩 `lsu`（0.97 GHz）低于 1.2 GHz。
-- **第四轮待攻克瓶颈按 DC Fmax 排序**：
+权威口径：**Synopsys DC `W-2024.09-SP2` + TSMC 28nm HPC+（`ssg0p81v125c`, 12T SVT+LVT, `CLK=0.50ns / 2.0GHz`, `compile_ultra`）**，Yosys（`strash;balance;map`）仅作分钟级快速迭代代理（详见 [rtl/docs/09-synthesis-report.md](../rtl/docs/09-synthesis-report.md) §15–18）。
+- **前四轮已完成**：EXP-062（22 模块建基线 + 5 模块首轮）+ EXP-063（`exu_ctrl` MET ≥2.00 GHz、`bpu_eval` 0.84→1.28、`bpu_spec` 0.86→1.20、`lsu` 0.83→0.88）+ EXP-064（`dcache_pf` 1.18→1.35、`dcache_mshr` 1.15→1.28 / 面积 −13.9%、`ren` 2-stage 1.16→1.22、`lsu` Wave 1+2 0.88→0.97）+ **EXP-065（`ren` 1.22→1.67 GHz / +36.9% / 26 lvl / 面积 −0.6%，`lsu` 0.97→1.12 GHz / 纯组合 1.18 GHz / 49 lvl / 面积 −3.8%）**。全核 23/23 模块现已全部突破 **1.12 GHz**（**15/23 ≥ 1.54 GHz、20/23 ≥ 1.28 GHz、22/23 ≥ 1.20 GHz**），仅剩 `lsu` 距 1.20 GHz 差 `0.06 ns`。
+- **下一阶段待攻克瓶颈按 DC Fmax 排序**：
 
 | 模块 | 当前 DC 28nm WNS / Fmax / 级数 | 关键路径线索 | 优化方向 / 做完标准 |
 |---|---|---|---|
-| **`lsu`**（唯一 <1.2 GHz） | **−0.53 ns / 0.97 GHz / 59 lvl**（TNS −10.6k，874k um²） | Top 1–8 & 10：`u_ldq/g_e[24]/st_q → lp_l1 → lp_cam → u_ldq/g_e[26]/f_q[spec]`（0.98 ns）；Top 9：`rob_commit_stq_idx → peripheral_req_mmio_addr`（−0.53 ns） | 流水拆拍 `L0`（`lp_l1` + DTLB）与 `L1`（4×64 `lp_cam`；优先评估并行 CAM 方案 1B 保 0 拍 Load 延迟）+ `f_q.spec` 延至 L2 回写 + MMIO 输出打 1 拍，冲 ≥ 1.3–1.4 GHz |
-| **`ren`**（2-stage 切点重平衡） | **−0.32 ns / 1.22 GHz / 40 lvl**（TNS −5.4k，158k um²） | S1 仅占预译码（~0.15 ns），S2 仍承重 `0.79 ns`：`ckpt_count_q → ckpt_wr_lane_oh → u_ckpt`（0.79 ns）与 `rd_oh_q → ren_elim_sel → ren_alloc_sel → ren_dep_check → u_rat/spec_q`（0.78 ns） | 重平衡 S1/S2 切点（将 `dep_check` 旁路与 `ckpt`/`ren_log` 写入后移至 S2），在不新增 IPC 代价下冲 ≥ 1.4–1.5 GHz |
+| **`lsu`**（唯一 <1.20 GHz） | **−0.39 ns / 1.12 GHz / 49 lvl**（纯组合 `0.85 ns / 1.18 GHz`，TNS −9.0k，840k um²） | Top 1–10 齐平在 `−0.39 ns`：`u_ldq/g_e[*]/f_q[blk] → f_q[result]`（per-entry STLF 数据合并）与 `dec_bcast_br_mask → u_rp/u_ldq` | 拆解 `lp_wk` 每项 STLF 数据字节合并或轻量化 `br_mask` 广播，将 `lsu` 推上 `≥ 1.20 GHz`（使全核 23/23 ≥ 1.20 GHz） |
 | **`axi_llc`** / **`icache`** / **`dcache`** / **`core_top`** 整块 DC | 未单跑整块 DC（子模块均已有数） | SRAM 宏黑盒化后跑子系统级与整核 DC 综合 | 为大阵列补齐 SRAM 宏/黑盒脚本，跑通 `axi_llc`、`icache`、`dcache`、`front_top`、`back_top`、`core_top` DC 综合 |
 
 ## 待做：验证与对齐
