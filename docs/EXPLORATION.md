@@ -6,6 +6,7 @@
 
 | 编号 | 日期 | 题目 | 分支 | 状态 | 一句话结论 |
 |---|---|---|---|---|---|
+| [EXP-066](#exp-066-真实物理-ddr-延迟校准32ns--x8-16-bank与-123-ghz-全量-spec06-标定切-2-ghz-默认) | 2026-11-25 | 真实物理 DDR 延迟校准（`60 → 32 ns` + `DDR4_8Gb_x8_3200` 16-bank 对标香山）与 1 / 2 / 3 GHz 全量 SPEC06 标定，并切换 **2 GHz** 为默认配置 | `main` 直接配置校准（trace-model `503c999`、rtl `74ee913`） | **已合入 `main`（2026-11-25）** | 核内微架构零改动，将非核心固定延迟由 `60 ns`（多算了片上 AXI/LLC 与控制器动态调度）校准为真实单 die `32 ns`（`SoC 6 + CDC 6 + CTL 8 + PHY 12`）、颗粒换 `DDR4_8Gb_x8_3200`（16 bank）；**全量 386/386 SPEC06 INT（0 失败）**：1 GHz **`15.50 /GHz` (+4.24%)**、**2 GHz（新默认）`13.87 /GHz` (−6.72%，总分 `27.74`)**、3 GHz **`12.44 /GHz` (−16.36%，总分 `37.31`)**；高主频掉分集中于 4 MiB LLC 挡不住的 `omnetpp`/`libquantum`/`mcf`/`xalancbmk`；RTL `fm_gate` **69/69 PASS（0 周期差）** |
 | [EXP-065](#exp-065-第四轮-tsmc-28nm-dc-时序优化ren--lsu) | 2026-11-25 | 第四轮 TSMC 28nm HPC+ DC 时序优化（`ren` 无引用上限 + 1 拍检查点写/回收；`lsu` L2a 并行 CAM + 256b STQ Bloom Filter + L2a/L2b STLF 拆拍 + 零 29b 加法器 + 寄存 MMIO + `lp_wbuf` 拍平） | trace-model `exp/timing-opt4`；rtl `rtl/timing-opt4` | **已合入 `main`（2026-11-25：trace-model `974e485`、rtl `ded05e3`）** | 全核 23/23 模块全部突破 **1.12 GHz**（22/23 ≥1.20 GHz，15/23 ≥1.54 GHz）：`ren` **1.22→1.67 GHz (+36.9% / +450 MHz)**（WNS `−0.10 ns`、40→26 级、TNS −75.3%、面积 −0.6%）、`lsu` **0.97→1.12 GHz (+15.5%，较 R1 +34.9%)**（WNS `−0.39 ns`、纯组合 `0.85 ns / 1.18 GHz`、56→49 级、TNS −15.2%、面积 `873.6k→840.2k um²` −3.8%）；全量 SPEC06 INT 386/386 仅 **`−0.802%`（`~14.87 /GHz`）**，绝对性能（`分/GHz × Fmax`）**+14.6%**（较 R1 累计 **+31.5%**）；`fm_gate` **69/69 PASS（0 周期差）**，**rv64gc Linux 26 窗（`s01..s26`，~1.326 亿指令）26/26 PASS、0 FM 差、100% PT/UP 全等** |
 | [EXP-064](#exp-064-第三轮-tsmc-28nm-dc-时序优化dcache_pf--dcache_mshr--lsu-wave-12--ren-2-stage) | 2026-11-24 | 第三轮 TSMC 28nm HPC+ DC 时序优化（`dcache_pf` / `dcache_mshr` / `lsu` Wave 1+2 零周期变化优化 + `ren` 2-stage 流水化）及 `Fu.h` `div_radix16_latency` `msd::taint` 修复 | trace-model `exp/timing-opt3`；rtl `rtl/timing-opt3` | **已合入 `main`（2026-11-24：trace-model `be7699a`、rtl `7d84c7d`）** | 全核 22/23 模块 ≥1.20 GHz（20/23 ≥1.28 GHz，14/23 ≥1.54 GHz）：`dcache_pf` **1.18→1.35 GHz (+14.4%)**（纯组合 1.43，0 周期变化）、`dcache_mshr` **1.15→1.28 GHz (+11.3%)**（纯组合 1.54，面积 **−13.9%**，0 周期变化）、`lsu` Wave 1+2 **0.88→0.97 GHz (+10.2%)**（TNS −32.6%，面积 −4.9%，0 周期变化）、`ren` 2-stage **1.16→1.22 GHz (+5.2%)**（46→40 级，SPEC06 INT 386/386 **`−1.07%`**）；`fm_gate` **69/69 PASS（0 周期差）**，**rv64gc Linux 26 窗（`s01..s26`，~1.326 亿指令）26/26 PASS、0 FM 差、100% PT/UP 全等**；顺带修复 `Fu.h` `div_radix16_latency` 未读 `msd::live()` 导致投机旧值 `divu` 差 1 拍的遗留 bug；同时实测确认 `ren_elim_sel` 33×33 `spec_ref_cnt` 预计算因高扇出回归（−0.36→−0.42 ns）并已回退 |
 | [EXP-063](#exp-063-第二轮-tsmc-28nm-dc-时序优化bpu_eval--bpu_spec--lsu--exu_ctrl) | 2026-11-24 | 第二轮 TSMC 28nm HPC+ DC 时序优化（`bpu_eval` 真并行 2-Ahead B / `bpu_spec` 寄存 `M_ARCH` / `lsu` 无移位 CAM + 并行 `lp_wk` / `exu_ctrl` 修 DC `(VER-37)`）及 `ren` 两级流水 DSE | trace-model `exp/timing-opt2`；rtl `rtl/timing-opt2` | **已合入 `main`（2026-11-24：trace-model `4626924`、rtl `aa7888b`）** | 全核 23/23 模块补齐 28nm DC 真实签核数据（22/23 模块 ≥1.15 GHz，14/23 ≥1.54 GHz，仅剩 `lsu` <1.0 GHz）：`exu_ctrl` **MET ≥2.00 GHz**（WNS `0.00 ns` / 13 lvl / 31.8k um²）、`bpu_eval` **0.84→1.28 GHz (+52.4%)**（纯组合 `0.68 ns / 1.47 GHz`、面积 −6.8%）、`bpu_spec` **0.86→1.20 GHz (+39.5%)**（纯组合 `0.70 ns / 1.43 GHz`、面积 −8.9%）、`lsu` **0.83→0.88 GHz**（0 周期变化，暴露第三轮流水切分目标）；**全量 SPEC06 INT 386/386 仅 `−1.20%`**（vs EXP-062，以 1.2% IPC 换 BPU 频率 +40%~+52%）；`fm_gate` **69/69（0 周期差）**，**rv64gc Linux 26 窗（`s01..s26` + `s00`，~1.377 亿指令）26/26 PASS、0 FM 差、100% PT/UP 全等** |
@@ -63,6 +64,27 @@
 | [EXP-003](#exp-003-rob-与-prf-扩大到-256) | 2026-11-04 | ROB/PRF 扩大到 192、256 | trace-model `exp/area-explore` | 未提交、未合入 | 都翻倍到 256 只快约 0.8%（coremark 3%），ROB 128 合理 |
 | [EXP-002](#exp-002-全核面积浪费排查) | 2026-11-04 | 全核面积浪费排查：各 IQ、ibuf、front2back、分支资源、ALU/BRU 端口 | trace-model `exp/area-explore` | 未提交、未合入 | IQ 总项数 384→192、BRU 4→2 等组合后无性能损失；BPU 存储需大负载评估（“ROB 是瓶颈”的说法已被 EXP-003 否定） |
 | [EXP-001](#exp-001-面积优化三个方向) | 2026-11-04 | 面积优化：FTQ 合并、LSU 端口、LD/STA IQ 合并 | trace-model `exp/area-explore` | 未提交、未合入 | 三个方向都能省面积，性能代价 0–1% |
+
+---
+
+## EXP-066 真实物理 DDR 延迟校准（32ns + x8 16-bank）与 1/2/3 GHz 全量 SPEC06 标定（切 2 GHz 默认）
+
+- **状态**：**已合入 `main`（2026-11-25：trace-model `503c999`、rtl `74ee913`）**。
+- **动机与校准依据**（纯外部访存评测口径校准，核内微架构与 RTL 逻辑未动）：
+  1. 原默认配置 `CONFIG_CPU_FREQ_MHZ=1000` + `extra_ns = SoC(20) + CDC(12) + CTL(15) + PHY(13) = 60 ns` + `DDR4_8Gb_x16_3200.ini`（8 bank），在片上已真实建模 `L1D MSHR → AXI → LLC`（~14 拍）且 DRAMsim3 已建模控制器队列与 FR-FCFS 动态调度的前提下，对单 die 芯片多计了 ~28 ns 非核心延迟且 `x16` 颗粒 bank 数少一半。
+  2. 校准为真实单 die 物理参数：**`extra_ns = SoC(6) + CDC(6) + CTL(8) + PHY(12) = 32 ns`**（端到端 row-miss 总延迟约 ~74 ns，精准对标真实单路 DDR4-3200 物理芯片），颗粒切换为对标香山的 **`DDR4_8Gb_x8_3200.ini`**（4 BG × 4 = 16 banks），并确定以 **`2000 MHz`（2 GHz）** 作为项目新的默认评估主频（同步 `trace-model/{include/config.h,Makefile}` 与 `rtl/tb/soc/{platform/include/config.h,build.sh}`）。
+- **全量 SPEC06 INT 386/386 实测（0 失败，锚定 EXP-065 旧 1G 60ns/x16 `14.87 /GHz`）**：
+
+| 口径 | 完成点数 | Geomean IPC | vs 旧 1G | **每 GHz 分数** | **绝对总分 (`分/GHz × GHz`)** |
+|---|---:|---:|---:|---:|---:|
+| 旧基线 1 GHz（`60 ns`, `x16` 8-bank） | 386/386 | `2.3134` | `0.00%` | `14.87 /GHz` | `14.87` |
+| 真实物理 **1 GHz**（`32 ns`, `x8` 16-bank） | 386/386 | `2.4116` | `+4.24%` | **`15.50 /GHz`** | **`15.50`** |
+| 真实物理 **2 GHz（新默认）**（`32 ns`, `x8` 16-bank） | 386/386 | `2.1580` | `−6.72%` | **`13.87 /GHz`** | **`27.74`** |
+| 真实物理 **3 GHz**（`32 ns`, `x8` 16-bank） | 386/386 | `1.9348` | `−16.36%` | **`12.44 /GHz`** | **`37.31`** |
+
+  - **2 GHz（新默认）12 程序逐项 IPC（vs 旧 1G）**：`400.perlbench 3.6865 (−2.41%)`、`401.bzip2 2.6571 (−0.34%)`、`403.gcc 1.8275 (−5.71%)`、`429.mcf 0.4013 (−15.82%)`、`445.gobmk 2.6633 (−1.49%)`、`456.hmmer 6.7544 (+0.12%)`、`458.sjeng 3.1031 (−3.03%)`、`462.libquantum 1.8296 (−15.58%)`、`464.h264ref 4.8077 (−0.68%)`、`471.omnetpp 0.9847 (−19.38%)`、`473.astar 1.3169 (−4.22%)`、`483.xalancbmk 2.2301 (−9.20%)`。
+  - **分析**：高主频掉分高度集中在 4 MiB LLC 挡不住的 4 个大工作集访存程序（`omnetpp`/`mcf`/`libquantum`/`xalancbmk`），计算型程序（`hmmer`/`bzip2`/`h264ref`/`gobmk`）在 2–3 GHz 下基本无损；后续在 2 GHz 默认口径下通过 **TAGE-SC-L + 解除 `MAX_BR=32` + 私有 L2 / 16 MiB L3** 可显著拉升每 GHz 分数。
+- **验证**：`rtl/scripts/regen_refs.sh` 重生成 `ref_cycles{,_nopf}.txt`（69 程序），`fm_gate.sh` **69/69 PASS、0 FAIL、0 SKIP、0 FM 不一致、0 周期差**。
 
 ---
 
