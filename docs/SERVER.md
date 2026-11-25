@@ -66,7 +66,7 @@ Host eda-*
 | `spec06_rv64gc/tools/ckpt2stub.py` | 前门恢复 stub 生成脚本 |
 | `spec06_rv64gc/tm/bin/` | 各实验构建好的 `trace-model` 可执行文件 |
 | `spec06_rv64gc/tm/jobs95.txt` | 覆盖约 95% 权重的 **386 点**标准评估任务表 |
-| `spec06_rv64gc/tm/ds3cfg/configs/DDR4_8Gb_x16_3200.ini` | DRAMsim3 配置文件 |
+| `spec06_rv64gc/tm/ds3cfg/configs/DDR4_8Gb_x8_3200.ini` | DRAMsim3 配置文件（EXP-066 起默认 16-bank x8 颗粒 + 32 ns 非核心延迟；早期为 `x16`） |
 | `spec06_rv64gc/tm/res_<tag>/` | 各实验的逐点输出（`.res`、`.pmu_*.csv`、`.log.gz`、`fail.txt`） |
 | `spec06_rv64gc/tm/cmp_ev5.py`、`agg_spec.py` | SimPoint 调和加权 CPI / IPC 汇总对比脚本 |
 
@@ -80,6 +80,17 @@ Host eda-*
 | `DDR4_8Gb_x16_3200.ini` | DRAMsim3 配置（运行时通过 `DS3_CONFIG` 传入） |
 | `/nfs_global/S/houruyao/lin38/a.out` | 静态链接 rv64gc `function-model`（切检查点务必显式传 `--image <img.bin>`，不可省略 flag） |
 | `/nfs_global/S/houruyao/spec06_rv64gc/tm/bin/sim64_bop14` | 静态链接 rv64gc `trace-model`（含 `PF_KIND=4` 硬件 Berti + `LLC_BOP=1`） |
+
+### 2.2 其他 AI-Huma 相关 NFS 目录（`/nfs_global/S/houruyao/`）
+
+| 路径 | 内容与用途 |
+|---|---|
+| `tools/oss-cad-suite/` | Yosys + `yosys-slang` 综合套件（`bin/`、`share/yosys/plugins/slang.so`） |
+| `tools/spike/bin/{spike,fm_spike64}` | 静态链接 `x86-64-v3` 版官方 **Spike** 及带 `--diff` 逐条对拍的 RV64GC **`function-model`**（`eda-04`~`10` 与本机免依赖直跑） |
+| `tools/riscv-isa-sim/` | Spike（`riscv-isa-sim` + `berkeley-softfloat-3`）源码树 |
+| `tools/SimPoint.3.2/` | SimPoint 聚类工具 |
+| `dc28_check/`、`dc28_opt1..4/`、`dc28_subsys/` | TSMC 28nm HPC+ Synopsys DC 综合工作区与各轮时序优化网表/报告（EXP-062~065） |
+| `rv32imab_ckpt/`、`rv32imab_ckpt_1gb_ram/` | 历史归档的 rv32imab SPEC06 检查点（对应 `rv32-legacy` 分支） |
 
 ## 3. 编译与部署到 `eda` 集群
 
@@ -96,12 +107,15 @@ Host eda-*
 |---|---|---|
 | **本机（`iprc-jump`）** | 代码仓库 | `~/AI-Huma`（总仓库，含子模块 `function-model/`、`trace-model/`、`rtl/`） |
 | **本机（`iprc-jump`）** | **Verilator 5.052** | `~/rv64spec/verilator_src/bin/verilator`（**必须** `export PATH="$HOME/rv64spec/verilator_src/bin:$PATH"`；系统 `/usr/bin/verilator` 是 5.020，编不过！） |
+| **本机（`iprc-jump`）** | **Spike & `fm_spike64`** | 源码与本地库 `~/rv64spec/riscv-isa-sim/`（`build_local/`）；对拍版 `~/rv64spec/fm_spike64/a.out`；静态版 `~/rv64spec/fm_spike64_static/{spike_static,fm_spike64}` |
+| **本机（`iprc-jump`）** | **官方 `riscv-tests`** | `~/qimeng1-serial-regression/source/baremetal/riscv-tests`（`rtl/scripts/riscv_tests_gate.sh` 默认路径） |
 | **本机（`iprc-jump`）** | **Linux 镜像** | `~/rv64spec/linux_j.bin`（OpenSBI + Linux 5.15.170 + rootfs + DTB，另有原料目录 `~/rv64spec/linux_rv64gc/`） |
 | **本机（`iprc-jump`）** | **DRAMsim3 静态库（`TM_DIR`）** | `~/AI-Huma/trace-model`（或历史构建 `~/rv64spec/fe2t_g/tm`，下含 `build_dramsim3/libdramsim3.a`） |
 | **本机（`iprc-jump`）** | **RTL Linux TB 构建** | `cd ~/AI-Huma/rtl && PATH="$HOME/rv64spec/verilator_src/bin:$PATH" bash scripts/build_soc64_linux.sh $PWD/build/soc64lin` |
 | **本机（`iprc-jump`）** | **静态链接 `soc_tb` 给 `eda`** | 在 `build/soc64lin/obj` 下：`g++ -static -pthread soc_tb.o fp_dpi.o verilated.o verilated_threads.o [verilated_dpi.o] Vsoc_top__ALL.a ../SimDDR.o ../PhysMemory.o "$FMDIR/librefcpu.a" "$FMDIR/lib/softfloat/softfloat.a" "$DS3_LIB" -lz -lpthread -latomic -o ../soc_tb_static && scp ../soc_tb_static ../skipmask.txt login-inband:/nfs_global/S/houruyao/linux_ckpt_rv64gc/` |
 | **`eda` 集群** | Python 版本 | 默认 `python3` 为 **Python 3.6.8**（不支持 3.8+ 海象运算符 `:=` / `match`） |
 | **`eda` 集群** | **Yosys + `yosys-slang`** | `/nfs_global/S/houruyao/tools/oss-cad-suite/bin` 与 `.../share/yosys/plugins/slang.so`（`eda-04` ~ `eda-10` 直接可用；需配 `SYNTH_ABC="strash;balance;map"`，多写口大存储加 `SYNTH_NO_MEMPRIO=1`） |
+| **`eda` 集群** | **Spike & `fm_spike64`** | `/nfs_global/S/houruyao/tools/spike/bin/{spike,fm_spike64}`（静态 `x86-64-v3`，配合 `rtl/tools/fuzz/fuzz_run.py --spike-fm` 可直接集群对拍）；源码在 `/nfs_global/S/houruyao/tools/riscv-isa-sim/` |
 | **`eda` 集群** | **Synopsys DC + PDK** | `source /eda-tools/modulefiles/init.sh && export PATH="/eda-tools/synopsys/syn/W-2024.09-SP2/bin:$PATH"`；工艺库在 `/eda-tools/pdk/`（如 `TSMC28` HPC+） |
 | **`eda` 集群** | NFS 与节点规格 | 仅 **`eda-04` ~ `eda-10`** 挂载 `/nfs_global`：`eda-04`（144C/1.5TB）、`eda-05`（72C）、`eda-06..10`（各 **256C**，常有数百 GB 空闲内存）；大任务优先多节点平摊，起前先查 `uptime` 与 `free -h` |
 

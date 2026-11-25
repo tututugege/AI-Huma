@@ -45,8 +45,8 @@ AI-Huma/                                  总仓库（开发机 iprc-jump：~/AI
 | [WORKFLOW.md](WORKFLOW.md) | 全项目的规则和流程：分支与提交、正确性标准（含 XLEN）、harness、实验流程、记录要求、合入 main 的步骤、文档整理（合入时检查 + 每月全面审查） | 规则变化时 |
 | [TODO.md](TODO.md) | **唯一的**待办清单（进行中 / 待做：验证、RTL 实现、各次合入后的收尾、流程与工具） | 随时；做完删除并在 LOG 留一行 |
 | [LOG.md](LOG.md) | 每个 commit 一行：做了什么、怎么验证、结论 | 每次提交 |
-| [EXPLORATION.md](EXPLORATION.md) | 每次架构/性能探索一节（EXP-编号）：问题、方法、模型近似、结果、结论；不论是否合入 | 每次探索 |
-| [SERVER.md](SERVER.md) | 开发机与集群怎么用：当前开发机 `iprc-jump`（9950X3D）、`login-inband`、`eda` 计算集群、NFS SPEC/Linux checkpoint 与综合/批跑流程 | 换服务器或流程变化时 |
+| [EXPLORATION.md](EXPLORATION.md) | 每次架构/性能探索索引表（`EXP-068+` 独立单文件放 [exp/](exp/README.md)，`EXP-001~067` 正文已归档至 [archive/EXPLORATION_001_067.md](archive/EXPLORATION_001_067.md)） | 每次探索 |
+| [SERVER.md](SERVER.md) | 开发机与集群怎么用：当前开发机 `iprc-jump`（9950X3D）、`login-inband`、`eda` 计算集群、NFS SPEC/Linux/Spike/DC 路径与综合/批跑流程 | 换服务器或流程变化时 |
 | [PMU.md](PMU.md) | 性能监控单元：事件表、TMA 口径、硬件计数器块、trace-model 分析层、接进 RTL 的计划 | PMU 设计变化时 |
 | [MAIN_RECORDS.md](MAIN_RECORDS.md) | 每次合入 main 一行（版本、正确性、性能、RTL 周期、综合）+ 一节“变化”；**当前数字的权威来源** | 每次合入 main |
 
@@ -59,7 +59,7 @@ AI-Huma/                                  总仓库（开发机 iprc-jump：~/AI
 | [docs/SPIKE_DIFFTEST.md](../function-model/docs/SPIKE_DIFFTEST.md) | 与 Spike 的对比 |
 | [docs/FRONTDOOR_RESTORE.md](../function-model/docs/FRONTDOOR_RESTORE.md) | 前门检查点恢复（`ckpt2stub`） |
 | [docs/SIMPOINT_SPECINT2006.md](../function-model/docs/SIMPOINT_SPECINT2006.md) | SimPoint 原理；现行流程与上游流程的对照 |
-| [scripts/spec/README.md](../function-model/scripts/spec/README.md) | 现行 SPEC 检查点流程（rv32imab、Linux 镜像、ref 输入、参数、耗时；rv64 的 SPEC 流程还没做） |
+| [scripts/spec/README.md](../function-model/scripts/spec/README.md) | SPEC 检查点脚本（早期 rv32imab 流程记录；现行 rv64gc 535 点库位于集群 `/nfs_global/S/houruyao/spec06_rv64gc/`，见 [SERVER.md](SERVER.md)） |
 | [linux/README.md](../function-model/linux/README.md) | Linux 镜像（OpenSBI + 内核 + initramfs）的生成 |
 
 ### trace-model
@@ -70,7 +70,7 @@ AI-Huma/                                  总仓库（开发机 iprc-jump：~/AI
 | [docs/PROJECT.md](../trace-model/docs/PROJECT.md) | 架构、来历、gate 和大程序标准周期、参数开关（`CFG_*`）、验证手段 |
 | [docs/SCHEDULING.md](../trace-model/docs/SCHEDULING.md) | 一拍的调度：模块契约、自动生成的 `SimCpu::cycle()`、共享状态与核对脚本 |
 | [docs/ENV_VARS.md](../trace-model/docs/ENV_VARS.md) | 运行时读取的全部环境变量（16 个），默认配置 = RTL 配置，比周期无需任何环境变量 |
-| [docs/LSU_PIPE.md](../trace-model/docs/LSU_PIPE.md)、`docs/LSU_PIPE_IPC.md` | 分级 LSU 的设计和 IPC 修复记录 |
+| `docs/archive/` | 历史阶段重构过程笔记归档（`LSU_PIPE*.md`、`LSU_TIMING.md`、`LINUX_ALIGN.md`、`FRONT_MODULES.md`） |
 | `front-end/*.md` | 上游带来的前端写法规范和训练函数清单（前端代码的参考） |
 
 ### rtl
@@ -105,7 +105,7 @@ AI-Huma/                                  总仓库（开发机 iprc-jump：~/AI
 ## 4. 维护约定
 
 - 新增或挪动文档时更新本导航；挪动后检查相对链接（所有仓库都不应有坏链接）。
-- 文档整理的规则（每次合入 main 时检查、每月全面审查及清单）见 [WORKFLOW.md](WORKFLOW.md) 第 6.1 节。
+- 文档整理的规则（每次合入 main 时检查、每月全面审查及清单）见 [WORKFLOW.md](WORKFLOW.md) 第 6.1 节；可用 `python3 scripts/doc_lint.py` 一键检查断链、已删关键字残留与超大活文档。
 - 一次性过程文档与退役文档直接删除，历史查阅 git log。
 - 新写的文档用中文；trace-model 已有的英文文档暂不翻译。
 - 子 agent 交回的设计文档（如 `LDSTA_MERGE.md`、`UNIFIED_FTQ.md`）跟着它所在的实验分支提交，结论摘要写进 [EXPLORATION.md](EXPLORATION.md)。

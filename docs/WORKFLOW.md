@@ -16,7 +16,7 @@
 - **trace-model**：正确性 = 每个 gate 程序以 difftest Success 结束（与 function-model 提供的“事实”一致）；回归标准是 gate 周期等于 `results/baseline/baseline.csv`。开关默认关闭的实验，关闭时周期必须与基线逐个相同；改默认值时重生成基线（第 6 节第 2 步）。原模型的周期已不再是标准（2026-11-04 起）。
 - **rtl**（2026-11-04 起，见 `rtl/docs/06-equivalence-policy.md`）：正确性 = 整核测试平台逐条提交与 function-model 一致（提交 PC + 目的寄存器值）。周期数是性能指标；**合入 main 时**要求同一配置下 RTL 与 trace-model 整程序周期逐个相等（第 1 节第 3 条）。逐条对比不比较 store 数据和内存，访存/外设路径有改动时还要对比串口输出。
 - **function-model**：提交序列与参考模型（Spike）一致。
-- **位宽（XLEN）**：main 只有 rv64gc（`XLEN=64`、`FP=1`、`RVC=1`；RTL 默认配置包即此配置）。rv32 已于 2026-11-16 从 main 删除，整套保留在各仓库的分支 `rv32-legacy`，不要再在合入清单里加 rv32 门禁，见 [RV32_REMOVAL.md](RV32_REMOVAL.md)。
+- **位宽（XLEN）**：main 只有 rv64gc（`XLEN=64`、`FP=1`、`RVC=1`；RTL 默认配置包即此配置）。rv32 已于 2026-11-16 从 main 删除，整套保留在各仓库的分支 `rv32-legacy`，不要再在合入清单里加 rv32 门禁。
 - **对 RTL 比周期时无需任何环境变量**（2026-11-19 起，见第 3.3 节）：此前模型独有的 LDQ/STQ 63 周期看门狗及 `LSU_PIPE_NOWD` 开关已删除，默认配置即 RTL 配置（见 [../trace-model/docs/ENV_VARS.md](../trace-model/docs/ENV_VARS.md)）。
 
 ## 3. 必须具备的 harness
@@ -26,25 +26,22 @@
 | harness | 作用 | 位置 / 命令 |
 |---|---|---|
 | gate | 62 个基础测试（`results/baseline/baseline.csv`）及 68 个 C 扩展测试（`results/baseline/baseline_c.csv`；当前默认 `RVC=1`），周期与基线一致 | `scripts/run_gate.sh build/simulator results/gate`、`scripts/run_gate_c.sh build/simulator results/gate_c` |
-| 大程序 | dhrystone 64 次、coremark 2 次迭代（2026-11-04 起固定为这两个缩短版）、memory-stress、smc-div、smc-addi；当前标准周期见 `trace-model/docs/PROJECT.md` 的 Gate 第 4 条，随配置变化更新 | dhrystone/coremark 在 `rtl/programs/big`，其余在 `trace-model/build/tests`；每次改动后检查 |
-| Linux | rv64gc 镜像（本机 `~/rv64spec/linux_j.bin`，集群 `/nfs_global/S/houruyao/linux_ckpt_rv64gc/linux_j.bin`；由 `function-model/linux/mkimage.sh` 生成），从复位启动到 `rv64 login:` | `scripts/linux_check.sh <模拟器> ~/rv64spec/linux_j.bin`；合入 main 前必跑 |
-| small-LLC 检查 | 默认 8 MiB LLC 在小测试里不会换出，用 64 KiB LLC 检查 DDR 写回路径 | `scripts/llc_small_check.sh $PWD <baseline-sim/src 绝对路径>` |
-| lockstep 影子 | 把冻结的原模块和重写的模块在同一模拟里并行跑，每个阶段比较输出和状态摘要，不一致退出码 2 | 现只剩 `scripts/lsu_shadow.sh`，参考副本在 `tests/*_ref` |
-| 随机差分 | 随机激励下比较重写模块和冻结原版：`bpu_diff`、`ddr_diff`；闭环 `llc_diff`、`ic_diff` | `scripts/bpu_diff.sh`、`ddr_diff.sh`、`llc_diff.sh`、`ic_diff.sh`（`csr_diff`/`idu_diff`/`pre_diff` 只剩 `tests/` 里的源码，没有脚本） |
-| 不变量检查 | 实验特性自带的每周期检查，例如移动消除的 `ME_CHECK=1`（引用计数一致、无物理寄存器泄漏） | 环境变量开启（全部环境变量见 [../trace-model/docs/ENV_VARS.md](../trace-model/docs/ENV_VARS.md)） |
+| 大程序 | dhrystone 64 次、coremark 2 次迭代、memory-stress；标准周期见 `trace-model/docs/PROJECT.md` | dhrystone/coremark 在 `rtl/programs/big`，其余在 `trace-model/build/tests` |
+| Linux | rv64gc 镜像（本机 `~/rv64spec/linux_j.bin`，集群 `/nfs_global/S/houruyao/linux_ckpt_rv64gc/linux_j.bin`），从复位启动到 `rv64 login:` | `scripts/linux_check.sh <模拟器> ~/rv64spec/linux_j.bin`；合入 main 前必跑 |
+| small-LLC 检查 | 默认 4 MiB LLC 在小测试里不会换出，用 64 KiB LLC 检查 DDR 写回路径 | `scripts/llc_small_check.sh` |
+| 不变量检查 | 实验特性自带的每周期检查（如 `ME_CHECK=1`、`comb_graph.py --check`） | 环境变量或 `scripts/comb/comb_graph.py --check`（全部环境变量见 [../trace-model/docs/ENV_VARS.md](../trace-model/docs/ENV_VARS.md)） |
 
 ### 3.2 rtl
 
 | harness | 作用 |
 |---|---|
 | lint | `scripts/lint.sh`（按目录、规范 + `-Wall`）和 `scripts/lint_chip.sh`（以 `soc_top` 为顶的整芯片 `-Wall`）都要 0 警告；改参数前用 `CFG=<配置包> scripts/lint_chip.sh` 预查写死的位宽（在 `iprc-jump` 上须先 `export PATH="$HOME/rv64spec/verilator_src/bin:$PATH"` 切到 Verilator 5.052） |
-| 逐条对比门禁 | `scripts/fm_gate.sh`：`ref_cycles.txt` 里全部程序（gate + vm + 定向测试 + dhrystone + coremark，当前 67 个）在整核测试平台上逐条对比 function-model，全部通过；同时报告与 trace-model 周期（`ref_cycles.txt`）不同的个数 |
-| Linux | 整核测试平台（`SOC_FM=1`、`SOC_VOPT="--threads 4 -DTTG_EBREAK_TRAP"`），`SOC_TB_FM=1 SOC_TB_SEMIHOST=1` 从复位启动到 `rv64 login:`，全程逐条对比（数小时，上 `eda` 集群） |
-| Linux 窗口（rv64，快速 gate） | `scripts/linux_segments_cmp.sh <soc_tb> <模型> <检查点目录> <输出目录> [周期]`（集群可复用 26 段每 5M 指令检查点库 `/nfs_global/S/houruyao/linux_ckpt_rv64gc/` 配合 `SOC_TB_MAX_INSTS` 无缝覆盖全启动）：RTL 和 trace-model 从同一个检查点冷启动，比逐条检查和 PT/UP 指纹；并行跑，改动 RTL/模型的行为后先跑它，从复位的完整 Linux 留到合入前最后确认 |
-| 文档一致性 | 每个 RTL 提交前，对照 diff 逐项核对 `rtl/docs/modules/<模块>.md`（清单见第 7.3 节）；没有这一项的 RTL 提交不算完成 |
-| 综合对比 | `scripts/synth_cfg.sh`：受影响模块在改动前后各综合一遍（面积代理，见 `rtl/docs/09-synthesis-report.md`） |
-| 已退役（2026-11-04） | 模块边界 trace 回放、整程序实时锁步、随机 trace：随旧参考模型退役，脚本在 rtl 标签 `legacy-reference` |
-| 变异检查（可选，不是门禁） | 故意改坏 RTL，检查 harness 能否抓到。2026-11-04 起：**不要求把存活变异清零**（跑一遍太慢），改为把存活和未运行的变异、覆盖缺口、未验证项如实记录在 `rtl/docs/08-risk-register.md`，不得默认当作没问题 |
+| 逐条对比门禁 | `scripts/fm_gate.sh`：`ref_cycles.txt` 里全部程序（以表内个数为准，当前 69 个）在整核测试平台上逐条对比 function-model，检查 SVA/断言报错与周期差；支持构建期可选开关 `SOC_ASSERT=1` / `SOC_SVA=1` / `SOC_XINIT_UNIQUE=1` / `SOC_COV=1\|all`（默认全关，不拖慢快速测试）及运行期 `SOC_TB_FM_STRICT=1`（MMIO/跨字 store + 18 架构 CSR + 特权级） |
+| 官方 ISA 合规 | `scripts/riscv_tests_gate.sh`：RV64 官方 `riscv-tests`（`ui`/`um`/`ua`/`uf`/`ud`/`uc`/`uzba`/`uzbb`/`uzbc`/`uzbs`，跳过不支持的非对齐 `rv64ui-ma_data`，当前 152/152 PASS） |
+| 随机 Fuzzer | `tools/fuzz/fuzz_run.py`（支持 `--tb` 对拍 RTL 与 `--spike-fm` 对拍 Spike）+ `minimize.py` 自动二分缩减失败用例 |
+| Linux（快速窗口 + 全程） | 开发期跑 `scripts/linux_segments_cmp.sh`（集群 26 段每 5M 指令检查点 `/nfs_global/S/houruyao/linux_ckpt_rv64gc/` 配合 `SOC_TB_MAX_INSTS` 并行比逐条检查和 PT/UP 指纹）；合入前上 `eda` 跑 8 线程静态版（`SOC_VOPT="--threads 8"`）`scripts/linux_gate.sh` 从复位到 `rv64 login:` |
+| 文档一致性 | 每个 RTL / SVA / 验证改动提交前，对照 diff 逐项核对 `rtl/docs/modules/<模块>.md`（清单见第 7.3 节）并运行 `python3 scripts/doc_lint.py` |
+| 综合对比 | 上 `eda-04`~`10` 跑 Yosys 快速代理（`scripts/synth_depth.sh`，`SYNTH_ABC="strash;balance;map"`）或 Synopsys DC TSMC 28nm 签核（见 [SERVER.md](SERVER.md) 与 [../rtl/docs/09-synthesis-report.md](../rtl/docs/09-synthesis-report.md)） |
 
 ### 3.3 默认就对：不靠记开关和环境（2026-11-19）
 
@@ -113,13 +110,13 @@
 1. **只合结论**。实验插桩、近似实现、实验脚本留在 `exp/<名字>` 分支并提交保存，不进 `main`；进 `main` 的是干净的实现。从 `main` 切新分支（例如 `exp/batch3`）放要合入的内容。
 2. **trace-model 分两步提交**：先加开关、默认值保持原设计（gate 与基线逐个相同、大程序周期不变）；再单独提交新的默认值，同时更新 `results/baseline/baseline.csv`（每个 gate 程序都以 difftest Success 结束、无不一致）和 `docs/PROJECT.md` 的大程序标准周期。
 3. **rtl 跟着 trace-model 的默认值走**：`make cfg` 不带 `-D`，生成的 `ttg_cfg_pkg.sv` 必须与实验时用的配置包逐字节相同；`scripts/ref_cycles.txt` 换成新周期，并与 trace-model 的 `baseline.csv` 交叉核对。写死的位宽、维度改成从配置推出，和改参数分开提交。
-4. **在提交后的代码上复验**（不能拿实验时的结果代替；**改了模型时序的任何改动，合入前都要跑一次 Linux 启动**，`trace-model/scripts/linux_check.sh <模拟器> <镜像>`：67 个程序的周期对比抓不到 wrong-path 一类的时序回归，2026-11-18 的 `CFG_LSU_WBMERGE_REG` 就是只有 Linux 发现的）：
+4. **在提交后的代码上复验**（不能拿实验时的结果代替；**改了模型时序的任何改动，合入前都要跑一次 Linux 启动**，`trace-model/scripts/linux_check.sh <模拟器> <镜像>`：小程序周期对比抓不到 wrong-path 一类的时序回归）：
    - trace-model：gate 全部通过（默认 `RVC=1`：`results/baseline/baseline.csv` 62/62、`baseline_c.csv` 68/68，周期等于基线），大程序，Linux 从复位启动到 `rv64 login:`；
-   - rtl：`lint.sh`、`lint_chip.sh` 0 警告；`fm_gate.sh` 全部通过（以 `ref_cycles.txt` 个数为准，当前 67/67），周期与默认配置的 trace-model 逐个相等；串口输出与上一版一致（打印计时器的 `timer-mmio` 除外）；Linux（rv64）先跑 `linux_segments_cmp.sh`（检查点窗口全部 PT/UP 一致、逐条检查 0 不一致），再跑从复位的完整 `linux_gate.sh`；新特性对应的短 gate 程序已补且通过
-   - 动到位宽相关代码时再验 XLEN=64（第 2 节“位宽”）；
+   - rtl：`lint.sh`、`lint_chip.sh` 0 警告；`fm_gate.sh` 全部通过（以 `ref_cycles.txt` 个数为准），周期与默认配置的 trace-model 逐个相等；关键改动加跑 `SOC_SVA=1 SOC_XINIT_UNIQUE=1` + `SOC_TB_FM_STRICT=1`、`riscv_tests_gate.sh`（152/152）与 `tools/fuzz/` 冒烟；Linux（rv64）先跑 `linux_segments_cmp.sh`（26 窗 PT/UP 一致、逐条检查 0 不一致），合入前确认 `linux_gate.sh`；新特性对应的短 gate 程序已补且通过；
+   - 动到位宽相关代码时再验 `XLEN=64`（第 2 节“位宽”）；
    - 原配置参数下的回归：改动若声称“原配置下不变”，用原配置包再跑一遍门禁确认周期逐个相同。
-5. **性能和面积**：固定负载（第 5.2 节）+ quick SPEC（`trace-model/scripts/spec/replay.sh quick`）；受影响模块的综合前后对比。
-   - **旧配置（main）的 SPEC 数字先查记录，不要重跑**：先看 `trace-model/results/baseline/baseline.csv`、`MAIN_RECORDS.md`、`LOG.md`（例如 `deb15b4` 已记录合并后全量 580/580）。记录里有同一预热方式、同一检查点的结果就直接引用；只有记录缺失，或 main 自那次记录之后周期有变化（改了模型默认值），才重跑，且只重跑缺的点或抽样核对。SPEC 一律上服务器，用法、命令、现成的 main 结果见 [SERVER.md](SERVER.md)；新配置才需要全量跑。
+5. **性能和面积**：固定负载（第 5.2 节）+ 集群 SPEC06 INT（`jobs95.txt` 386 点，见 [SERVER.md](SERVER.md)）；受影响模块的 Yosys / DC 28nm 综合前后对比。
+   - **旧配置（main）的 SPEC 数字先查记录，不要重跑**：先看 `MAIN_RECORDS.md`、`EXPLORATION.md` 与 NFS `spec06_rv64gc/tm/res_*`。记录里有同一预热方式、同一检查点的结果就直接引用；只有记录缺失，或 main 自那次记录之后周期有变化，才重跑。SPEC 一律上 `eda` 集群，用法见 [SERVER.md](SERVER.md)。
    - **SPEC 默认开 `PMU=1`**：每次跑 SPEC（quick、30 点、全量）都带 `PMU=1`，结果里要有 TMA 一级（retiring / bad-spec / frontend / backend）。PMU 不改周期，开了没有代价；没开的结果事后补不回来。性能对比表里 TMA 一级新旧差异和周期一起给。
 6. **记录**：`MAIN_RECORDS.md` 一行 + “变化”一节；`LOG.md` 每个 commit 一行；`EXPLORATION.md` 对应实验的状态改成“已合入”；`TODO.md` 删除已完成项。
 7. **合入**：各子仓库把分支快进合入 `main`，总仓库更新子模块指针并提交。提交作者用 `tututugege <903306512@qq.com>`。没有明确要求不推送。
@@ -159,9 +156,9 @@
 - 与模型不一致的地方（有意的简化、没复刻的部分、模型的疑点）必须写在"与模型的差异"一节，不留隐含的差异。
 - 深度数字写综合口径（单模块、`SYNTH_ABC="strash;balance;map"`，生成门代理）和日期；没量过就写"待测"。
 
-### 7.3 提交 RTL 之前的核对清单（RTL ↔ 文档）
+### 7.3 提交 RTL 之前的核对清单（RTL ↔ 文档，每次改 RTL / SVA / 验证设施必查）
 
-提交者对照 `git diff`，逐项过一遍：
+**铁律**：只要改动了 `rtl/` 下的模块 RTL、非侵入式 SVA（`rtl/sva/`）或验证门禁/测试平台，提交前**必须**逐项对照 `git diff` 检查对应模块文档 `rtl/docs/modules/<模块>.md`（以及 `rtl/scripts/README.md`、`rtl/docs/08-risk-register.md`）是否已同步更新，不得遗漏：
 
 - [ ] **配置**：文档里的每个常量、大小、位宽、个数与 `ttg_cfg_pkg.sv` / 模块 pkg 一致（逐个 grep，不靠眼看）；
 - [ ] **接口**：端口增删改与文档的接口表一致；
@@ -169,7 +166,7 @@
 - [ ] **数据流**：这次改动涉及的优先级、同拍 / 寄存、flush 行为、阶段顺序，文档里的描述已更新；
 - [ ] **关键路径与深度**：改了组合逻辑的模块要重新综合（一次一个，见 7.5），更新 `depth:` 和第 6 节；
 - [ ] **与模型的差异**：新增或消除的差异已登记；模型的开关、配置同步（`ref_cycles` 参考文件、`make cfg` 与 `ttg_cfg_pkg.sv` 是否一致）；
-- [ ] **验证**：新增的测试、门禁结果（周期对哪个参考文件）已写进第 8 节；"待补"项有没有被这次提交补掉；
+- [ ] **验证与 SVA**：新增或修改的 SVA 断言/cover 点（`rtl/sva/` 或模块内断言）、定向测试、等价测试、门禁结果（周期对哪个参考文件）已写进对应模块文档第 8 节；"待补"项有没有被这次提交补掉；
 - [ ] **变更记录**：第 10 节追加一行（提交号在提交后补，或写日期和主题）。
 
 ### 7.4 例外
@@ -180,7 +177,7 @@
 
 ### 7.5 综合与仿真的机器负载
 
-综合（yosys，单线程、整芯片 4 GB 以上）和整核仿真 / Verilator 编译不要同时跑（2026-11-18 曾因此耗尽内存）。综合一次最多 2 个并行，大模块（`lsu`、`bpu`、`front_top`、整芯片）一次一个；整芯片综合要给足时间上限（`synth_module.sh back_top 26000 14400`）。
+Yosys / Synopsys DC 综合统一在 `eda-04` ~ `eda-10` 集群节点执行（本机未装 Yosys）。同一节点上综合与整核 Verilator 编译/仿真不要同时跑（防止 OOM）；综合一次最多 2 个并行，大模块（`lsu`、`bpu`、`front_top`、`back_top`、整芯片）一次 1 个。
 
 ### 7.6 采纳优化就删旧开关（不留旧配置）
 
