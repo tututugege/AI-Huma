@@ -19,7 +19,7 @@ AI-Huma 是一个乱序 RISC-V（`rv64gc` + `Sv39`）CPU 设计项目，由总�
 - **当前开发机（`iprc-jump`，9950X3D，16C/32T，60 GiB RAM）**：日常代码编辑、阅读、短编译/快速构建、轻量调试、`lint.sh` / `lint_chip.sh`、小规模 gate（`run_gate.sh` / `run_gate_c.sh` / `fm_gate.sh`）以及给 `eda` 静态打包。
   - 跑任何 Verilator 命令前**必须**显式切换 Verilator 5.052：`export PATH="$HOME/rv64spec/verilator_src/bin:$PATH"`（系统 `/usr/bin/verilator` 是 5.020，编不过）。
   - 给 `eda` 集群编译二进制时须改为 `-march=x86-64-v3 -mtune=generic` 并静态链接（`-static`），避免 AMD Zen 5 / Ubuntu glibc 与 `eda` 不兼容。
-  - 给 `eda` 集群编译长跑 RTL/Linux 用的 `soc_tb` 时**必须默认开 8 线程**（`SOC_VOPT="--threads 8" SOC_COPT="-O2 -march=x86-64-v3 -mtune=generic"`，静态链接多线程需带 `-Wl,--whole-archive -lpthread -Wl,--no-whole-archive -latomic`），严禁编单线程版上集群跑 Linux 26 窗。
+  - 给 `eda` 集群编译长跑 RTL/Linux 用的 `core_tb`（原 `soc_tb`，核+存储子系统测试台）时**必须默认开 8 线程**（`CORE_VOPT="--threads 8" CORE_COPT="-O2 -march=x86-64-v3 -mtune=generic"`，静态链接多线程需带 `-Wl,--whole-archive -lpthread -Wl,--no-whole-archive -latomic`），严禁编单线程版上集群跑 Linux 26 窗。`rtl` 双测试台分工：`tb/core/core_tb`（`soc_top`）专职微架构与三仓逐拍对齐，`tb/soc/soc_tb`（`chip_top`）专职流片向全片 SoC 与真实 AXI4/外设验证（详见 [docs/WORKFLOW.md](docs/WORKFLOW.md) §3.2）。
 - **`eda` 计算集群（`eda-04` ~ `eda-10`，经 `login-inband` 免密直连，挂载 `/nfs_global`）**：**所有大规模测试与综合必须上 `eda` 集群**——包括 SPEC06（386 / 535 点）、多配置 DSE、长时间 RTL/Linux 仿真（`linux_segments_cmp.sh` / `linux_gate.sh`）以及 Yosys / Synopsys DC 综合（本机未装 Yosys）。
 - **严禁在 `login-inband` 跑重任务**（仅作中转与 NFS 管理）；**严禁同时跑 Yosys 综合与 Verilator 编译/仿真**（防止 OOM），综合最多 2 个并行，大模块（`lsu`、`bpu`、`front_top`、`back_top`、整芯片）一次只能跑 1 个。
 

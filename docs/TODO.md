@@ -18,9 +18,9 @@
 | 事项 | 为什么 | 做完的标准 |
 |---|---|---|
 | **LR/SC 遇异步中断的保留位对齐（R-7 根因）** | `lp_rsv.sv` 在 `sc` 推测执行时即通过 `sc_clr` 清零 `rsv_valid_q`，若随后异步中断冲刷未提交的 `sc`，`mret` 重执时 RTL 返回 1（保留失效），而 `function-model` 在 `refcpu_take_forced_interrupt` 未清 `reserve_valid` 返回 0，引发 Difftest 分歧（即 `08-risk-register.md` R-7 悬案） | 统一三仓口径：中断/异常冲刷时 RTL 与 `function-model` 同步清保留位（或 `sc_clr` 推迟至提交/非推测态），并用 `lr.d`/`sc.d` + 高频中断回归验证通过 |
-| **逐条对比补全 AMO store 比较**（rtl V-12 剩余） | `SOC_TB_FM_STRICT=1` 已补齐 MMIO/跨字 store 数据及 18 个架构 CSR + 特权级对比（69/69 + 152/152 通过），仅剩 AMO 指令写回数据与字节使能未纳入 store 比较 | `tb/soc/fm_check.h` 补齐 AMO 写回数据与字节使能对比，严格门禁通过 |
+| **逐条对比补全 AMO store 比较**（rtl V-12 剩余） | `SOC_TB_FM_STRICT=1` 已补齐 MMIO/跨字 store 数据及 18 个架构 CSR + 特权级对比（77/77 + 152/152 通过），仅剩 AMO 指令写回数据与字节使能未纳入 store 比较 | `tb/core/fm_check.h` 补齐 AMO 写回数据与字节使能对比，严格门禁通过 |
 | **收敛 RTL vs `trace-model` 在 120/386 SPEC06 点上的对称周期微差异** | 全量 386/386 SPEC06 INT（10M+10M + 逐条 FM，~77.2 亿指令）已 **0 fail / 0 FM diff 全通**，12 项基准 geomean **`+0.00%`**，266/386（68.9%）实现 0-cycle 完全对齐；剩余 120 点（主要为 `458.sjeng` 0/27、`471.omnetpp` 1/25、`483.xalancbmk` 25/34）呈对称 `±` 周期微差（最大单点 `2.65%`） | 抽 1 个 `458.sjeng` 点做 commit-trace 定位首个分歧周期，确认原因并决定是否对齐至 386/386 0-cycle |
-| **从复位 140M 周期 Linux 全程 RTL vs 模型对齐** | EXP-040 时期在 3000–3050 万周期起出现 PMU 区间偏差（+0.29%），近期合入均用 26 段检查点验证，尚未在最新 `main` 跑完整复位对比 | 在 `eda` 跑 8 线程静态 `soc_tb` 从复位到 `rv64 login:`，确认逐条 0 不一致并排查是否仍有区间分歧 |
+| **从复位 140M 周期 Linux 全程 RTL vs 模型对齐** | EXP-040 时期在 3000–3050 万周期起出现 PMU 区间偏差（+0.29%），近期合入均用 26 段检查点验证，尚未在最新 `main` 跑完整复位对比 | 在 `eda` 跑 8 线程静态 `core_tb` 从复位到 `rv64 login:`，确认逐条 0 不一致并排查是否仍有区间分歧 |
 | 检查点窗口比 PMU 区间（`PMU_CMP=1`） | 检查点恢复程序在 RTL 与模型上耗时不同，按绝对周期切 PMU 区间会错位 | 两边在恢复结束处对齐计数，`PMU_CMP=1` 通过 |
 | 补齐剩余覆盖缺口、形式等价（CEC）与 toggle 覆盖率 | 已补 `rtl/sva/` 20 个功能覆盖点（100% 命中）、152 官方 `riscv-tests`、8 个定向短测试（行覆盖 `96.44%`）及 RV64GC Fuzzer；尚缺：① `lp_ovl`/`bpu_ub_track_ser`/`bpu_updq`/`bpu_ub_look`/`front_fetch_buf` 等降深度模块的 Yosys CEC / 等价测试；② 集群全量 `--coverage-toggle`（`SOC_COV=all`）与 26 窗 Linux 下的 `SOC_SVA=1` 回归；③ `dcache_resp` `fwd_st`/`fwd_st_full` 与 `lp_ldq_ent` `L2_WBP` 覆盖 | 接入 Yosys CEC 形式等价并上 `eda` 集群跑 `SOC_COV=all` + 夜间万级 seed Fuzzer 扫雷 |
 | 扩大 gate（加入 `float_test` / `memory-stress` 等长程序） | 现有 69 个 gate 程序最长仅 ~31 万周期 | `float_test` 及更长定向程序进入常规门禁 |
@@ -37,7 +37,8 @@
 | **AMO 改为 DCache 内读改写（AMOALU）** | 当前 AMO 拆成 LOAD + STA + STD 同占 LDQ/STQ | AMO 仅占 STQ，队头排空 ROB 后发 DCache 读改写，删除 dispatch AMO 双写口特例 |
 | 分支密集短循环 BPU 更新额度优化（EXP-028 遗留） | 紧凑 ROB 为防 BPU 更新队列溢出而限流提交，导致少量分支密集短循环变慢 | 额度不足时不挡提交、仅丢弃已饱和且预测正确的分支更新；模型与 RTL 同步 |
 | `front_stall` 接回 & LLC 旁路写/部分行写 miss | `core_top` `front_stall` 写死 0；LLC 旁路写/部分行写仅留断言 | 接回并补定向/随机流量测试 |
-| PMU 软件可见性（CSR 接入）与过期测试修复 | RTL PMU 计数器块尚未实例化接 CSR；`tests/pmu/pmu_tb.cpp`（`NUM_EV=52`）与 `soc_tb.cpp`（`kPmuEv=51`）落后于当前 66 事件 | 决定是否开放 CSR；更新 PMU 测试；补齐二级 TMA 事件 |
+| PMU 软件可见性（CSR 接入）与过期测试修复 | RTL PMU 计数器块尚未实例化接 CSR；`tests/pmu/pmu_tb.cpp`（`NUM_EV=52`）与 `core_tb.cpp`（`kPmuEv=51`）落后于当前 66 事件 | 决定是否开放 CSR；更新 PMU 测试；补齐二级 TMA 事件 |
+| **SoC v2：SD 卡存储控制器（`soc_ocsdc`）+ `Zicbom` Cache 一致性 + JTAG Debug** | SoC v1 已打通真实双层 Full-AXI4、BootROM、SRAM、CLINT、PLIC、UART、SysCtrl；从外部非易失介质（SD 卡）经 DMA 搬运 OpenSBI/Linux 到 DDR 需要 SD/DMA 控制器以及软件可控 Cache 刷洗/失效（`cbo.clean`/`cbo.inval`） | 接入 SD/DMA 主口至 Tier-1 System Xbar，补齐 `Zicbom` 指令或在无硬件一致性下完成软件维护，`soc_gate.sh` 补 SD 卡启动回归 |
 | 仿真速度双版本评估（`` `ifdef SYNTHESIS ``） | 已有 `mul_core`、公共原语、FPU 走双版本；`bpu_ub_track_ser`（`rem_of` 建表）等低深度模块尚未 profile | `--prof-cfuncs` 定位最慢模块，只对热点补快速仿真路径与等价测试 |
 
 ## 已知 trace-model vs RTL 细微差异（备忘，待按需收敛）

@@ -31,15 +31,20 @@
 | small-LLC 检查 | 默认 4 MiB LLC 在小测试里不会换出，用 64 KiB LLC 检查 DDR 写回路径 | `scripts/llc_small_check.sh` |
 | 不变量检查 | 实验特性自带的每周期检查（如 `ME_CHECK=1`、`comb_graph.py --check`） | 环境变量或 `scripts/comb/comb_graph.py --check`（全部环境变量见 [../trace-model/docs/ENV_VARS.md](../trace-model/docs/ENV_VARS.md)） |
 
-### 3.2 rtl
+### 3.2 rtl（双测试台分工：`core_tb` vs `soc_tb`）
+
+`rtl` 维护职责正交的两套测试台，不互相混用：
+- **`tb/core/core_tb`（顶层 `soc_top` = `core_top + mem_top`）**：**核+Cache 微架构研发台**，外设走 C++ `PeripheralModel`、DDR 256b 直连 `SimDDR`，负责与 `trace-model` 逐拍周期对齐、逐条 `function-model` Difftest、SVA/覆盖率、官方 `riscv-tests`、Fuzzer 与 Linux 26 窗检查点回归；**不把片上 `soc_xbar`/外设回灌进 `core_tb` 或 `trace-model`**。
+- **`tb/soc/soc_tb`（顶层 `chip_top`）**：**流片/FPGA 全片集成验证台**，仅暴露真实芯片引脚，含双层 Full-AXI4 互联（`soc_xbar` + `soc_axi_downsizer` + `soc_axi_reg_slice` + 在线 ARM IHI 0022E `soc_axi_checker`）与真实片上外设（BootROM、64 KiB SRAM、CLINT、PLIC、NS16550A UART、SysCtrl、CRG）。
 
 | harness | 作用 |
 |---|---|
-| lint | `scripts/lint.sh`（按目录、规范 + `-Wall`）和 `scripts/lint_chip.sh`（以 `soc_top` 为顶的整芯片 `-Wall`）都要 0 警告；改参数前用 `CFG=<配置包> scripts/lint_chip.sh` 预查写死的位宽（在 `iprc-jump` 上须先 `export PATH="$HOME/rv64spec/verilator_src/bin:$PATH"` 切到 Verilator 5.052） |
-| 逐条对比门禁 | `scripts/fm_gate.sh`：`ref_cycles.txt` 里全部程序（以表内个数为准，当前 69 个）在整核测试平台上逐条对比 function-model，检查 SVA/断言报错与周期差；支持构建期可选开关 `SOC_ASSERT=1` / `SOC_SVA=1` / `SOC_XINIT_UNIQUE=1` / `SOC_COV=1\|all`（默认全关，不拖慢快速测试）及运行期 `SOC_TB_FM_STRICT=1`（MMIO/跨字 store + 18 架构 CSR + 特权级） |
-| 官方 ISA 合规 | `scripts/riscv_tests_gate.sh`：RV64 官方 `riscv-tests`（`ui`/`um`/`ua`/`uf`/`ud`/`uc`/`uzba`/`uzbb`/`uzbc`/`uzbs`，跳过不支持的非对齐 `rv64ui-ma_data`，当前 152/152 PASS） |
-| 随机 Fuzzer | `tools/fuzz/fuzz_run.py`（支持 `--tb` 对拍 RTL 与 `--spike-fm` 对拍 Spike）+ `minimize.py` 自动二分缩减失败用例 |
-| Linux（快速窗口 + 全程） | 开发期跑 `scripts/linux_segments_cmp.sh`（集群 26 段每 5M 指令检查点 `/nfs_global/S/houruyao/linux_ckpt_rv64gc/` 配合 `SOC_TB_MAX_INSTS` 并行比逐条检查和 PT/UP 指纹）；合入前上 `eda` 跑 8 线程静态版（`SOC_VOPT="--threads 8"`）`scripts/linux_gate.sh` 从复位到 `rv64 login:` |
+| lint | `scripts/lint.sh`（按目录、规范 + `-Wall`）、`scripts/lint_chip.sh`（`soc_top` 为顶）和 `scripts/lint_soc.sh`（`chip_top` 为顶）都要 0 警告；改参数前用 `CFG=<配置包> scripts/lint_chip.sh` 预查写死的位宽（在 `iprc-jump` 上须先 `export PATH="$HOME/rv64spec/verilator_src/bin:$PATH"` 切到 Verilator 5.052） |
+| 逐条对比门禁（`core_tb`） | `scripts/fm_gate.sh <core_tb> <outdir>`：`ref_cycles.txt` 里全部程序（当前 77 个）在 `core_tb` 上逐条对比 function-model，检查 SVA/断言报错与周期差；支持构建期开关 `SOC_ASSERT=1` / `SOC_SVA=1` / `SOC_XINIT_UNIQUE=1` / `SOC_COV=1\|all`（默认全关）及运行期 `SOC_TB_FM_STRICT=1`（MMIO/跨字 store + 18 架构 CSR + 特权级） |
+| 全片 SoC 回归门禁（`soc_tb`） | `scripts/soc_gate.sh`（可选 `--linux`）：先清旧日志，串行执行 `lint_soc.sh` + `tb/axi_unit`（`--assert` 5 项协议与随机压测）+ `soc_tb`（`DDR_DATA_W=64` 5 项定向裸机测试：`soc_smoke`/`soc_uart_fifo`/`soc_plic_ext`/`soc_reset_boot`/`soc_boot_park` + `DDR_DATA_W=128` 冒烟），0 AXI4/SVA 错误 |
+| 官方 ISA 合规（`core_tb`） | `scripts/riscv_tests_gate.sh`：RV64 官方 `riscv-tests`（`ui`/`um`/`ua`/`uf`/`ud`/`uc`/`uzba`/`uzbb`/`uzbc`/`uzbs`，跳过不支持的非对齐 `rv64ui-ma_data`，当前 152/152 PASS） |
+| 随机 Fuzzer（`core_tb`） | `tools/fuzz/fuzz_run.py`（支持 `--tb` 对拍 RTL 与 `--spike-fm` 对拍 Spike）+ `minimize.py` 自动二分缩减失败用例 |
+| Linux（快速窗口 + 全程） | 开发期在 `core_tb` 跑 `scripts/linux_segments_cmp.sh`（集群 26 段每 5M 指令检查点 `/nfs_global/S/houruyao/linux_ckpt_rv64gc/` 配合 `SOC_TB_MAX_INSTS` 并行比逐条检查和 PT/UP 指纹）；合入前上 `eda` 跑 8 线程静态版（`CORE_VOPT="--threads 8"`）`scripts/linux_gate.sh`；SoC 侧用 `scripts/soc_gate.sh --linux` 验真实 BootROM → OpenSBI → `Linux version` |
 | 文档一致性 | 每个 RTL / SVA / 验证改动提交前，对照 diff 逐项核对 `rtl/docs/modules/<模块>.md`（清单见第 7.3 节）并运行 `python3 scripts/doc_lint.py` |
 | 综合对比 | 上 `eda-04`~`10` 跑 Yosys 快速代理（`scripts/synth_depth.sh`，`SYNTH_ABC="strash;balance;map"`）或 Synopsys DC TSMC 28nm 签核（见 [SERVER.md](SERVER.md) 与 [../rtl/docs/09-synthesis-report.md](../rtl/docs/09-synthesis-report.md)） |
 

@@ -29,7 +29,7 @@ AI-Huma/                                  总仓库（开发机 iprc-jump：~/AI
 | 构建、跑 trace-model 和它的 gate | trace-model [README.md](../trace-model/README.md) | trace-model [docs/PROJECT.md](../trace-model/docs/PROJECT.md)（架构、gate、参数开关） |
 | 改核参数（IQ 大小、端口数……） | trace-model [docs/PROJECT.md](../trace-model/docs/PROJECT.md) “Configuration knobs” | rtl [scripts/README.md](../rtl/scripts/README.md)（`make cfg`、`lint_chip.sh`） |
 | 写或改 RTL | rtl [docs/README.md](../rtl/docs/README.md) | [01 编码规范](../rtl/docs/01-rtl-coding-standard.md)、[modules/](../rtl/docs/modules/) 里该模块的笔记 |
-| 跑 RTL 门禁、Linux、综合 | rtl [scripts/README.md](../rtl/scripts/README.md) | rtl [modules/soc_top.md](../rtl/docs/modules/soc_top.md)（测试平台细节） |
+| 跑 RTL 门禁、Linux、综合 | rtl [scripts/README.md](../rtl/scripts/README.md) | 核侧 `core_tb`：[soc_top.md](../rtl/docs/modules/soc_top.md)；全片 SoC `soc_tb`：[chip_top.md](../rtl/docs/modules/chip_top.md) |
 | 评估 RTL 验证的可信度、已知缺口 | rtl [08-risk-register.md](../rtl/docs/08-risk-register.md) | [TODO.md](TODO.md) “待做：验证” |
 | 生成或回放 SPEC 检查点 | function-model [scripts/spec/README.md](../function-model/scripts/spec/README.md) | function-model [docs/SIMPOINT_SPECINT2006.md](../function-model/docs/SIMPOINT_SPECINT2006.md)（原理）；trace-model `scripts/spec/replay.sh` |
 | 生成 Linux 镜像 | function-model [linux/README.md](../function-model/linux/README.md) | — |

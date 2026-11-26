@@ -28,7 +28,7 @@ AI-Huma 有两层意思：
 |---|---|---|
 | **function-model** | `function-model/` | 功能模型：只管指令执行的结果（寄存器、访存、CSR、分页），不管时序。基于 tututugege/GenSimpoint，库名 `librefcpu`；main 上为 rv64gc（`XLEN=64`、`FP=1`；`RVC=1` 构建带 C 扩展的版本）。也负责 SPEC 的 BBV/SimPoint/检查点生成。 |
 | **trace-model** | `trace-model/` | 我们的时序模型和架构探索平台：起点由 tututugege/simulator 蒸馏而来，不计算数据值，分支方向/目标、地址、store 数据、CSR 写数据都来自功能模型提供的“事实”，只保留周期精确的时序行为。核参数的唯一来源（`include/config.h`）；运行时开关全部列在 [trace-model/docs/ENV_VARS.md](trace-model/docs/ENV_VARS.md)（13 个环境变量）。建模方式和代码风格见 trace-model 的 [README](trace-model/README.md)，一拍的调度（模块声明、自动生成、改了模块之后怎么做）见 [trace-model/docs/SCHEDULING.md](trace-model/docs/SCHEDULING.md)（`scripts/comb/comb_graph.py --check` 核对）。 |
-| **rtl** | `rtl/` | 我们的 SystemVerilog 实现（286 个 RTL 文件、约 3.86 万行）：起点由原模型逐模块翻译，现在随优化独立迭代；整核测试平台（Verilator）逐条提交对比 function-model；参数包由 trace-model 的 `config.h` 生成。 |
+| **rtl** | `rtl/` | 我们的 SystemVerilog 实现：包含核+存储子系统（`soc_top`，由 `tb/core/core_tb` 守护与 `trace-model` 逐拍周期对齐及 `function-model` 逐条对拍）与流片向全片 SoC 顶层（`chip_top`，含双层 ARM IHI 0022E Full-AXI4 互联与真实片上外设，由 `tb/soc/soc_tb` 与 `scripts/soc_gate.sh` 守护）；核参数包由 `trace-model/include/config.h` 生成（`make cfg`）。 |
 
 三者的关系：function-model 定义“对不对”（架构行为），trace-model 定义“快不快”（周期）并用来做架构探索；rtl 的架构行为必须与 function-model 一致，合入 main 时同一配置下的周期必须与 trace-model（默认配置即 RTL 配置，无需额外环境变量）逐个程序相等。
 
