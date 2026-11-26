@@ -19,7 +19,7 @@
 |---|---|---|
 | **LR/SC 遇异步中断的保留位对齐（R-7 根因）** | `lp_rsv.sv` 在 `sc` 推测执行时即通过 `sc_clr` 清零 `rsv_valid_q`，若随后异步中断冲刷未提交的 `sc`，`mret` 重执时 RTL 返回 1（保留失效），而 `function-model` 在 `refcpu_take_forced_interrupt` 未清 `reserve_valid` 返回 0，引发 Difftest 分歧（即 `08-risk-register.md` R-7 悬案） | 统一三仓口径：中断/异常冲刷时 RTL 与 `function-model` 同步清保留位（或 `sc_clr` 推迟至提交/非推测态），并用 `lr.d`/`sc.d` + 高频中断回归验证通过 |
 | **逐条对比补全 AMO store 比较**（rtl V-12 剩余） | `SOC_TB_FM_STRICT=1` 已补齐 MMIO/跨字 store 数据及 18 个架构 CSR + 特权级对比（69/69 + 152/152 通过），仅剩 AMO 指令写回数据与字节使能未纳入 store 比较 | `tb/soc/fm_check.h` 补齐 AMO 写回数据与字节使能对比，严格门禁通过 |
-| **RTL 抽样跑 SPEC06 点** | 当前 15.33 分/GHz 仅来自 trace-model；RTL 与模型周期相等只在 69 个小程序和 Linux 26 窗口验证过 | 12 个 SPEC06 INT 程序各抽至少 1 个高权重点，RTL 周期 = trace-model 周期且逐条对比 0 不一致 |
+| **收敛 RTL vs `trace-model` 在 120/386 SPEC06 点上的对称周期微差异** | 全量 386/386 SPEC06 INT（10M+10M + 逐条 FM，~77.2 亿指令）已 **0 fail / 0 FM diff 全通**，12 项基准 geomean **`+0.00%`**，266/386（68.9%）实现 0-cycle 完全对齐；剩余 120 点（主要为 `458.sjeng` 0/27、`471.omnetpp` 1/25、`483.xalancbmk` 25/34）呈对称 `±` 周期微差（最大单点 `2.65%`） | 抽 1 个 `458.sjeng` 点做 commit-trace 定位首个分歧周期，确认原因并决定是否对齐至 386/386 0-cycle |
 | **从复位 140M 周期 Linux 全程 RTL vs 模型对齐** | EXP-040 时期在 3000–3050 万周期起出现 PMU 区间偏差（+0.29%），近期合入均用 26 段检查点验证，尚未在最新 `main` 跑完整复位对比 | 在 `eda` 跑 8 线程静态 `soc_tb` 从复位到 `rv64 login:`，确认逐条 0 不一致并排查是否仍有区间分歧 |
 | 检查点窗口比 PMU 区间（`PMU_CMP=1`） | 检查点恢复程序在 RTL 与模型上耗时不同，按绝对周期切 PMU 区间会错位 | 两边在恢复结束处对齐计数，`PMU_CMP=1` 通过 |
 | 补齐剩余覆盖缺口、形式等价（CEC）与 toggle 覆盖率 | 已补 `rtl/sva/` 20 个功能覆盖点（100% 命中）、152 官方 `riscv-tests`、8 个定向短测试（行覆盖 `96.44%`）及 RV64GC Fuzzer；尚缺：① `lp_ovl`/`bpu_ub_track_ser`/`bpu_updq`/`bpu_ub_look`/`front_fetch_buf` 等降深度模块的 Yosys CEC / 等价测试；② 集群全量 `--coverage-toggle`（`SOC_COV=all`）与 26 窗 Linux 下的 `SOC_SVA=1` 回归；③ `dcache_resp` `fwd_st`/`fwd_st_full` 与 `lp_ldq_ent` `L2_WBP` 覆盖 | 接入 Yosys CEC 形式等价并上 `eda` 集群跑 `SOC_COV=all` + 夜间万级 seed Fuzzer 扫雷 |
@@ -30,17 +30,23 @@
 
 | 事项 | 为什么 | 做完的标准 |
 |---|---|---|
+| **DCache S1/S2 随 `rob_ptr` 冲刷并移除 LDQ `epoch`** | 当前靠 per-port `epoch` 过滤在飞 DCache 陈旧响应（已在 `lp_core.sv`/`lp_ldq.sv` 补齐），后续若扩大 LDQ/重发深度需担心 `epoch` 位宽回绕 | DCache S1/S2 流水级携带 9-bit `rob_ptr` 并在 `flush_br`/`flush_all` 时直接作废年轻查询，移除 LDQ `epoch` 字段与比较逻辑，通过全量门禁与 SPEC06 回归 |
 | **访存违例改为从违例 load 本身冲刷重取** | 当前违例 load 在 LSU 重执行后第二次写回（占 PRF 写口且增加 `lp_wb`/`MsData.h` `early_clean` 复杂度） | 违例 load 随冲刷从自身 PC 重取，第二次写回不占 PRF 写口；删除 `MsData.h` `early_clean` 补丁；SPEC06 量化净收益，模型与 RTL 同步对齐 |
 | **拆解 ROB `diag_val`（64b × 256 项）** | `diag_val` 身兼指令字、分支目标、访存虚址、trap tval 多职，占 ROB 面积与 8×64b 提交读线 | 访存地址改由 LDQ/STQ 提供、分支目标改放 FTQ、非法指令字改用小旁表，最终删掉 ROB `diag_val` 列 |
 | **香山式独立 SBuffer** | EXP-024 的 STQ 内分组 write buffer 仍占着 STQ 项等响应 | 独立 64B 整行+字节掩码 SBuffer，提交即释放 STQ、按阈值排空、load 查 STQ > SBuffer > DCache；全量 SPEC06 量化收益后再做 RTL |
 | **AMO 改为 DCache 内读改写（AMOALU）** | 当前 AMO 拆成 LOAD + STA + STD 同占 LDQ/STQ | AMO 仅占 STQ，队头排空 ROB 后发 DCache 读改写，删除 dispatch AMO 双写口特例 |
 | 分支密集短循环 BPU 更新额度优化（EXP-028 遗留） | 紧凑 ROB 为防 BPU 更新队列溢出而限流提交，导致少量分支密集短循环变慢 | 额度不足时不挡提交、仅丢弃已饱和且预测正确的分支更新；模型与 RTL 同步 |
 | `front_stall` 接回 & LLC 旁路写/部分行写 miss | `core_top` `front_stall` 写死 0；LLC 旁路写/部分行写仅留断言 | 接回并补定向/随机流量测试 |
-| PMU 软件可见性（CSR 接入）与过期测试修复 | RTL PMU 计数器块尚未实例化接 CSR；`tests/pmu/pmu_tb.cpp`（`NUM_EV=52`）与 `soc_tb.cpp`（`kPmuEv=51`）落后于当前 66 事件；前门恢复 `cycle_base` 未清零 | 决定是否开放 CSR；更新 PMU 测试；补齐二级 TMA 事件 |
+| PMU 软件可见性（CSR 接入）与过期测试修复 | RTL PMU 计数器块尚未实例化接 CSR；`tests/pmu/pmu_tb.cpp`（`NUM_EV=52`）与 `soc_tb.cpp`（`kPmuEv=51`）落后于当前 66 事件 | 决定是否开放 CSR；更新 PMU 测试；补齐二级 TMA 事件 |
 | 仿真速度双版本评估（`` `ifdef SYNTHESIS ``） | 已有 `mul_core`、公共原语、FPU 走双版本；`bpu_ub_track_ser`（`rem_of` 建表）等低深度模块尚未 profile | `--prof-cfuncs` 定位最慢模块，只对热点补快速仿真路径与等价测试 |
 
 ## 已知 trace-model vs RTL 细微差异（备忘，待按需收敛）
 
+- **全量 386 点 SPEC06 INT（10M warmup + 10M ROI）RTL vs `trace-model` 对齐实测（2026-11-26，`exp/verify-spec386`）**：
+  - 386/386 架构正确性 **0 fail / 0 FM diff**（累计 ~77.2 亿条指令逐条比对），12 项基准 geomean **`+0.00%`**，**266/386（68.9%）实现 2000 万指令后 0-cycle 完全一致**。
+  - 分基准精确 0-cycle 统计：`456.hmmer` **23/23 (100%)**、`462.libquantum` **36/36 (100%)**、`464.h264ref` **35/35 (100%)**、`473.astar` **26/26 (100%)**、`429.mcf` 37/45（`−0.04%`，最大单点 `0.41%`）、`400.perlbench` 20/24（`−0.00%`，`0.26%`）、`445.gobmk` 23/29（`−0.03%`，`0.19%`）、`401.bzip2` 26/48（`−0.05%`，`0.71%`）、`403.gcc` 14/34（`+0.00%`，`0.34%`）、`483.xalancbmk` 25/34（`+0.36%`，`1.89%`）、`471.omnetpp` 1/25（`−0.14%`，`2.65%`）、`458.sjeng` 0/27（`−0.05%`，`1.09%`）。
+  - 访存/计算密集基准均 100% 0-cycle 对齐；剩余 120 点集中于高分支误预测/间接跳转负载（`sjeng`/`omnetpp`/`xalancbmk`），呈对称 `±` 波动（geomean 抵消为 `+0.00%`）。
+  - 同期修复 `trace-model` `PerfCount::perf_reset()` 漏清 `cycle_base`（`--restore-stub` 重复扣减 ~25k 周期），修复后 12 项基准真实 2 GHz 分数回调 `−0.78%`，消除原先 RTL 相对 TM 稳定偏慢 ~1%~2% 的假象。
 - **变延迟 Early-out DIV 错路操作数差 & Linux `s19` 既有微差（2026-11-23 EXP-061）**：① wrong-path 上 `trace-model` 无操作数事实（固定 2 拍），RTL 用寄存器堆脏值算 `clz`（2..17 拍），极少数误预测解析前完成的错路 DIV 可能在 Port 1 `wb_next` 阻塞差 1 拍；② 26 窗 Linux 检查点 26/26 0 FM 不一致、25/26 PT/UP 全等，仅 `s19` 在 `cyc=2372697`（距最近 DIV 17,548 拍）存在 1 处与 EXP-052 `s17` / EXP-056 `s02` 同类的既有错路陷入边界微差。
 - **其余静态小差异（EXP-044 盘点）**：
   - `prf_awake` 在写回级唤醒所有 load；模型跳过 `early_woken`。
