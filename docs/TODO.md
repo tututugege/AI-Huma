@@ -10,8 +10,8 @@
 
 | 模块 | 当前 DC 28nm WNS / Fmax / 级数 | 关键路径线索 | 优化方向 / 做完标准 |
 |---|---|---|---|
-| **`lsu`**（唯一 <1.20 GHz） | **−0.39 ns / 1.12 GHz / 43 lvl**（纯组合 `0.84 ns / 1.19 GHz`，TNS −7.5k，758k um²） | `dec_bcast_br_mask` 已随 EXP-068 消除，残余瓶颈集中于 `u_ldq/g_e[*]/f_q[blk] → f_q[result]`（per-entry STLF 数据合并） | 拆解 `lp_wk` 每项 STLF 数据字节合并，将 `lsu` 推上 `≥ 1.20 GHz`（使全核 23/23 ≥ 1.20 GHz） |
-| **`axi_llc`** / **`icache`** / **`dcache`** / **`core_top`** 整块 DC | 未单跑整块 DC（子模块均已有数） | SRAM 宏黑盒化后跑子系统级与整核 DC 综合 | 为大阵列补齐 SRAM 宏/黑盒脚本，跑通 `axi_llc`、`icache`、`dcache`、`front_top`、`back_top`、`core_top` DC 综合 |
+| **`lsu`**（唯一 <1.20 GHz） | **−0.39 ns / 1.12 GHz / 44 lvl**（纯组合 `0.85 ns / 1.18 GHz`，TNS −7.5k，767k um²） | `dec_bcast_br_mask` 已随 EXP-068 消除；子系统级 `back_top` 暴露 EXU/LSU ↔ DTLB 同拍往返链（1.24 ns / 0.78 GHz） | ① 优先做 **B1+B2+B3 零周期变化修法**：DTLB 回填预存 `ppn_p1/m1`（兼容 Sv39 大页与 bare）消 29b 加法器、STA `sta_info_q` 直取 `tl_s` 绕过 `u_stq/vw` 64:1 mux、`mmu_req_vaddr` 与 `ag_acc/srp_ok` 解耦；② 拆解 `lp_wk` STLF 数据合并，将 `lsu` 与 `back_top_bb` 推上 `≥ 1.20 GHz` |
+| **`front_top` / `bpu` / `icache`** 子系统提频 | `bpu_bb` −1.40 ns / `icache_bb_v2` −0.95 ns；旧 `front_top` −1.31 ns（`ptab_bypass` 1.77 ns） | ① `ptab_bypass` 将 `bpu_eval(S2)` 与 `predecode_checker` 串联（`trace-model` SPEC386 实测删除仅 **`−0.03%`**）；② `bpu_bb` 顶路径在 S2 TAGE → `u_spec`，且 `u_ftb0`（64×4 FF）占全 BPU 面积 44.5%；③ `icache` 顶路径在 `u_fdip` | ① 删除 `ptab_bypass`（几乎 0 IPC 损失拉升 `front_top`）；② 评估 **Unified FTQ**（`PTAB + FA + FTQ` 合一 + `ftq_meta` 1R1W SRAM 化 + 直驱 FDIP，`trace-model` SPEC386 实测 64 项 `−0.24% ~ −0.30%`、80 项 `−0.21%`）；③ 跑通 `front_top_bb` / `back_top_bb` / `core_top_bb` 28nm DC 签核 |
 
 ## 待做：验证与对齐
 
