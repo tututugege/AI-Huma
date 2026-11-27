@@ -90,23 +90,26 @@ git submodule update --init          # 取出 function-model、trace-model、rtl
 | **EXP-058** | 硬件忠实版 LLC Bingo 4KB 空间预取器（1RW SRAM `~26.75 KiB`，与 BOP 双优先级协同，48 层） | `14.88 /GHz` | +1.26% |
 | **EXP-059** | `ren` 稀疏 K=4 单写口检查点 + 本地 256×25b `ren_log` 8 宽前向 Walk + 8-bank `free_list`（`ren` 面积 **−73.22%**，省 44.6 万单元） | `14.85 /GHz` | −0.18% |
 | **EXP-060** | **突破 15 分！** Load L2 推测唤醒（`load-to-use 4→3` 拍）+ STLF `data_v` 纳入 L2 唤醒 + WBP 同拍唤醒（`5→4` 拍）+ 4 路直接比较 cancel + 整数 `lsu_byp` | **`15.25 /GHz`** | **+2.64%** |
-| **EXP-061** | **当前 `main`**：Radix-4 Booth 乘法（面积 −31.4%）+ 1× Radix-16 双 Radix-4 Early-out 变延迟除法（2..17 拍，EXU 动态唤醒）+ **全套自研可综合 RV64FD FPU**（5 核心全 `<100` 层） | **`15.33 /GHz`** | **+0.53%** |
+| **EXP-061** | Radix-4 Booth 乘法（面积 −31.4%）+ 1× Radix-16 双 Radix-4 Early-out 变延迟除法（2..17 拍，EXU 动态唤醒）+ **全套自研可综合 RV64FD FPU**（5 核心全 `<100` 层） | **`15.33 /GHz`**（1G 旧口径） | **+0.53%** |
+| **EXP-062..068** | 4 轮 TSMC 28nm DC 时序收敛（23/23 模块 ≥1.12 GHz）+ 切 **2.0 GHz / 32 ns / DDR4-x8** 真实物理口径 + 方案 C 9-bit `rob_ptr` 循环年龄冲刷（`idu` 2.70 GHz）+ 386 点 RTL SPEC06 全量 0 FM 差校准 | **`14.02 /GHz`**（2G 新口径） | 校准后基准 |
+| **EXP-069 / SoC v1** | 全核 100% 严格同步 1R1W/1RW SRAM 化（三后端模块省 `1.97 mm²`）+ 55,000-seed 严格 Fuzzer 0 FAIL + 流片向全片 SoC v1（`chip_top` + 双层 Full-AXI4 + 真外设） | **`13.94 /GHz`** | −0.57% |
+| **EXP-070** | **最新阶段**：Unified FTQ-64（删 `ptab_bypass`）+ LSU/DTLB `paddr_p1/m1` 消除 `back_top` 1.24 ns 链 + Clean BPU v11（1RW 真实 TSMC 28nm SRAM，**零黑盒 `bpu` `877 MHz` +83%、纯逻辑面积 −59.1%**）+ 同页双取 + A1/A2/B1 | **`13.28 /GHz`** | −4.71%（vs EXP-069） |
 
-## 当前状态（2026-11-23）
+## 当前状态（2026-11-27）
 
 README 只写概况，**各次合入的数字、配置变化和已知回退以 [docs/MAIN_RECORDS.md](docs/MAIN_RECORDS.md) 与 [docs/EXPLORATION.md](docs/EXPLORATION.md) 为准**，在做的事见 [docs/TODO.md](docs/TODO.md)。
 
 - **当前微架构配置**（`trace-model` 默认配置 = `rtl` 配置，零环境变量）：
   - **ISA**：`rv64gc`（`rv64imafdc` + `Sv39`，默认 `XLEN=64`、`FP=1`、`RVC=1`；`rv32` 归档在各仓 `rv32-legacy` 分支）。
-  - **前端**：块级 1-Ahead FTB + S2 Block-TAGE/ITT + `2-taken` 双块融合 + 2-Ahead B + 真 4-Bank 1R1W ICache + 2 读口 ITLB + 实 AXI S2 确认 2-slot FDIP，8 宽译码。
-  - **重命名与后端窗口**：`PRF=256`（INT）+ `FPRF=96`（FP）、紧凑 `ROB=256`、`MAX_BR=32`；稀疏 `K=4` 单写口检查点 + 本地 256×25b `ren_log` 8 宽前向 Walk + 8-bank 1R1W `free_list` + `c.mv` 组内 1-hop 移动消除。
-  - **发射与执行**：6 发射队列（双 32 项 INT + 合并 MEM + STD + BR + FP）、5 物理 AGU、唤醒驱动 6 位二维 EXU Bypass；6 ALU + 2 BRU + 2 Radix-4 Booth 3 拍流水 MUL + **1× Radix-16 双 Radix-4 Early-out 变延迟 DIV（2..17 拍，EXU 完成前 1 拍动态唤醒）** + **全套自研可综合 RV64FD FPU**（2 FMA 3 拍流水 + 3 FMISC/FCVT + 2 I2F + 1 迭代 FDIV/FSQRT，默认仿真走快速 DPI、`SYNTHESIS`/`-DFPU_REAL` 走真可综合 RTL）。
-  - **访存与缓存体系**：分级 LSU + 访存推测（`LSU_MEMSPEC`）+ **Load L2 推测唤醒（`load-to-use=3` 拍）& STLF/WBP 同拍唤醒** + 已提交 store write buffer + L1 硬件 Berti 预取 + 4 MiB 16 路 SRRIP LLC（BOP + Bingo 4KB 双优先级空间预取）+ L1D/LLC MSHR 16/16 + **统一 L2 TLB（1024×4 1RW SRAM + 8 项大页 CAM）+ 16 项 Sv39 PWC** + DRAMsim3 DDR4-3200。
-- **综合与面积（Yosys 通用门代理，`SYNTH_ABC="strash;balance;map"`）**：`ren` `157k` / `91` 层、`rob` `881k` / `65` 层、`prf` `640k` / `25` 层、`isu` `1,071k` / `60` 层、`dispatch` `212k` / `57` 层、`lsu` `1,240k` / `101` 层、`ptw_walk` `5.4k` / `44` 层、`axi_llc_bingo` `41k` / `48` 层、`exu`（含全套真可综合 FPU + 优化乘除法）`305k` / `98` 层；工艺库时序综合（Synopsys DC）待统一接入。
+  - **前端**：Unified FTQ-64（`PTAB+FA+FTQ` 合一、同步 1R1W `ftq_meta`、零 `ptab_bypass`）+ Clean BPU v11（`uFTB` S0 + 1RW 8-bank FTB1/TAGE/ITT S1/S2）+ 同页双取（Same-Page 2-Fetch）+ 真 4-Bank 1R1W ICache + 2 读口 ITLB + 实 AXI FDIP，8 宽译码。
+  - **重命名与后端窗口**：`PRF=256`（INT）+ `FPRF=96`（FP）、紧凑 `ROB=256`、9-bit `{rob_flag, rob_idx}` 循环年龄冲刷（无 31 分支上限）；2 级流水重命名 + 稀疏 `K=4` 检查点 + 本地 `ren_log` 前向 Walk + `c.mv` 组内 1-hop 移动消除。
+  - **发射与执行**：6 发射队列（双 32 项 INT + 合并 MEM + STD + `IQ_BR=64` + FP）、5 物理 AGU、唤醒驱动 6 位二维 EXU Bypass；6 ALU + 2 BRU + 2 Radix-4 Booth 3 拍流水 MUL + 1× Radix-16 Early-out 变延迟 DIV + **全套自研可综合 RV64FD FPU**。
+  - **访存与缓存体系**：分级 LSU（并行 L2a CAM + 256b STQ Bloom Filter + L2a/L2b STLF + DTLB 预存 `ppn_p1/m1`）+ 访存推测 + Load L2 推测唤醒（`load-to-use=3` 拍）+ 硬件 Berti 预取 + 4 MiB 16 路 SRRIP LLC（BOP + Bingo 4KB）+ 统一 L2 TLB（1024×4 1RW SRAM）+ 16 项 Sv39 PWC + 2 GHz / 32 ns / DRAMsim3 `DDR4_8Gb_x8_3200`。
+- **综合与面积（Synopsys DC `W-2024.09-SP2` + TSMC 28nm HPC+）**：全面转入 `SYNTH_TSMC28_SRAM` 零黑盒真实 SRAM 宏签核——实宏 `bpu`（156 颗真宏）**`877 MHz`（纯逻辑面积 `385.4k um²`，总面积 `2.076 mm²`）**、`front_top` WNS 压降至 `−0.87 ns`、`back_top_bb` 消除 DTLB/LSU `1.24 ns` 往返链（`1.16 ns`, `2.573 mm²`），详见 [rtl/docs/09-synthesis-report.md](rtl/docs/09-synthesis-report.md) §15–21。
 - **验证状态**：
-  - `trace-model`：`comb_graph.py --check` 0 隐患；`run_gate.sh` 62/62、`PF_ENABLE=0` 62/62、`run_gate_c.sh` 68/68；rv64gc Linux 从复位启动到 `rv64 login:` PASS（0 oops/panic）。
-  - `rtl`：`lint_chip.sh` 0 告警；`mul_check` 400 万 / `div_check` 10.3 万 / `fp_synth_check` 235 万全 0 不一致；`-DFPU_REAL` 整核 `fm_gate.sh` **69/69 PASS（0 FM 差、0 周期差）**；`eda` 集群 26 窗 rv64gc Linux 检查点（~1.33 亿指令）0 FM 不一致。
-- **未合入的探索**：sdip 预取器（EXP-026）、BC_CORE 预取（EXP-043）、1MB L2 + 16MB L3 层级探索（EXP-057，`+4.11%`）、其余探索见 [docs/EXPLORATION.md](docs/EXPLORATION.md) 索引。
+  - `trace-model`：`comb_graph.py --check` 0 隐患；`run_gate.sh` 62/62、`PF_ENABLE=0` 62/62、`run_gate_c.sh` 68/68；rv64gc Linux `linux_check.sh` 启动到 `rv64 login:` PASS（0 oops/panic）；2 GHz SPEC06 INT 386/386 PASS。
+  - `rtl`：`lint_chip.sh` 0 告警；strict+SVA `fm_gate.sh` **77/77 PASS（0 FM 差、0 周期差）**；`STRICT=1` `riscv_tests_gate.sh` **152/152 PASS**；`eda` 集群 8 线程静态 `core_tb` 26 窗 rv64gc Linux 检查点（~1.326 亿指令）**26/26 PASS（0 FM 差、100% PT/UP 全等）**；全片 SoC `scripts/soc_gate.sh --linux` 12/12 PASS。
+- **未合入的探索**：sdip 预取器（EXP-026）、BC_CORE 预取（EXP-043）、1MB/2MB L2 + 16MB L3 层级探索（EXP-057/067，`15.41 /GHz` @ 2 GHz）、其余探索见 [docs/EXPLORATION.md](docs/EXPLORATION.md) 索引。
 
 ## 复现
 

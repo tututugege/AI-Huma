@@ -2,16 +2,17 @@
 
 全项目唯一的待办清单。每条写清为什么、做到什么算完；做完删掉，在 [LOG.md](LOG.md) 里留一行。（2026-11-23 阶段性清理：删除 EXP-029..061 已完成/已取代的条目，收敛为当前有效待办。）风险（验证缺口、变异存活）记在 [rtl/docs/08-risk-register.md](../rtl/docs/08-risk-register.md)，不在这里重复。
 
-## 待做：TSMC 28nm DC 时序收敛（第五轮目标：将 `lsu` 推过 `1.20+ GHz` + 子系统/整核黑盒 DC）
+## 待做：TSMC 28nm DC 时序收敛（第六轮目标：无黑盒真实 SRAM 整核提频 + 后端 `Issue/RegRead` 拆拍 + 大存储体宏重构）
 
-权威口径：**Synopsys DC `W-2024.09-SP2` + TSMC 28nm HPC+（`ssg0p81v125c`, 12T SVT+LVT, `CLK=0.50ns / 2.0GHz`, `compile_ultra`）**，Yosys（`strash;balance;map`）仅作分钟级快速迭代代理（详见 [rtl/docs/09-synthesis-report.md](../rtl/docs/09-synthesis-report.md) §15–18）。
-- **前四轮已完成**：EXP-062（22 模块建基线 + 5 模块首轮）+ EXP-063（`exu_ctrl` MET ≥2.00 GHz、`bpu_eval` 0.84→1.28、`bpu_spec` 0.86→1.20、`lsu` 0.83→0.88）+ EXP-064（`dcache_pf` 1.18→1.35、`dcache_mshr` 1.15→1.28 / 面积 −13.9%、`ren` 2-stage 1.16→1.22、`lsu` Wave 1+2 0.88→0.97）+ **EXP-065（`ren` 1.22→1.67 GHz / +36.9% / 26 lvl / 面积 −0.6%，`lsu` 0.97→1.12 GHz / 纯组合 1.18 GHz / 49 lvl / 面积 −3.8%）**。全核 23/23 模块现已全部突破 **1.12 GHz**（**15/23 ≥ 1.54 GHz、20/23 ≥ 1.28 GHz、22/23 ≥ 1.20 GHz**），仅剩 `lsu` 距 1.20 GHz 差 `0.06 ns`。
-- **下一阶段待攻克瓶颈按 DC Fmax 排序**：
+权威口径：**Synopsys DC `W-2024.09-SP2` + TSMC 28nm HPC+（`ssg0p81v125c`, 12T SVT+LVT, `compile_ultra`）**，**全面禁用 `SRAM_BLACKBOX`、统一采用 `SYNTH_TSMC28_SRAM` 真实 TSMC 28nm SRAM 宏时序/面积签核**；Yosys（`strash;balance;map`）仅作分钟级快速迭代代理（详见 [rtl/docs/09-synthesis-report.md](../rtl/docs/09-synthesis-report.md) §15–21）。
+- **前五轮已完成**：EXP-062..065（全核 23 模块单模块突破 ≥1.12 GHz）+ EXP-068（`rob_ptr` 冲刷，`idu` 2.70 GHz）+ EXP-069（全核 100% 严格同步 1R1W/1RW SRAM 化，三后端模块净省 `1.97 mm²`）+ **EXP-070（Unified FTQ-64 删 `ptab_bypass` + LSU/DTLB `paddr_p1/m1` 消除 `back_top` 1.24 ns 往返链 + Clean BPU v11 + 同页双取 + A1/A2/B1 切链 + 零黑盒真实 TSMC 28nm SRAM 综合：`bpu` 156 真实宏达 `877 MHz` / +83%、纯逻辑面积 −59.1%）**。
+- **下一阶段待攻克瓶颈按优先级排序**：
 
-| 模块 | 当前 DC 28nm WNS / Fmax / 级数 | 关键路径线索 | 优化方向 / 做完标准 |
-|---|---|---|---|
-| **`lsu`**（唯一 <1.20 GHz） | **−0.39 ns / 1.12 GHz / 44 lvl**（纯组合 `0.85 ns / 1.18 GHz`，TNS −7.5k，767k um²） | `dec_bcast_br_mask` 已随 EXP-068 消除；子系统级 `back_top` 暴露 EXU/LSU ↔ DTLB 同拍往返链（1.24 ns / 0.78 GHz） | ① 优先做 **B1+B2+B3 零周期变化修法**：DTLB 回填预存 `ppn_p1/m1`（兼容 Sv39 大页与 bare）消 29b 加法器、STA `sta_info_q` 直取 `tl_s` 绕过 `u_stq/vw` 64:1 mux、`mmu_req_vaddr` 与 `ag_acc/srp_ok` 解耦；② 拆解 `lp_wk` STLF 数据合并，将 `lsu` 与 `back_top_bb` 推上 `≥ 1.20 GHz` |
-| **`front_top` / `bpu` / `icache`** 子系统提频 | `bpu_bb` −1.40 ns / `icache_bb_v2` −0.95 ns；旧 `front_top` −1.31 ns（`ptab_bypass` 1.77 ns） | ① `ptab_bypass` 将 `bpu_eval(S2)` 与 `predecode_checker` 串联（`trace-model` SPEC386 实测删除仅 **`−0.03%`**）；② `bpu_bb` 顶路径在 S2 TAGE → `u_spec`，且 `u_ftb0`（64×4 FF）占全 BPU 面积 44.5%；③ `icache` 顶路径在 `u_fdip` | ① 删除 `ptab_bypass`（几乎 0 IPC 损失拉升 `front_top`）；② 评估 **Unified FTQ**（`PTAB + FA + FTQ` 合一 + `ftq_meta` 1R1W SRAM 化 + 直驱 FDIP，`trace-model` SPEC386 实测 64 项 `−0.24% ~ −0.30%`、80 项 `−0.21%`）；③ 跑通 `front_top_bb` / `back_top_bb` / `core_top_bb` 28nm DC 签核 |
+| 方向 / 模块 | 当前状态与关键路径线索 | 优化方向 / 做完标准 |
+|---|---|---|
+| **后端 `Issue / RegRead` 拆拍与 `lsu → isu` 唤醒解耦** | `back_top_bb`（`0.50 ns`）消除 DTLB/LSU `1.24 ns` 往返链后，新顶路径转为 **`u_lsu/u_ldq → u_isu/g_iq[5]`（`1.16 ns / 833 MHz`）**，且当前 `isu` 选择/唤醒与 `prf` 读寄存器紧耦合限制后端进一步冲高频 | ① 拆解 `Issue → RegRead` 流水级，评估 `trace-model` SPEC06 386 点 IPC 代价与唤醒/旁路时序；② 解耦 `lsu` L2 唤醒/取消至 `isu` 路径并拆解 `lp_wk` STLF 数据合并，将 `back_top` 真实 SRAM DC 推上 `≥ 1.0~1.2 GHz` |
+| **大存储体物理 SRAM 宏重构与无黑盒整核 DC 签核** | 无黑盒真实 TSMC 28nm SRAM 综合暴露三类面积/布线放大：① `icache_arr` 4×8×`16×512b` 映射到 64-depth 宏存在 ~4× 深度浪费；② `axi_llc` 4 MiB 数据/标签用 1R1W 翻倍面积；③ BPU 8-bank 切分导致 156 颗宏（`1.69 mm²`）且高扇出到 `u_spec`；④ `prf` 多读写口 FF 占比高 | ① 重构 `icache_arr` 阵列形状匹配 64-depth 真宏；② `axi_llc` 数据/标签评估 1R1W→1RW；③ BPU 8-bank 合并为 2~4 bank 压降宏数与布线拥塞；④ 评估分簇 PRF 与剩余 CAM 瘦身；⑤ 完成 `back_top` / `mem_top` / `core_top` 零黑盒真实 SRAM 28nm DC 全签核 |
+| **前端无黑盒 `front_top` 进一步冲 1.0+ GHz** | Clean BPU v11 + A1/A2/B1 已将实宏 `bpu` 拉升至 `877 MHz`（顶路径 `u_ftb1` 真宏 → `u_spec/st_q` `1.09 ns`），`front_top` 仍受 `icache`/`front_fetch_buf` 与 `u_ftb1 → u_spec` 约束 | 结合 BPU 降 bank 与 `u_ftb1 → u_spec` 预计算切分、清理 `front_top` 剩余实宏关键路径，将无黑盒 `front_top` 推上 `≥ 1.0 GHz`；同步优化 Clean BPU v11 缺失的 SC/取指带宽以挽回 SPEC06 分数 |
 
 ## 待做：验证与对齐
 
@@ -32,7 +33,6 @@
 |---|---|---|
 | **DCache S1/S2 随 `rob_ptr` 冲刷并移除 LDQ `epoch`** | 当前靠 per-port `epoch` 过滤在飞 DCache 陈旧响应（已在 `lp_core.sv`/`lp_ldq.sv` 补齐），后续若扩大 LDQ/重发深度需担心 `epoch` 位宽回绕 | DCache S1/S2 流水级携带 9-bit `rob_ptr` 并在 `flush_br`/`flush_all` 时直接作废年轻查询，移除 LDQ `epoch` 字段与比较逻辑，通过全量门禁与 SPEC06 回归 |
 | **访存违例改为从违例 load 本身冲刷重取** | 当前违例 load 在 LSU 重执行后第二次写回（占 PRF 写口且增加 `lp_wb`/`MsData.h` `early_clean` 复杂度） | 违例 load 随冲刷从自身 PC 重取，第二次写回不占 PRF 写口；删除 `MsData.h` `early_clean` 补丁；SPEC06 量化净收益，模型与 RTL 同步对齐 |
-| **拆解 ROB `diag_val`（64b × 256 项）** | `diag_val` 身兼指令字、分支目标、访存虚址、trap tval 多职，占 ROB 面积与 8×64b 提交读线 | 访存地址改由 LDQ/STQ 提供、分支目标改放 FTQ、非法指令字改用小旁表，最终删掉 ROB `diag_val` 列 |
 | **香山式独立 SBuffer** | EXP-024 的 STQ 内分组 write buffer 仍占着 STQ 项等响应 | 独立 64B 整行+字节掩码 SBuffer，提交即释放 STQ、按阈值排空、load 查 STQ > SBuffer > DCache；全量 SPEC06 量化收益后再做 RTL |
 | **AMO 改为 DCache 内读改写（AMOALU）** | 当前 AMO 拆成 LOAD + STA + STD 同占 LDQ/STQ | AMO 仅占 STQ，队头排空 ROB 后发 DCache 读改写，删除 dispatch AMO 双写口特例 |
 | 分支密集短循环 BPU 更新额度优化（EXP-028 遗留） | 紧凑 ROB 为防 BPU 更新队列溢出而限流提交，导致少量分支密集短循环变慢 | 额度不足时不挡提交、仅丢弃已饱和且预测正确的分支更新；模型与 RTL 同步 |
