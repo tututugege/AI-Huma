@@ -20,6 +20,7 @@
 |---|---|---|
 | **LR/SC 遇异步中断的保留位对齐（R-7 根因）** | `lp_rsv.sv` 在 `sc` 推测执行时即通过 `sc_clr` 清零 `rsv_valid_q`，若随后异步中断冲刷未提交的 `sc`，`mret` 重执时 RTL 返回 1（保留失效），而 `function-model` 在 `refcpu_take_forced_interrupt` 未清 `reserve_valid` 返回 0，引发 Difftest 分歧（即 `08-risk-register.md` R-7 悬案） | 统一三仓口径：中断/异常冲刷时 RTL 与 `function-model` 同步清保留位（或 `sc_clr` 推迟至提交/非推测态），并用 `lr.d`/`sc.d` + 高频中断回归验证通过 |
 | **逐条对比补全 AMO store 比较**（rtl V-12 剩余） | `SOC_TB_FM_STRICT=1` 已补齐 MMIO/跨字 store 数据及 18 个架构 CSR + 特权级对比（77/77 + 152/152 通过），仅剩 AMO 指令写回数据与字节使能未纳入 store 比较 | `tb/core/fm_check.h` 补齐 AMO 写回数据与字节使能对比，严格门禁通过 |
+| **消除 `-DSYNTHESIS` 下 `BPU_S2_TAGE_BASE` 初值差（5/77 门禁周期差）** | [bpu_ftb_ex_tage.sv](../rtl/rtl/frontend/bpu/bpu_ftb_ex_tage.sv#L158-L166) 对 `BPU_S2_TAGE_BASE` SRAM 传入非零 `.INIT(8'h55)`（弱不跳 `2'b01`），但 `ttg_sram_1rw` 的 `initial` 块包在 `` `ifndef SYNTHESIS `` 内，导致 `-DSYNTHESIS`（及综合后复位为 0 的真宏）上电变为强不跳 `2'b00`；全仓其余 10 处 `` `ifdef SYNTHESIS `` 功能分支与所有默认 `'0` SRAM 均已实测 0 差，唯此 1 处造成 77 测 `fm_gate` 中 `bubble-sort`/`quick-sort`/`itt-dispatch`/`dhrystone`/`coremark` 5 个程序与仿真周期不同 | 在 `bpu_ftb_ex_tage.sv` 中对 `u_base` 存储值采用 `^ 2'b01` 编码（读写口各加 4 个反相器：`base_wr_d = {4{nbc ^ 2'b01}}`、`base_cnt = base_rd0[sl*2 +: 2] ^ 2'b01`，`.INIT(8'h00)`），验证默认仿真与 `CORE_VOPT="-DSYNTHESIS"` 下 77/77 逐拍全等（相对现默认仿真与 `trace-model` 0 周期变化、0 额外 FF） |
 | **收敛 RTL vs `trace-model` 在 120/386 SPEC06 点上的对称周期微差异** | 全量 386/386 SPEC06 INT（10M+10M + 逐条 FM，~77.2 亿指令）已 **0 fail / 0 FM diff 全通**，12 项基准 geomean **`+0.00%`**，266/386（68.9%）实现 0-cycle 完全对齐；剩余 120 点（主要为 `458.sjeng` 0/27、`471.omnetpp` 1/25、`483.xalancbmk` 25/34）呈对称 `±` 周期微差（最大单点 `2.65%`） | 抽 1 个 `458.sjeng` 点做 commit-trace 定位首个分歧周期，确认原因并决定是否对齐至 386/386 0-cycle |
 | **从复位 140M 周期 Linux 全程 RTL vs 模型对齐** | EXP-040 时期在 3000–3050 万周期起出现 PMU 区间偏差（+0.29%），近期合入均用 26 段检查点验证，尚未在最新 `main` 跑完整复位对比 | 在 `eda` 跑 8 线程静态 `core_tb` 从复位到 `rv64 login:`，确认逐条 0 不一致并排查是否仍有区间分歧 |
 | 检查点窗口比 PMU 区间（`PMU_CMP=1`） | 检查点恢复程序在 RTL 与模型上耗时不同，按绝对周期切 PMU 区间会错位 | 两边在恢复结束处对齐计数，`PMU_CMP=1` 通过 |
@@ -60,7 +61,7 @@
 
 - **生成器同步**：`tools/gen_backtop.py`、`gen_soc_top.py`、`gen_cfg_pkg.py` 与手改的 `back_top.sv`/`exu.sv`/`soc_top.sv`/`ttg_cfg_pkg.sv` 补齐同步（让 `make cfg` 与提交包逐字节一致，不再输出已删常量）。
 - **`axi_subsys` UNOPTFLAT**：确认 `axi_llc.in_w` 组合环是否为误报，消除后纳入 `-Wall`。
-- **死代码与过期注释清理**：`rob.sv` `pf_inst` 恒 0；`lsu_pipe.sv` 孤立 `lint_on`；`tests/tlb_par` 过期接口；`exu_fu` 单周期单元无用端口；LLC `hz_wctx`/`hz_wresp`；`mem_axi` 桩口 2；`tlb_mmu_pkg`/`fp_pkg` rv32 残留；`ptw_walk` L1/L2 误导命名；各模块旧注释（`27 FUs`、`14 wake channels`、`16 tick`、`8->16 lane` 等）。
+- **死代码与过期注释清理**：`rob.sv` `pf_inst` 恒 0；`lsu_pipe.sv` 孤立 `lint_on`；`tests/tlb_par` 过期接口；LLC `hz_wctx`/`hz_wresp`；`mem_axi` 桩口 2；`tlb_mmu_pkg`/`fp_pkg` rv32 残留；`ptw_walk` L1/L2 误导命名；各模块旧注释（`27 FUs`、`14 wake channels`、`16 tick`、`8->16 lane` 等）。
 - **可选架构清理**：是否删除默认关闭且不再使用的 `bpu_ub_track.sv`（`RVC=0`）和 `FE_BFAST` 分支；`RealLsu` 3 个 SSA 展开文件手写化；`spec/*.io` 明确退役或更新。
 - **RTL 文档补全**：全模块压到 ≤100 层后补齐 `rtl/docs/DEPTH_OPT.md`，清理各 `rtl/docs/modules/*.md` 末尾的“未核对”项，核对 `pmu`/`common` 的 `area` 字段。
 - **未决定是否合入的历史探索**：`BPO_LOOP=1` 循环预测器（EXP-025）、`exp/sdip`（EXP-026），如需重启须在当前 15.33 分/GHz `main` 上重测。
