@@ -10,7 +10,7 @@
 
 | 方向 / 模块 | 当前状态与关键路径线索 | 优化方向 / 做完标准 |
 |---|---|---|
-| **后端 `Issue / RegRead` 拆拍与 `lsu → isu` 唤醒解耦** | `back_top_bb`（`0.50 ns`）消除 DTLB/LSU `1.24 ns` 往返链后，新顶路径转为 **`u_lsu/u_ldq → u_isu/g_iq[5]`（`1.16 ns / 833 MHz`）**，且当前 `isu` 选择/唤醒与 `prf` 读寄存器紧耦合限制后端进一步冲高频 | ① 拆解 `Issue → RegRead` 流水级，评估 `trace-model` SPEC06 386 点 IPC 代价与唤醒/旁路时序；② 解耦 `lsu` L2 唤醒/取消至 `isu` 路径并拆解 `lp_wk` STLF 数据合并，将 `back_top` 真实 SRAM DC 推上 `≥ 1.0~1.2 GHz` |
+| **后端 `Issue / RegRead` 拆拍与 `lsu → isu` 唤醒解耦** | **EXP-073 已将后端五墙合一改动合入 `main`**：落地 `iss_rr_reg` 两拍切分、L1 推测唤醒（256×2b PC 预测 + 14 路唤醒 + ALU 孙代 1 拍取消）、WBP v2 + 预寄存 SC、`fp_fma_core` 4 拍与 Dispatch/IQ/LSU 切链（本地 `fm_gate 77/77` + `fuzz 50/50` + TM `62+62+68` + Linux `login:` 全通） | 在集群统一运行前后端当前关键路径的 Tier 1 / TSMC 28nm DC 综合、全量 386 点 SPEC06 INT、8 线程 `core_tb` Linux 26 窗与 `soc_gate.sh --linux`，确认最终 Fmax 与 IPC |
 | **大存储体物理 SRAM 宏重构与无黑盒整核 DC 签核** | 无黑盒真实 TSMC 28nm SRAM 综合暴露三类面积/布线放大：① `icache_arr` 4×8×`16×512b` 映射到 64-depth 宏存在 ~4× 深度浪费；② `axi_llc` 4 MiB 数据/标签用 1R1W 翻倍面积；③ BPU 8-bank 切分导致 156 颗宏（`1.69 mm²`）且高扇出到 `u_spec`；④ `prf` 多读写口 FF 占比高 | ① 重构 `icache_arr` 阵列形状匹配 64-depth 真宏；② `axi_llc` 数据/标签评估 1R1W→1RW；③ BPU 8-bank 合并为 2~4 bank 压降宏数与布线拥塞；④ 评估分簇 PRF 与剩余 CAM 瘦身；⑤ 完成 `back_top` / `mem_top` / `core_top` 零黑盒真实 SRAM 28nm DC 全签核 |
 | **前端无黑盒 `front_top` 进一步冲 1.0+ GHz** | Clean BPU v11 + A1/A2/B1 已将实宏 `bpu` 拉升至 `877 MHz`（顶路径 `u_ftb1` 真宏 → `u_spec/st_q` `1.09 ns`），`front_top` 仍受 `icache`/`front_fetch_buf` 与 `u_ftb1 → u_spec` 约束 | 结合 BPU 降 bank 与 `u_ftb1 → u_spec` 预计算切分、清理 `front_top` 剩余实宏关键路径，将无黑盒 `front_top` 推上 `≥ 1.0 GHz`；同步优化 Clean BPU v11 缺失的 SC/取指带宽以挽回 SPEC06 分数 |
 
