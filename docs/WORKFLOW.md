@@ -46,7 +46,7 @@
 | 随机 Fuzzer（`core_tb`） | `tools/fuzz/fuzz_run.py`（支持 `--tb` 对拍 RTL 与 `--spike-fm` 对拍 Spike）+ `minimize.py` 自动二分缩减失败用例 |
 | Linux（快速窗口 + 全程） | 开发期在 `core_tb` 跑 `scripts/linux_segments_cmp.sh`（集群 26 段每 5M 指令检查点 `/nfs_global/S/houruyao/linux_ckpt_rv64gc/` 配合 `SOC_TB_MAX_INSTS` 并行比逐条检查和 PT/UP 指纹）；合入前上 `eda` 跑 8 线程静态版（`CORE_VOPT="--threads 8"`）`scripts/linux_gate.sh`；SoC 侧用 `scripts/soc_gate.sh --linux` 验真实 BootROM → OpenSBI → `Linux version` |
 | 文档一致性 | 每个 RTL / SVA / 验证改动提交前，对照 diff 逐项核对 `rtl/docs/modules/<模块>.md`（清单见第 7.3 节）并运行 `python3 scripts/doc_lint.py` |
-| 综合对比 | 上 `eda-04`~`10` 跑 Yosys 快速代理（`scripts/synth_depth.sh`，`SYNTH_ABC="strash;balance;map"`）或 Synopsys DC TSMC 28nm 签核（见 [SERVER.md](SERVER.md) 与 [../rtl/docs/09-synthesis-report.md](../rtl/docs/09-synthesis-report.md)） |
+| 综合对比 | 日常探索统一走四层快速 PPA 入口 `rtl/scripts/fast_ppa.sh --tier 0\|0-elab\|1\|2a\|2b --host eda-XX`（[EXP-071](exp/EXP-071-fast-ppa-eval.md)）：Tier 0 秒级算 SRAM 宏/Padding、Tier 1 `Yosys+PrimeTime` 1–12 分钟提速 `14×–49×`、Tier 2a/2b DC 快速与增量 `.ddc` 拼装；旧 `scripts/synth_depth.sh` 与合入前 Synopsys DC TSMC 28nm `compile_ultra` 签核均在 `eda-04`~`10` 执行（见 [SERVER.md](SERVER.md) 与 [../rtl/docs/09-synthesis-report.md](../rtl/docs/09-synthesis-report.md)） |
 
 ### 3.3 默认就对：不靠记开关和环境（2026-11-19）
 

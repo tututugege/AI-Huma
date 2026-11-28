@@ -90,6 +90,8 @@ Host eda-*
 | `tools/riscv-isa-sim/` | Spike（`riscv-isa-sim` + `berkeley-softfloat-3`）源码树 |
 | `tools/SimPoint.3.2/` | SimPoint 聚类工具 |
 | `dc28_check/`、`dc28_opt1..4/`、`dc28_subsys/` | TSMC 28nm HPC+ Synopsys DC 综合工作区与各轮时序优化网表/报告（EXP-062~065） |
+| `fast_ppa_eval/` | Tier 0 ~ Tier 2b 快速 PPA 评估基线（`summary_report.txt`、`tier0/`、`tier1/`、`tier2a/` 预编译 `bpu.ddc`/`icache.ddc` 与 `tier2b/front_top_inc`，见 [exp/EXP-071-fast-ppa-eval.md](exp/EXP-071-fast-ppa-eval.md)） |
+| `tsmc28_sram_db/` | TSMC 28nm SRAM `.db` 时序/面积库（供 `eda` 上 Tier 1 PrimeTime 与 Tier 2/3 DC 共享，严禁拷离集群） |
 | `rv32imab_ckpt/`、`rv32imab_ckpt_1gb_ram/` | 历史归档的 rv32imab SPEC06 检查点（对应 `rv32-legacy` 分支） |
 
 ## 3. 编译与部署到 `eda` 集群
@@ -117,6 +119,7 @@ Host eda-*
 | **`eda` 集群** | **Yosys + `yosys-slang`** | `/nfs_global/S/houruyao/tools/oss-cad-suite/bin` 与 `.../share/yosys/plugins/slang.so`（`eda-04` ~ `eda-10` 直接可用；需配 `SYNTH_ABC="strash;balance;map"`，多写口大存储加 `SYNTH_NO_MEMPRIO=1`） |
 | **`eda` 集群** | **Spike & `fm_spike64`** | `/nfs_global/S/houruyao/tools/spike/bin/{spike,fm_spike64}`（静态 `x86-64-v3`，配合 `rtl/tools/fuzz/fuzz_run.py --spike-fm` 可直接集群对拍）；源码在 `/nfs_global/S/houruyao/tools/riscv-isa-sim/` |
 | **`eda` 集群** | **Synopsys DC + PDK** | `source /eda-tools/modulefiles/init.sh && export PATH="/eda-tools/synopsys/syn/W-2024.09-SP2/bin:$PATH"`；工艺库在 `/eda-tools/pdk/`（如 `TSMC28` HPC+） |
+| **`eda` 集群** | **PrimeTime + 快速 PPA 入口** | `/eda-tools/synopsys/prime/W-2024.09-SP2/bin`；统一入口 `rtl/scripts/fast_ppa.sh --tier 0\|0-elab\|1\|2a\|2b --mod <模块> --host eda-XX` |
 | **`eda` 集群** | NFS 与节点规格 | 仅 **`eda-04` ~ `eda-10`** 挂载 `/nfs_global`：`eda-04`（144C/1.5TB）、`eda-05`（72C）、`eda-06..10`（各 **256C**，常有数百 GB 空闲内存）；大任务优先多节点平摊，起前先查 `uptime` 与 `free -h` |
 
 ## 4. 在 `eda` 集群起 SPEC 批量任务

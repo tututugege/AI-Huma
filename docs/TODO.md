@@ -4,7 +4,7 @@
 
 ## 待做：TSMC 28nm DC 时序收敛（第六轮目标：无黑盒真实 SRAM 整核提频 + 后端 `Issue/RegRead` 拆拍 + 大存储体宏重构）
 
-权威口径：**Synopsys DC `W-2024.09-SP2` + TSMC 28nm HPC+（`ssg0p81v125c`, 12T SVT+LVT, `compile_ultra`）**，**全面禁用 `SRAM_BLACKBOX`、统一采用 `SYNTH_TSMC28_SRAM` 真实 TSMC 28nm SRAM 宏时序/面积签核**；Yosys（`strash;balance;map`）仅作分钟级快速迭代代理（详见 [rtl/docs/09-synthesis-report.md](../rtl/docs/09-synthesis-report.md) §15–21）。
+权威口径：**Synopsys DC `W-2024.09-SP2` + TSMC 28nm HPC+（`ssg0p81v125c`, 12T SVT+LVT, `compile_ultra`）**，**全面禁用 `SRAM_BLACKBOX`、统一采用 `SYNTH_TSMC28_SRAM` 真实 TSMC 28nm SRAM 宏时序/面积签核**；日常快速迭代统一使用四层 PPA 入口 `rtl/scripts/fast_ppa.sh`（Tier 0 秒级 SRAM 估算 + Tier 1 `Yosys+PT` 提速 `14×–49×` + Tier 2a/2b DC 快速与 `.ddc` 增量拼装，详见 [rtl/docs/09-synthesis-report.md](../rtl/docs/09-synthesis-report.md) §15–22 与 [exp/EXP-071-fast-ppa-eval.md](exp/EXP-071-fast-ppa-eval.md)）。
 - **前五轮已完成**：EXP-062..065（全核 23 模块单模块突破 ≥1.12 GHz）+ EXP-068（`rob_ptr` 冲刷，`idu` 2.70 GHz）+ EXP-069（全核 100% 严格同步 1R1W/1RW SRAM 化，三后端模块净省 `1.97 mm²`）+ **EXP-070（Unified FTQ-64 删 `ptab_bypass` + LSU/DTLB `paddr_p1/m1` 消除 `back_top` 1.24 ns 往返链 + Clean BPU v11 + 同页双取 + A1/A2/B1 切链 + 零黑盒真实 TSMC 28nm SRAM 综合：`bpu` 156 真实宏达 `877 MHz` / +83%、纯逻辑面积 −59.1%）**。
 - **下一阶段待攻克瓶颈按优先级排序**：
 
